@@ -1,0 +1,9 @@
+{
+  "body": {
+    "action": "generate-doodle",
+    "description": "a happy dog playing with a ball",
+    "style": "simple",
+    "count": 2,
+    "provider": "mock"
+  }
+}

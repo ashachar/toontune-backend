@@ -26,7 +26,7 @@ app.use('/api/ai', aiRoutes);
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
-    service: 'doodle-backend',
+    service: 'toontune-backend',
     timestamp: new Date().toISOString() 
   });
 });
@@ -42,7 +42,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Doodle Backend Server running on port ${PORT}`);
+  console.log(`ToonTune.ai Backend Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
 });
