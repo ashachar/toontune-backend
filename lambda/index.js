@@ -16,6 +16,7 @@ const { batchProcessProject } = require('./functions/batchProcessProject');
 const { validateInput } = require('./utils/validation');
 const { formatResponse, formatError } = require('./utils/response');
 const { logger } = require('./utils/logger');
+const { authenticate } = require('./utils/auth');
 
 // Function registry
 const functions = {
@@ -43,6 +44,17 @@ exports.handler = async (event, context) => {
     if (event.warmup) {
       logger.info('Warm-up ping received');
       return formatResponse({ message: 'Lambda is warm!' });
+    }
+
+    // Authenticate request
+    const authResult = await authenticate(event);
+    if (!authResult.authenticated) {
+      logger.warn('Authentication failed', { error: authResult.error });
+      return formatError(
+        new Error(authResult.error),
+        { statusCode: authResult.statusCode },
+        authResult.statusCode
+      );
     }
 
     // Parse request body
