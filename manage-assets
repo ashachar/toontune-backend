@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""
+Asset Management Command
+Manages the rendering and uploading of asset animations to Supabase
+"""
+
+import sys
+import os
+import subprocess
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Manage asset animations - render and upload to Supabase',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  manage-assets                    # Process only new assets
+  manage-assets --all              # Re-process all assets
+  manage-assets --verbose          # Show detailed progress
+  manage-assets --status           # Show current asset status
+  manage-assets --help             # Show this help message
+        """
+    )
+    
+    parser.add_argument('--all', action='store_true',
+                       help='Process all assets, even if they already exist')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                       help='Show detailed processing information')
+    parser.add_argument('--status', '-s', action='store_true',
+                       help='Show status of assets in bucket')
+    parser.add_argument('--assets-dir', 
+                       default='../app/uploads/assets',
+                       help='Directory containing assets')
+    
+    args = parser.parse_args()
+    
+    # Get the directory of this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    if args.status:
+        # Show status of assets
+        print("Checking asset status...")
+        status_script = """
+import os
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+from supabase import create_client
+import glob
+
+load_dotenv()
+SUPABASE_URL = os.getenv('VITE_SUPABASE_URL')
+SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
+
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    print("Error: Supabase credentials not found")
+    sys.exit(1)
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# Get files from bucket
+try:
+    files = supabase.storage.from_('rendered-assets').list()
+    apng_files = [f for f in files if f['name'].endswith('.apng')]
+    
+    print(f"\\nAPNG files in bucket: {{len(apng_files)}}")
+    for f in sorted(apng_files, key=lambda x: x['name']):
+        size_kb = f.get('metadata', {{}}).get('size', 0) / 1024
+        print(f"  ✓ {{f['name'].replace('_drawing.apng', '')}} ({{size_kb:.1f}} KB)")
+    
+    # Check local assets
+    assets_dir = '{}'
+    patterns = ['*.png', '*.jpg', '*.jpeg', '*.svg']
+    local_assets = []
+    for pattern in patterns:
+        local_assets.extend(glob.glob(os.path.join(assets_dir, pattern)))
+    
+    existing_names = set(f['name'].replace('_drawing.apng', '') for f in apng_files)
+    missing = []
+    for asset in local_assets:
+        name = Path(asset).stem
+        if name not in existing_names:
+            missing.append(name)
+    
+    if missing:
+        print(f"\\nAssets without APNG: {{len(missing)}}")
+        for name in sorted(missing):
+            print(f"  ✗ {{name}}")
+    else:
+        print("\\nAll assets have been processed!")
+        
+except Exception as e:
+    print(f"Error: {{e}}")
+""".format(args.assets_dir)
+        
+        subprocess.run([sys.executable, '-c', status_script])
+    else:
+        # Run the render script
+        render_script = os.path.join(script_dir, 'render_and_save_assets_apng.py')
+        
+        if not os.path.exists(render_script):
+            print(f"Error: Render script not found at {render_script}")
+            sys.exit(1)
+        
+        cmd = [sys.executable, render_script]
+        
+        if args.all:
+            cmd.append('--all')
+        if args.verbose:
+            cmd.append('--verbose')
+        if args.assets_dir:
+            cmd.extend(['--assets-dir', args.assets_dir])
+        
+        print("🎨 Asset Animation Manager")
+        print("=" * 50)
+        
+        try:
+            result = subprocess.run(cmd, check=False)
+            sys.exit(result.returncode)
+        except KeyboardInterrupt:
+            print("\n\nOperation cancelled by user")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error running render script: {e}")
+            sys.exit(1)
+
+if __name__ == "__main__":
+    main()
