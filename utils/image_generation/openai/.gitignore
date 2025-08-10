@@ -1,0 +1,25 @@
+# Environment files
+.env
+.env.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Test images
+man.png
+mask.png
+*.png
+*.jpg
+*.jpeg
+
+# Output directory
+out/
+
+# Keep example files
+!.env.example
