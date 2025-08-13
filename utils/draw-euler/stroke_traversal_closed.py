@@ -18,7 +18,7 @@ import sys
 import os
 import numpy as np
 import cv2
-from skimage.morphology import thin
+from skimage.morphology import thin, skeletonize
 import networkx as nx
 import subprocess
 import tempfile
@@ -384,108 +384,126 @@ def fill_mask_holes(mask: np.ndarray) -> np.ndarray:
 # Image preprocessing (from original)
 # =========================
 def extract_lines(image_path, output_dir=None):
-    """Extract black lines; return thinned binary (0/255) and original RGB."""
-    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-    if img is None:
+    """Extract lines using Anime2Sketch API, then skeletonize."""
+    import requests
+    import tempfile
+    
+    # Load original for background removal
+    img_original = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if img_original is None:
         raise FileNotFoundError(f"Could not read image: {image_path}")
 
-    dprint(f"[Extract] Loaded image: {image_path}, shape: {img.shape}")
+    dprint(f"[Extract] Loaded image: {image_path}, shape: {img_original.shape}")
 
-    if img.shape[2] == 4:
-        white_bg = np.ones((img.shape[0], img.shape[1], 3), dtype=np.uint8) * 255
-        alpha = img[:, :, 3] / 255.0
+    # Background removal if RGBA
+    if len(img_original.shape) == 3 and img_original.shape[2] == 4:
+        white_bg = np.ones((img_original.shape[0], img_original.shape[1], 3), dtype=np.uint8) * 255
+        alpha = img_original[:, :, 3] / 255.0
         for c in range(3):
-            white_bg[:, :, c] = (1 - alpha) * 255 + alpha * img[:, :, c]
+            white_bg[:, :, c] = (1 - alpha) * 255 + alpha * img_original[:, :, c]
         img = white_bg.astype(np.uint8)
         dprint(f"[Extract] Converted RGBA to RGB with white background")
     else:
-        img = img[:, :, :3]
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = img_original[:, :, :3]
+    
+    # Call Anime2Sketch API to get sketch
+    dprint("[Extract] Calling Anime2Sketch API...")
+    url = "https://anime2sketch-968385204614.europe-west4.run.app/infer"
+    
+    try:
+        # Create temp file for input
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_in:
+            cv2.imwrite(tmp_in.name, img)
+            tmp_in.flush()
+            
+            # Send to API
+            with open(tmp_in.name, 'rb') as f:
+                files = {'file': f}
+                data = {'load_size': 512}
+                response = requests.post(url, files=files, data=data, timeout=30)
+            
+            os.unlink(tmp_in.name)
+        
+        if response.status_code == 200:
+            dprint(f"[Extract] Anime2Sketch API successful")
+            
+            # Save sketch and load as grayscale
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_sketch:
+                tmp_sketch.write(response.content)
+                tmp_sketch.flush()
+                
+                gray = cv2.imread(tmp_sketch.name, cv2.IMREAD_GRAYSCALE)
+                
+                # Save to debug folder if specified
+                if output_dir:
+                    cv2.imwrite(os.path.join(output_dir, "01_anime2sketch.jpg"), gray)
+                
+                os.unlink(tmp_sketch.name)
+        else:
+            dprint(f"[Extract] Anime2Sketch API failed with status {response.status_code}, using fallback")
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+    except Exception as e:
+        dprint(f"[Extract] Anime2Sketch API error: {e}, using fallback")
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
     dprint(f"[Extract] Gray image stats: min={gray.min()}, max={gray.max()}, mean={gray.mean():.2f}")
 
-    # SKELETON-BASED: Extract centerlines of black regions directly
-    # This avoids double edges on thick strokes
-    black_threshold = 50  # Pixels darker than this are considered black
-    black_regions = gray < black_threshold
-    dprint(f"[Extract] Black pixels (gray<{black_threshold}): {np.count_nonzero(black_regions)}")
+    # Anime2Sketch already gives us thin lines, so let's preserve them
+    # Use adaptive thresholding for better edge preservation
+    black_threshold = 180  # Capture most lines including anti-aliased edges
+    lines_binary = (gray < black_threshold).astype(np.uint8) * 255
+    dprint(f"[Extract] Line pixels (gray<{black_threshold}): {np.count_nonzero(lines_binary)}")
     
-    # ROBUST NOISE REMOVAL
-    # Step 1: Remove small connected components (isolated dots/noise)
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(black_regions.astype(np.uint8), connectivity=8)
-    min_component_size = 30  # Minimum pixels for a valid contour component
-    black_regions_filtered = np.zeros_like(black_regions, dtype=np.uint8)
+    # Remove small noise components
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(lines_binary, connectivity=8)
+    min_component_size = 15  # Lower threshold to keep fine details
+    lines_cleaned = np.zeros_like(lines_binary, dtype=np.uint8)
     
     for i in range(1, num_labels):  # Skip background (label 0)
         area = stats[i, cv2.CC_STAT_AREA]
         if area >= min_component_size:
-            black_regions_filtered[labels == i] = 255
+            lines_cleaned[labels == i] = 255
     
-    dprint(f"[Extract] After removing small components (<{min_component_size} px): {np.count_nonzero(black_regions_filtered)}")
+    dprint(f"[Extract] After removing small components (<{min_component_size} px): {np.count_nonzero(lines_cleaned)}")
     
-    # Step 2: Apply edge detection to find actual contours
-    edges = cv2.Canny(gray, 30, 80)
+    # Only thin the thickest lines, preserve already-thin lines
+    # Use distance transform to identify line thickness
+    dist_transform = cv2.distanceTransform(lines_cleaned, cv2.DIST_L2, 5)
     
-    # Step 3: Dilate edges to create a mask of valid contour regions  
-    edge_mask = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=2)
+    # Separate thin and thick regions
+    thin_lines = (dist_transform > 0) & (dist_transform <= 3)  # Already thin
+    thick_lines = dist_transform > 3  # Need thinning
     
-    # Step 4: Keep only black regions that overlap with edge regions
-    # This removes texture/noise that isn't part of actual contours
-    black_regions_contour = black_regions_filtered & edge_mask
-    dprint(f"[Extract] After edge-based filtering: {np.count_nonzero(black_regions_contour)}")
+    dprint(f"[Extract] Thin lines (<=3px): {np.count_nonzero(thin_lines)}")
+    dprint(f"[Extract] Thick lines (>3px): {np.count_nonzero(thick_lines)}")
     
-    # Step 5: Fill small gaps in contours
-    kernel = np.ones((3, 3), np.uint8)
-    black_regions = cv2.morphologyEx(black_regions_contour, cv2.MORPH_CLOSE, kernel, iterations=2)
-    dprint(f"[Extract] After gap filling: {np.count_nonzero(black_regions)}")
-    
-    # Filter to only keep thin black regions (lines, not filled areas)
-    # Use distance transform to find "thickness" of each black region
-    dist_transform = cv2.distanceTransform(black_regions, cv2.DIST_L2, 5)
-    max_line_width = 15  # Maximum width to be considered a line (not a filled area)
-    
-    # Create mask of thin regions only
-    thin_regions = (dist_transform > 0) & (dist_transform <= max_line_width)
-    dprint(f"[Extract] Thin regions (width <= {max_line_width}): {np.count_nonzero(thin_regions)}")
-    
-    # For very thick regions, extract just the edges
-    thick_regions = dist_transform > max_line_width
-    if np.any(thick_regions):
-        # Get edges of thick regions using Canny on the thick region mask
-        thick_edges = cv2.Canny(thick_regions.astype(np.uint8) * 255, 50, 150)
-        dprint(f"[Extract] Thick region edges: {np.count_nonzero(thick_edges)}")
-        # Combine thin regions with edges of thick regions
-        regions_to_skeleton = thin_regions | (thick_edges > 0)
+    # Only skeletonize thick regions
+    if np.any(thick_lines):
+        thick_skeleton = skeletonize(thick_lines)
+        # Combine: keep thin lines as-is, use skeleton for thick lines
+        lines_bool = thin_lines | thick_skeleton
     else:
-        regions_to_skeleton = thin_regions
-        dprint(f"[Extract] No thick regions found")
+        lines_bool = thin_lines
     
-    # Apply skeletonization to filtered regions
-    # This finds the centerline/medial axis of thin black areas only
-    skeleton = thin(regions_to_skeleton > 0)
-    dprint(f"[Extract] Skeleton pixels: {np.count_nonzero(skeleton)}")
+    dprint(f"[Extract] Combined lines: {np.count_nonzero(lines_bool)}")
     
     # Convert to uint8
-    lines = (skeleton * 255).astype(np.uint8)
+    lines = (lines_bool * 255).astype(np.uint8)
     
     # For debug visualization
-    final_lines = black_regions  # Show black regions before skeletonization
-    before_morph = np.count_nonzero(black_regions)
-    after_close = np.count_nonzero(black_regions)
-    before_thin = np.count_nonzero(regions_to_skeleton)
-    after_thin = np.count_nonzero(skeleton)
+    before_thin = np.count_nonzero(lines_cleaned)
+    after_thin = np.count_nonzero(lines_bool)
     dprint(f"[Extract] Skeletonization: before={before_thin}, after={after_thin}")
 
     if DEBUG:
         save_dir = output_dir if output_dir else DEBUG_DIR
         ensure_dir(save_dir)
         cv2.imwrite(f"{save_dir}/00_original.png", img)
-        cv2.imwrite(f"{save_dir}/01_grayscale.png", gray)
-        cv2.imwrite(f"{save_dir}/02_black_regions.png", black_regions * 255)
-        cv2.imwrite(f"{save_dir}/03_distance_transform.png", 
-                   (dist_transform / dist_transform.max() * 255).astype(np.uint8) if dist_transform.max() > 0 else np.zeros_like(gray))
-        cv2.imwrite(f"{save_dir}/04_regions_to_skeleton.png", regions_to_skeleton.astype(np.uint8) * 255)
-        cv2.imwrite(f"{save_dir}/05_thinned_lines.png", lines)
+        cv2.imwrite(f"{save_dir}/01_sketch.png", gray)
+        cv2.imwrite(f"{save_dir}/02_lines_binary.png", lines_binary)
+        cv2.imwrite(f"{save_dir}/03_lines_cleaned.png", lines_cleaned)
+        cv2.imwrite(f"{save_dir}/04_final_lines.png", lines)
         dprint(f"[Extract] Saved debug images to {save_dir}")
     
     return lines, img
@@ -690,6 +708,13 @@ def classify_split_components(components, head_region_bool, head_outline_mask,
     body_parts = []
 
     for comp in components:
+        # Check if original component overlaps with head outline
+        comp_mask = comp['mask']
+        comp_size = comp['size']
+        outline_overlap_orig = int((comp_mask & outline_bool).sum()) if comp_size > 0 else 0
+        outline_ratio_orig = outline_overlap_orig / float(comp_size) if comp_size > 0 else 0.0
+        
+        # Split component
         parts = split_component_by_mask(comp, head_region_bool, id_suffix="SPLIT")
         
         for part in parts:
@@ -698,14 +723,17 @@ def classify_split_components(components, head_region_bool, head_outline_mask,
             outline_overlap = int((m & outline_bool).sum())
             outline_ratio = outline_overlap / float(size) if size > 0 else 0.0
 
-            if inside_ratio >= inside_thresh:
-                # Inside head region
-                if outline_ratio >= outline_ratio_thresh or outline_overlap >= min_outline_px:
-                    face_outline_parts.append(part)
-                    dprint(f"[Class] {part['id']} -> FACE_OUTLINE")
-                else:
-                    face_interior_parts.append(part)
-                    dprint(f"[Class] {part['id']} -> FACE_INTERIOR")
+            # Check if this is part of the head outline
+            # A component is face_outline if it significantly overlaps the outline mask
+            # OR if the original component was on the outline (handles split components)
+            if outline_ratio >= outline_ratio_thresh or outline_overlap >= min_outline_px or \
+               (outline_ratio_orig >= outline_ratio_thresh and "_OUT" in part['id']):
+                face_outline_parts.append(part)
+                dprint(f"[Class] {part['id']} -> FACE_OUTLINE")
+            elif inside_ratio >= inside_thresh:
+                # Inside head region and not outline
+                face_interior_parts.append(part)
+                dprint(f"[Class] {part['id']} -> FACE_INTERIOR")
             else:
                 body_parts.append(part)
                 dprint(f"[Class] {part['id']} -> BODY")
@@ -854,7 +882,34 @@ def create_drawing_animation(lines, original_img, image_path, output_prefix="tes
     # Order: outline (largest first) -> interior (top→bottom) -> body (top→bottom)
     face_outline_parts.sort(key=lambda c: c['size'], reverse=True)
     face_interior_parts.sort(key=lambda c: c['center'][0])
-    body_parts.sort(key=lambda c: c['center'][0])
+    
+    # Sort body parts by distance from head region
+    # Find the lowest point of head components (neck connection point)
+    head_bottom_y = 0
+    head_center_x = W // 2
+    
+    # Get bottom of head from all face components
+    all_face_parts = face_outline_parts + face_interior_parts
+    if all_face_parts:
+        # Find the lowest y-coordinate (bottom) of all face parts
+        for comp in all_face_parts:
+            x1, y1, x2, y2 = comp['bbox']
+            if y2 > head_bottom_y:
+                head_bottom_y = y2
+                # Update center X based on this component
+                head_center_x = (x1 + x2) // 2
+    
+    # Sort body parts by distance from the bottom of head (neck area)
+    def distance_from_head_bottom(comp):
+        cx, cy = comp['center']
+        # Calculate distance from the bottom-center of head region
+        # Prefer components that are below and close to head
+        dx = abs(cx - head_center_x)
+        dy = max(0, cy - head_bottom_y)  # Only positive if below head
+        # Weight vertical distance less to prefer neck/collar area
+        return dx + dy * 0.5
+    
+    body_parts.sort(key=distance_from_head_bottom)
     
     ordered = [('face_outline', c) for c in face_outline_parts] \
             + [('face_interior', c) for c in face_interior_parts] \
@@ -869,7 +924,8 @@ def create_drawing_animation(lines, original_img, image_path, output_prefix="tes
     frames = []
     canvas = np.ones((H, W, 3), dtype=np.uint8) * 255
     
-    def draw_component(tag, comp, canvas, frames, comp_index, total_comps, output_dir=None):
+    # Old draw_component removed - using draw_component_from_nearest below
+    def draw_component_old(tag, comp, canvas, frames, comp_index, total_comps, output_dir=None):
         G, points = create_path_graph(comp['points'])
         if G is None:
             dprint(f"[Draw] WARNING: No graph created for {tag} {comp['id']}")
@@ -939,15 +995,99 @@ def create_drawing_animation(lines, original_img, image_path, output_prefix="tes
         dprint(f"[Draw] Completed {tag} {comp['id']}: drew {total_path_len}/{len(points)} points across {len(all_paths)} paths")
         return True
     
-    # Track drawing progress
+    # Track drawing progress and last position
     total_points_to_draw = sum(comp['size'] for _, comp in ordered)
     total_points_drawn = 0
     components_drawn = 0
     components_failed = 0
+    last_draw_position = None  # Track where we finished drawing
+    
+    def draw_component_from_nearest(tag, comp, canvas, frames, comp_index, total_comps, last_pos, output_dir=None):
+        """Modified draw function that starts from nearest point to last position"""
+        G, points = create_path_graph(comp['points'])
+        if G is None or G.number_of_nodes() == 0:
+            return False, last_pos
+        
+        # Check connectivity
+        is_connected = nx.is_connected(G)
+        if not is_connected:
+            ccs = list(nx.connected_components(G))
+            dprint(f"[Draw] Component {tag} {comp['id']} has {len(ccs)} disconnected parts")
+        
+        # Get paths for ALL connected components
+        all_paths = find_paths_all_components(G)
+        if not all_paths:
+            return False, last_pos
+        
+        # If we have a last position and this is a body part, reorder paths to start from nearest
+        if last_pos is not None and tag == 'body' and len(all_paths) > 0:
+            # Find the path that starts closest to last position
+            def path_start_distance(path):
+                if len(path) == 0:
+                    return float('inf')
+                start_point = points[path[0]]
+                return np.linalg.norm(np.array(start_point) - np.array(last_pos))
+            
+            # Sort paths by distance from last position
+            all_paths.sort(key=path_start_distance)
+            dprint(f"[Draw] Reordered paths to start from nearest to last position")
+        
+        size = comp['size']
+        if size < 100:
+            num_steps = 5
+        elif size < 500:
+            num_steps = 15
+        else:
+            num_steps = 30
+        
+        if tag in ('face_outline', 'face_interior'):
+            num_steps = max(5, num_steps - 5)
+        
+        color = (0, 0, 0)
+        
+        # Calculate total path length
+        total_path_len = sum(len(p) for p in all_paths)
+        dprint(f"[Draw] [{comp_index}/{total_comps}] {tag} {comp['id']} size={size} points={len(points)} total_path_len={total_path_len} paths={len(all_paths)} steps={num_steps}")
+        
+        # Draw each path and track last position
+        final_position = last_pos
+        for path_idx, path in enumerate(all_paths):
+            if len(path) < 2:
+                continue
+            
+            # Update final position to end of this path
+            if len(path) > 0:
+                final_position = points[path[-1]]
+            
+            # Adjust steps based on path size
+            path_steps = max(1, (num_steps * len(path)) // total_path_len) if total_path_len > 0 else 1
+            step = max(1, len(path) // path_steps)
+            
+            if path_idx < 3 or (path_idx == len(all_paths) - 1 and len(all_paths) > 3):
+                dprint(f"  Path {path_idx+1}/{len(all_paths)}: {len(path)} nodes, {path_steps} steps")
+            
+            # Animate this path
+            for i in range(0, len(path), step):
+                sub = path[:i + step]
+                frame = canvas.copy()
+                
+                # Draw all previous paths
+                for prev_path in all_paths[:path_idx]:
+                    draw_path(points, prev_path, frame, color, thickness=2)
+                
+                # Draw current path progress
+                draw_path(points, sub, frame, color, thickness=2)
+                frames.append(frame)
+            
+            # Draw final path on canvas
+            draw_path(points, path, canvas, color, thickness=2)
+        
+        dprint(f"[Draw] Completed {tag} {comp['id']}: drew {total_path_len}/{len(points)} points across {len(all_paths)} paths")
+        return True, final_position
     
     for idx, (tag, comp) in enumerate(ordered, start=1):
         dprint(f"\n[Draw] Component {idx}/{len(ordered)} -> {tag} {comp['id']}")
-        success = draw_component(tag, comp, canvas, frames, idx, len(ordered), output_dir)
+        success, last_draw_position = draw_component_from_nearest(tag, comp, canvas, frames, idx, len(ordered), last_draw_position, output_dir)
         
         if success:
             components_drawn += 1

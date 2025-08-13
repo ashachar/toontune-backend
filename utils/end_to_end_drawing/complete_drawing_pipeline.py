@@ -19,9 +19,79 @@ import os
 import sys
 import networkx as nx
 from scipy.spatial.distance import cdist
+from PIL import Image
+import io
 
 # Add path to import stroke_traversal module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'draw-euler'))
+
+# Try to import SAM2 API client first
+try:
+    from sam2_api_client import detect_head_with_sam2_api
+    SAM2_API_AVAILABLE = True
+    print("SAM2 API client available")
+except ImportError:
+    SAM2_API_AVAILABLE = False
+    print("SAM2 API client not available")
+
+# Try to import local SAM2 head detector as fallback
+if not SAM2_API_AVAILABLE:
+    try:
+        from sam2_head_detector_simple import detect_head_with_sam2_simple, initialize_sam2_simple
+        SAM2_AVAILABLE = True
+        SAM2_SIMPLE = True
+        print("SAM2 simplified head detector available")
+    except ImportError:
+        try:
+            from sam2_head_detector import detect_head_with_sam2, initialize_sam2
+            SAM2_AVAILABLE = True
+            SAM2_SIMPLE = False
+            print("SAM2 head detector available")
+        except ImportError:
+            SAM2_AVAILABLE = False
+            print("SAM2 head detector not available, will use color-based fallback")
+else:
+    SAM2_AVAILABLE = False
+
+def remove_background(input_path, output_path):
+    """Remove background using rembg package"""
+    try:
+        from rembg import remove
+        print("Removing background...")
+        
+        # Read input image
+        with open(input_path, 'rb') as input_file:
+            input_data = input_file.read()
+        
+        # Remove background
+        output_data = remove(input_data)
+        
+        # Convert to PIL Image
+        img = Image.open(io.BytesIO(output_data))
+        
+        # Create white background
+        if img.mode == 'RGBA':
+            # Create white background image
+            white_bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
+            # Paste image on white background using alpha channel
+            white_bg.paste(img, mask=img.split()[3])
+            # Convert to RGB
+            white_bg = white_bg.convert('RGB')
+        else:
+            white_bg = img
+        
+        # Save with white background
+        white_bg.save(output_path, 'PNG')
+        print(f"Background removed and saved to {output_path}")
+        return True
+        
+    except ImportError:
+        print("Warning: rembg not installed. Install with: pip install rembg")
+        print("Continuing without background removal...")
+        # Just copy the file
+        img = cv2.imread(input_path)
+        cv2.imwrite(output_path, img)
+        return False
 
 def call_anime2sketch_api(input_path, output_path):
     """Call Anime2Sketch API to get sketch"""
@@ -166,24 +236,93 @@ def find_euler_path(G):
 
 def detect_head_from_original(original_img):
     """
-    Detect head region using color-based segmentation
+    Detect head region using SAM2 if available, otherwise color-based segmentation
+    Returns both bounding box and actual head mask
     """
     H, W = original_img.shape[:2]
+    
+    # Try SAM2 API first if available
+    if SAM2_API_AVAILABLE:
+        print("Using SAM2 API for head detection...")
+        solid_mask, head_box = detect_head_with_sam2_api(original_img, expand_ratio=1.2)
+        
+        if solid_mask is not None and head_box is not None:
+            # SAM2 API succeeded
+            x0, y0, x1, y1 = head_box
+            # Add padding to bbox for visualization
+            padding = 20
+            x0 = max(0, x0 - padding)
+            y0 = max(0, y0 - padding)
+            x1 = min(W, x1 + padding)
+            y1 = min(H, y1 + padding)
+            
+            print(f"SAM2 API detected head successfully")
+            return (int(x0), int(y0), int(x1), int(y1)), solid_mask
+        else:
+            print("SAM2 API failed, falling back to local SAM2")
+    
+    # Try local SAM2 if available
+    if SAM2_AVAILABLE:
+        print("Using local SAM2 for head detection...")
+        if SAM2_SIMPLE:
+            solid_mask, head_box = detect_head_with_sam2_simple(original_img, debug_name="image")
+            outline_mask = None  # Simplified version doesn't return outline
+        else:
+            solid_mask, outline_mask, head_box = detect_head_with_sam2(original_img, debug_name="image")
+        
+        if solid_mask is not None and head_box is not None:
+            # SAM2 succeeded
+            x0, y0, x1, y1 = head_box
+            # Add padding to bbox for visualization
+            padding = 20
+            x0 = max(0, x0 - padding)
+            y0 = max(0, y0 - padding)
+            x1 = min(W, x1 + padding)
+            y1 = min(H, y1 + padding)
+            
+            print(f"Local SAM2 detected head successfully")
+            return (int(x0), int(y0), int(x1), int(y1)), solid_mask
+        else:
+            print("Local SAM2 failed, falling back to color-based detection")
+    
+    # Fallback to color-based detection
+    print("Using color-based head detection...")
     
     # Convert to HSV for better color detection
     hsv = cv2.cvtColor(original_img, cv2.COLOR_BGR2HSV)
     
-    # Define color ranges for potential head colors (pinkish/reddish for this robot)
+    # Define multiple color ranges for different skin tones and head colors
+    masks = []
+    
+    # Pink/Red (for robot-like characters)
     lower_pink = np.array([160, 50, 50])
     upper_pink = np.array([180, 255, 255])
-    mask1 = cv2.inRange(hsv, lower_pink, upper_pink)
+    masks.append(cv2.inRange(hsv, lower_pink, upper_pink))
     
     lower_pink2 = np.array([0, 50, 50])
     upper_pink2 = np.array([20, 255, 255])
-    mask2 = cv2.inRange(hsv, lower_pink2, upper_pink2)
+    masks.append(cv2.inRange(hsv, lower_pink2, upper_pink2))
     
-    # Combine masks
-    color_mask = cv2.bitwise_or(mask1, mask2)
+    # Skin tones - beige/peach/orange range
+    # These cover most human skin colors
+    lower_skin1 = np.array([0, 20, 70])
+    upper_skin1 = np.array([20, 150, 255])
+    masks.append(cv2.inRange(hsv, lower_skin1, upper_skin1))
+    
+    # More skin tones - yellowish/brownish
+    lower_skin2 = np.array([15, 30, 50])
+    upper_skin2 = np.array([30, 150, 255])
+    masks.append(cv2.inRange(hsv, lower_skin2, upper_skin2))
+    
+    # Brown hair/skin
+    lower_brown = np.array([10, 50, 20])
+    upper_brown = np.array([20, 255, 200])
+    masks.append(cv2.inRange(hsv, lower_brown, upper_brown))
+    
+    # Combine all masks
+    color_mask = masks[0]
+    for mask in masks[1:]:
+        color_mask = cv2.bitwise_or(color_mask, mask)
     
     # Clean up with morphology
     kernel = np.ones((5,5), np.uint8)
@@ -225,17 +364,35 @@ def detect_head_from_original(original_img):
             best_head = {'bbox': (x_min, y_min, x_max, y_max), 'mask': mask}
     
     if best_head:
-        # Add padding to bbox
+        # Create full-size mask
+        full_mask = np.zeros((H, W), dtype=np.uint8)
+        full_mask[best_head['mask']] = 255
+        
+        # More conservative dilation - just enough to include facial features
+        # Use smaller kernel and fewer iterations
+        kernel = np.ones((7, 7), np.uint8)
+        dilated_mask = cv2.dilate(full_mask, kernel, iterations=1)
+        
+        # Fill only interior holes (not extending outward)
+        # Use flood fill from outside to identify exterior, then invert
+        h, w = dilated_mask.shape
+        flood_mask = np.zeros((h+2, w+2), np.uint8)
+        filled = dilated_mask.copy()
+        cv2.floodFill(filled, flood_mask, (0, 0), 255)
+        filled_inv = cv2.bitwise_not(filled)
+        final_mask = dilated_mask | filled_inv
+        
+        # Add padding to bbox for visualization
         x_min, y_min, x_max, y_max = best_head['bbox']
         padding = 20
         x_min = max(0, x_min - padding)
         y_min = max(0, y_min - padding)
         x_max = min(W, x_max + padding)
         y_max = min(H, y_max + padding)
-        return (x_min, y_min, x_max, y_max)
+        return (x_min, y_min, x_max, y_max), final_mask
     
     # Fallback to simple upper region
-    return (int(W * 0.2), 0, int(W * 0.8), int(H * 0.4))
+    return (int(W * 0.2), 0, int(W * 0.8), int(H * 0.4)), None
 
 def extract_and_classify_components(skeleton_img, original_img, output_dir=None):
     """
@@ -244,8 +401,8 @@ def extract_and_classify_components(skeleton_img, original_img, output_dir=None)
     """
     print("Extracting and classifying components...")
     
-    # Detect head region from original image
-    head_box = detect_head_from_original(original_img)
+    # Detect head region from original image (returns bbox and mask)
+    head_box, head_mask = detect_head_from_original(original_img)
     x0, y0, x1, y1 = head_box
     print(f"Detected head box: ({x0},{y0})-({x1},{y1})")
     
@@ -257,30 +414,43 @@ def extract_and_classify_components(skeleton_img, original_img, output_dir=None)
         # Draw head box in green
         cv2.rectangle(viz, (x0, y0), (x1, y1), (0, 255, 0), 3)
         
-        # Create overlay to highlight head region
-        overlay = viz.copy()
-        overlay[y0:y1, x0:x1] = cv2.addWeighted(
-            overlay[y0:y1, x0:x1], 0.3,
-            np.full_like(overlay[y0:y1, x0:x1], [0, 0, 255]), 0.7,
-            0
-        )
-        viz = cv2.addWeighted(viz, 0.5, overlay, 0.5, 0)
+        # Highlight actual head mask (not just box)
+        if head_mask is not None:
+            overlay = viz.copy()
+            head_pixels = np.where(head_mask > 0)
+            overlay[head_pixels] = [0, 0, 255]
+            viz = cv2.addWeighted(viz, 0.5, overlay, 0.5, 0)
+        else:
+            # Fallback to box highlighting
+            overlay = viz.copy()
+            overlay[y0:y1, x0:x1] = cv2.addWeighted(
+                overlay[y0:y1, x0:x1], 0.3,
+                np.full_like(overlay[y0:y1, x0:x1], [0, 0, 255]), 0.7,
+                0
+            )
+            viz = cv2.addWeighted(viz, 0.5, overlay, 0.5, 0)
         
         # Add text
         cv2.putText(viz, "Detected Head Region", (x0, y0 - 10),
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        # Also create a view showing skeleton with head box
+        # Also create a view showing skeleton with head mask
         skeleton_viz = cv2.cvtColor(skeleton_img, cv2.COLOR_GRAY2BGR)
         cv2.rectangle(skeleton_viz, (x0, y0), (x1, y1), (0, 255, 0), 2)
         
-        # Highlight head components in skeleton
+        # Highlight only skeleton pixels that overlap with actual head mask
         lines_inv = 255 - skeleton_img
-        head_region_mask = np.zeros_like(lines_inv)
-        head_region_mask[y0:y1, x0:x1] = lines_inv[y0:y1, x0:x1]
+        if head_mask is not None:
+            # Use actual head mask to filter skeleton pixels
+            head_skeleton_mask = (lines_inv > 0) & (head_mask > 0)
+            head_pixels = np.where(head_skeleton_mask)
+        else:
+            # Fallback to box
+            head_region_mask = np.zeros_like(lines_inv)
+            head_region_mask[y0:y1, x0:x1] = lines_inv[y0:y1, x0:x1]
+            head_pixels = np.where(head_region_mask > 0)
         
         # Color head components red in skeleton viz
-        head_pixels = np.where(head_region_mask > 0)
         skeleton_viz[head_pixels] = [0, 0, 255]
         
         # Create side-by-side comparison
@@ -331,10 +501,20 @@ def extract_and_classify_components(skeleton_img, original_img, output_dir=None)
         comp_center_y = (ys.min() + ys.max()) / 2
         comp_size = len(points)
         
-        # Calculate overlap with head region
-        head_pixels = points[(points[:, 0] >= y0) & (points[:, 0] < y1) & 
-                            (points[:, 1] >= x0) & (points[:, 1] < x1)]
-        overlap_ratio = len(head_pixels) / len(points) if len(points) > 0 else 0
+        # Calculate overlap with head MASK (not just box)
+        if head_mask is not None:
+            # Use actual head mask for precise overlap
+            head_pixels = []
+            for y, x in points:
+                if head_mask[y, x] > 0:
+                    head_pixels.append([y, x])
+            head_pixels = np.array(head_pixels) if head_pixels else np.array([])
+            overlap_ratio = len(head_pixels) / len(points) if len(points) > 0 else 0
+        else:
+            # Fallback to box-based overlap
+            head_pixels = points[(points[:, 0] >= y0) & (points[:, 0] < y1) & 
+                                (points[:, 1] >= x0) & (points[:, 1] < x1)]
+            overlap_ratio = len(head_pixels) / len(points) if len(points) > 0 else 0
         
         component = {
             'id': label,
@@ -363,7 +543,27 @@ def extract_and_classify_components(skeleton_img, original_img, output_dir=None)
     # Sort components
     face_outline_parts.sort(key=lambda c: c['size'], reverse=True)
     face_interior_parts.sort(key=lambda c: (c['center'][1], c['center'][0]))
-    body_parts.sort(key=lambda c: c['center'][1])
+    
+    # Sort body parts to start with those connected/close to head
+    # Calculate distance to head center for each body part
+    if head_mask is not None and body_parts:
+        # Find head center from mask
+        head_pixels = np.argwhere(head_mask > 0)
+        if len(head_pixels) > 0:
+            head_center_y = head_pixels[:, 0].mean()
+            head_center_x = head_pixels[:, 1].mean()
+            
+            # Sort body parts by distance to head center
+            for part in body_parts:
+                cx, cy = part['center']
+                distance = np.sqrt((cx - head_center_x)**2 + (cy - head_center_y)**2)
+                part['distance_to_head'] = distance
+            
+            body_parts.sort(key=lambda c: c['distance_to_head'])
+        else:
+            body_parts.sort(key=lambda c: c['center'][1])
+    else:
+        body_parts.sort(key=lambda c: c['center'][1])
     
     print(f"Classification: outline={len(face_outline_parts)}, interior={len(face_interior_parts)}, body={len(body_parts)}")
     
@@ -493,6 +693,7 @@ def complete_pipeline(input_image, output_dir):
     
     # File paths
     base_name = os.path.splitext(os.path.basename(input_image))[0]
+    nobg_path = os.path.join(output_dir, f"{base_name}_nobg.png")
     sketch_path = os.path.join(output_dir, f"{base_name}_sketch.jpg")
     skeleton_path = os.path.join(output_dir, f"{base_name}_skeleton.png")
     video_path = os.path.join(output_dir, f"{base_name}_natural_drawing.mp4")
@@ -504,14 +705,20 @@ def complete_pipeline(input_image, output_dir):
     print(f"Using color-based head detection from original image")
     print(f"{'='*50}\n")
     
-    # Read original image for head detection
-    original_img = cv2.imread(input_image)
+    # Step 0: Remove background
+    remove_background(input_image, nobg_path)
+    
+    # Use the no-background version for processing
+    processing_image = nobg_path if os.path.exists(nobg_path) else input_image
+    
+    # Read image for head detection (use cleaned version)
+    original_img = cv2.imread(processing_image)
     if original_img is None:
-        print(f"Failed to read original image: {input_image}")
+        print(f"Failed to read image: {processing_image}")
         return False
     
-    # Step 1: Get sketch from API
-    if not call_anime2sketch_api(input_image, sketch_path):
+    # Step 1: Get sketch from API (use cleaned version)
+    if not call_anime2sketch_api(processing_image, sketch_path):
         print("Failed to get sketch from API")
         return False
     

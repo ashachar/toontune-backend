@@ -52,10 +52,37 @@ def initialize_sam2():
             return False
         
         # Try to find config
-        config = "configs/sam2.1/sam2.1_hiera_s.yaml"
+        config_paths = [
+            os.path.join(sam2_root, 'sam2', 'sam2', 'configs', 'sam2.1', 'sam2.1_hiera_s.yaml'),
+            os.path.join(sam2_root, 'sam2', 'configs', 'sam2.1', 'sam2.1_hiera_s.yaml'),
+            "configs/sam2.1/sam2.1_hiera_s.yaml"
+        ]
         
-        # Build model
-        sam2_model = build_sam2(config, checkpoint, device=device)
+        config = None
+        for path in config_paths:
+            if os.path.exists(path):
+                config = path
+                break
+        
+        if not config:
+            print("[SAM2] No config found")
+            return False
+        
+        print(f"[SAM2] Using config: {config}")
+        
+        # Change to SAM2 directory for proper config loading
+        original_cwd = os.getcwd()
+        sam2_dir = os.path.join(sam2_root, 'sam2')
+        os.chdir(sam2_dir)
+        
+        try:
+            # Use relative path from sam2 directory
+            config_rel = os.path.relpath(config, sam2_dir)
+            # Build model
+            sam2_model = build_sam2(config_rel, checkpoint, device=device)
+        finally:
+            # Always restore original directory
+            os.chdir(original_cwd)
         predictor = SAM2ImagePredictor(sam2_model)
         
         SAM2_AVAILABLE = True
@@ -68,12 +95,139 @@ def initialize_sam2():
 
 def detect_head_with_sam2(image_bgr: np.ndarray, debug_name: str = "image") -> tuple:
     """
-    Detect head using SAM2 and create solid mask
+    Detect head using combination of SAM2 API and color-based detection
     Returns: (solid_mask, outline_mask, head_box)
     """
-    global predictor
-    
     H, W = image_bgr.shape[:2]
+    combined_mask = np.zeros((H, W), dtype=np.uint8)
+    
+    # Try SAM2 API first
+    sam2_success = False
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'end_to_end_drawing'))
+        from sam2_api_client import detect_head_with_sam2_api
+        
+        print("[SAM2] Trying SAM2 API for face/head detection...")
+        sam2_mask, sam2_bbox = detect_head_with_sam2_api(image_bgr, expand_ratio=1.2)
+        
+        if sam2_mask is not None:
+            print("[SAM2] API successful - got face/head structure")
+            combined_mask = np.maximum(combined_mask, sam2_mask)
+            sam2_success = True
+    except Exception as e:
+        print(f"[SAM2] API failed: {e}")
+    
+    # Also use color-based detection for hair
+    print("[SAM2] Adding color-based detection for hair...")
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    
+    # Multiple hair color ranges - MORE RESTRICTIVE
+    hair_masks = []
+    
+    # Brown/red hair (like the character) - more specific
+    lower_brown = np.array([8, 50, 50])  # Higher saturation requirement
+    upper_brown = np.array([20, 255, 180])  # Narrower hue range
+    brown_mask = cv2.inRange(hsv, lower_brown, upper_brown)
+    # Only keep upper portion for hair
+    brown_mask[H//2:, :] = 0  
+    hair_masks.append(brown_mask)
+    
+    # Dark brown/black hair - much more restrictive
+    lower_dark = np.array([0, 20, 20])  # Not pure black
+    upper_dark = np.array([30, 100, 100])  # Low brightness for dark hair
+    dark_mask = cv2.inRange(hsv, lower_dark, upper_dark)
+    # Only keep upper quarter for dark colors
+    dark_mask[H//4:, :] = 0
+    hair_masks.append(dark_mask)
+    
+    # Combine hair masks
+    hair_mask = np.zeros((H, W), dtype=np.uint8)
+    for mask in hair_masks:
+        hair_mask = cv2.bitwise_or(hair_mask, mask)
+    
+    # Clean up noise
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_OPEN, kernel)
+    hair_mask = cv2.morphologyEx(hair_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    
+    # Find hair component closest to top-center
+    contours, _ = cv2.findContours(hair_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        cx_target = W // 2
+        cy_target = H // 6  # Upper portion
+        best_contour = None
+        best_score = float('inf')
+        
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 5000 or area > 100000:  # Skip too small or too large regions
+                continue
+            M = cv2.moments(contour)
+            if M["m00"] > 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                # Score based on distance from expected hair position
+                score = abs(cx - cx_target) + abs(cy - cy_target) * 2
+                if score < best_score:
+                    best_score = score
+                    best_contour = contour
+        
+        if best_contour is not None:
+            hair_area = cv2.contourArea(best_contour)
+            # Only use hair if it's reasonable size
+            if 5000 <= hair_area <= 100000:
+                hair_final = np.zeros_like(hair_mask)
+                cv2.drawContours(hair_final, [best_contour], -1, 255, -1)
+                print(f"[SAM2] Found hair region: {hair_area:.0f} pixels")
+                
+                # Check if combining would create too large a mask
+                test_combined = np.maximum(combined_mask, hair_final)
+                combined_pixels = np.count_nonzero(test_combined)
+                
+                # If combined mask is too large (>30% of image), skip hair
+                if combined_pixels < (H * W * 0.3):
+                    combined_mask = test_combined
+                else:
+                    print(f"[SAM2] Hair region too large when combined ({combined_pixels} pixels), using SAM2 only")
+    
+    # If we have any mask, process it
+    if np.any(combined_mask > 0):
+        # Fill holes to create solid mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        solid_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+        
+        # Fill using contour method
+        contours, _ = cv2.findContours(solid_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            solid_mask = np.zeros_like(solid_mask)
+            cv2.drawContours(solid_mask, contours, -1, 255, -1)
+        
+        # Create outline mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        eroded = cv2.erode(solid_mask, kernel, iterations=1)
+        outline_mask = cv2.subtract(solid_mask, eroded)
+        
+        # Get bounding box
+        coords = np.where(solid_mask > 0)
+        if len(coords[0]) > 0:
+            y_min, y_max = coords[0].min(), coords[0].max()
+            x_min, x_max = coords[1].min(), coords[1].max()
+            head_box = np.array([x_min, y_min, x_max, y_max], dtype=np.float32)
+            
+            print(f"[SAM2] Combined detection successful, box: {head_box}")
+            
+            # Save debug images if function exists
+            try:
+                save_head_debug_images(image_bgr, solid_mask, outline_mask, head_box, debug_name)
+            except:
+                pass
+            
+            return solid_mask, outline_mask, head_box
+    
+    print("[SAM2] Combined detection failed")
+    
+    # Fall back to local SAM2 if available
+    global predictor
     
     # Initialize SAM2 if needed
     if not SAM2_AVAILABLE:
