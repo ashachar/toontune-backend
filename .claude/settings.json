@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "pre-inference": "./hooks/pre_inference_hook.sh",
+    "post-inference": "./hooks/post_inference_hook.sh"
+  }
+}

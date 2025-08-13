@@ -51,3 +51,40 @@ coverage/
 # Package files
 *.tar.gz
 *.zip
+
+# Model weights and checkpoints
+*.weights
+*.pt
+*.bin
+*.npz
+checkpoints/
+model_weights/
+.yoloface/
+
+# Test outputs and debug files
+test_output/
+*_debug/
+debug/
+debug_*/
+
+# Media files (unless explicitly needed)
+*.mp4
+*.avi
+*.mov
+*.png
+*.jpg
+*.jpeg
+!cartoon-test/*.png
+!man.png
+
+# Binary executables
+rife-ncnn-vulkan*
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Embedded git repositories
+**/sam2/
+**/ToonCrafter/
+**/keras-yolo3/
