@@ -253,9 +253,11 @@ def build_dynamic_prompt(image_paths, grid_size, captions):
     # Add movement instructions
     prompt_parts.append("Each image with subtle but noticeable natural movements:")
     prompt_parts.append("gentle animations, slight movements maintaining natural and smooth motion while keeping face features")
-    prompt_parts.append("characters should perform simple hand gestures like waving, making V sign, putting hand in pocket")
-    prompt_parts.append("if holding an object, character should show it off by lifting it slightly, pointing to it, or making small demonstrative gestures with it")
-    prompt_parts.append("continuous movement in every frame, characters should be moving at all times")
+    prompt_parts.append("characters MUST perform natural hand gestures if hands are visible - waving, pointing, gesturing, presenting")
+    prompt_parts.append("hand movements should be smooth and controlled while maintaining exact hand shape, all fingers, and proportions")
+    prompt_parts.append("if holding an object, character should actively present or demonstrate it while keeping object shape intact")
+    prompt_parts.append("preserve exact hand anatomy, finger count, and object integrity from original image - no missing or extra elements")
+    prompt_parts.append("active body language with natural gestures, ensuring hands and objects maintain their original form")
     prompt_parts.append("maintain eye contact forward, stable gaze direction, minimal facial expression changes, closed or slightly open mouth")
     prompt_parts.append("independent panel movements")
     
@@ -277,7 +279,11 @@ def generate_kling_animation(image_path, prompt, output_dir, resume=False):
     
     # Enhanced negative prompt for stability
     negative_prompt = (
-        "static, still, frozen, motionless, stationary, idle, "
+        "static, still, frozen, motionless, stationary, idle, idle hand, idle hands, "
+        "hand morphing, hand warping, hand distortion, finger distortion, extra fingers, missing fingers, "
+        "hand artifacts, hand glitches, hand deformation, broken hands, malformed hands, "
+        "object morphing, object warping, object distortion, object deformation, disappearing objects, "
+        "surprising movements, sudden changes, unexpected gestures, "
         "morphing, warping, distortion, blinking, flickering, "
         "eye rolling, crossed eyes, wandering gaze, looking sideways, crazy eyes, "
         "mouth opening wide, lip sync, talking, chewing, tongue out, "

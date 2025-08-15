@@ -7,5 +7,32 @@
     "cost_usd": 0.125,
     "processing_time_seconds": 131.0,
     "balance_after": 9.88
+  },
+  {
+    "timestamp": "2025-08-15T14:36:44.958534",
+    "model": "kwaivgi/kling-v2.1",
+    "mode": "standard",
+    "duration_seconds": 5,
+    "cost_usd": 0.125,
+    "processing_time_seconds": 128.3,
+    "balance_after": 9.75
+  },
+  {
+    "timestamp": "2025-08-15T14:44:21.701047",
+    "model": "kwaivgi/kling-v2.1",
+    "mode": "standard",
+    "duration_seconds": 5,
+    "cost_usd": 0.125,
+    "processing_time_seconds": 128.2,
+    "balance_after": 9.62
+  },
+  {
+    "timestamp": "2025-08-15T15:00:37.526730",
+    "model": "kwaivgi/kling-v2.1",
+    "mode": "standard",
+    "duration_seconds": 5,
+    "cost_usd": 0.125,
+    "processing_time_seconds": 129.7,
+    "balance_after": 9.5
   }
 ]
