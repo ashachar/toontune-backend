@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Bulk Image to Video Pipeline - No Initial Background Removal Version
-Keeps original backgrounds, only removes background from Kling-generated frames
+Bulk Image to Transparent Background Videos Pipeline
+Creates animated WebM videos with transparent backgrounds using Kling AI and FFmpeg despill
 """
 
 import os
@@ -33,6 +33,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "image-cap"))
 # Import smart transparency for video only (not for initial images)
 from smart_transparency_video import apply_smart_transparency_to_video
 from green_screen_removal import apply_green_screen_removal_to_video
+
+# Try to import improved versions
+try:
+    from green_screen_removal_v2 import apply_green_screen_removal_v2
+    use_v2_removal = True
+except ImportError:
+    use_v2_removal = False
+    
+try:
+    from green_screen_removal_improved import apply_green_screen_removal_improved
+    use_improved_removal = True
+except ImportError:
+    use_improved_removal = False
 
 # Import BLIP captioner
 from simple_captioner import BlipCaptioner
@@ -240,6 +253,10 @@ def build_dynamic_prompt(image_paths, grid_size, captions):
     # Add movement instructions
     prompt_parts.append("Each image with subtle but noticeable natural movements:")
     prompt_parts.append("gentle animations, slight movements maintaining natural and smooth motion while keeping face features")
+    prompt_parts.append("characters should perform simple hand gestures like waving, making V sign, putting hand in pocket")
+    prompt_parts.append("if holding an object, character should show it off by lifting it slightly, pointing to it, or making small demonstrative gestures with it")
+    prompt_parts.append("continuous movement in every frame, characters should be moving at all times")
+    prompt_parts.append("maintain eye contact forward, stable gaze direction, minimal facial expression changes, closed or slightly open mouth")
     prompt_parts.append("independent panel movements")
     
     return " ".join(prompt_parts)
@@ -260,9 +277,13 @@ def generate_kling_animation(image_path, prompt, output_dir, resume=False):
     
     # Enhanced negative prompt for stability
     negative_prompt = (
+        "static, still, frozen, motionless, stationary, idle, "
         "morphing, warping, distortion, blinking, flickering, "
+        "eye rolling, crossed eyes, wandering gaze, looking sideways, crazy eyes, "
+        "mouth opening wide, lip sync, talking, chewing, tongue out, "
+        "facial expression changes, excessive blinking, rapid eye movement, "
         "color change, hue shift, saturation change, brightness change, "
-        "face distortion, mouth morphing, eye blinking rapidly, "
+        "face distortion, mouth morphing, eye distortion, pupil changes, "
         "shape shifting, melting, dissolving, transforming, "
         "sudden movements, jerky motion, glitches, artifacts, "
         "background changes, scene changes, camera movement, "
@@ -331,12 +352,12 @@ def generate_kling_animation(image_path, prompt, output_dir, resume=False):
         return None
 
 def split_grid_video_with_bg_removal(video_path, grid_size, cell_size, image_names, output_dir):
-    """Split grid video into individual WebM videos WITH background removal as post-processing"""
+    """Split grid video into individual WebM videos using FFmpeg despill chromakey"""
     cols, rows = grid_size
     cell_width, cell_height = cell_size
     
     print(f"\n✂️ Splitting {cols}x{rows} grid into individual videos...")
-    print("  (Applying background removal as post-processing)")
+    print("  (Using FFmpeg chromakey + despill for clean edges)")
     
     # Get actual video dimensions
     cmd = [
@@ -377,40 +398,38 @@ def split_grid_video_with_bg_removal(video_path, grid_size, cell_size, image_nam
         
         print(f"  [{i+1}/{min(len(image_names), cols*rows)}] Creating {output_file.name}...")
         
-        # Create temp MP4 with crop
-        temp_mp4 = output_dir / f"temp_{clean_name}.mp4"
-        
-        # Crop video
+        # Use FFmpeg despill chromakey directly (best quality)
+        print(f"    Applying FFmpeg chromakey + despill...")
         cmd = [
             'ffmpeg', '-i', str(video_path),
-            '-vf', f'crop={actual_cell_width}:{actual_cell_height}:{x}:{y}',
-            '-c:v', 'libx264',
-            '-preset', 'fast',
-            str(temp_mp4),
+            '-filter_complex', 
+            f"[0:v]crop={actual_cell_width}:{actual_cell_height}:{x}:{y}[cropped]; "
+            f"[cropped]chromakey=green:0.10:0.08[ck]; "
+            f"[ck]despill=type=green:mix=0.6[dsp]; "
+            f"[dsp]format=yuva420p[out]",
+            '-map', '[out]',
+            '-c:v', 'libvpx-vp9',
+            '-pix_fmt', 'yuva420p',
+            '-b:v', '0',
+            '-crf', '25',
+            str(output_file),
             '-y',
             '-loglevel', 'error'
         ]
         subprocess.run(cmd, check=True)
         
-        # Apply green screen removal (much cleaner than smart transparency)
-        print(f"    Removing green screen from Kling frames...")
-        apply_green_screen_removal_to_video(temp_mp4, output_file)
-        
-        # Clean up temp file
-        temp_mp4.unlink()
-        
         output_files.append(output_file)
     
     return output_files
 
-def bulk_image_to_video_no_bg_removal(input_folder, output_name=None, grid_size=None, image_count=None, resume=False, test_mode=False):
+def bulk_image_to_transparent_bg_videos(input_folder, output_name=None, grid_size=None, image_count=None, resume=False, test_mode=False):
     """
-    Main pipeline without initial background removal
-    Background removal only applied to Kling-generated frames
+    Main pipeline to create transparent background animated videos
+    Uses Kling AI for animation and FFmpeg despill for clean transparency
     """
     
     print("=" * 70)
-    print("🎬 BULK IMAGE TO VIDEO PIPELINE (No Initial BG Removal)")
+    print("🎬 BULK IMAGE TO TRANSPARENT BACKGROUND VIDEOS PIPELINE")
     if test_mode:
         print("   (TEST MODE: Will stop before Kling API call)")
     print("=" * 70)
@@ -509,8 +528,8 @@ def bulk_image_to_video_no_bg_removal(input_folder, output_name=None, grid_size=
         print("❌ Animation generation failed")
         return False
     
-    # Step 4: Split into individual videos WITH background removal
-    print(f"\n[Step 4/4] Creating individual WebM videos with background removal...")
+    # Step 4: Split into individual videos with FFmpeg despill
+    print(f"\n[Step 4/4] Creating individual transparent WebM videos...")
     
     # Check if WebM files already exist (resume mode)
     expected_webm_count = min(len(image_files), grid_size[0] * grid_size[1])
@@ -542,23 +561,23 @@ def bulk_image_to_video_no_bg_removal(input_folder, output_name=None, grid_size=
     
     # List output files
     print(f"\n📦 Output files:")
-    print(f"  - {grid_path.name} (grid image with original backgrounds)")
+    print(f"  - {grid_path.name} (grid image with green screen)")
     print(f"  - kling_animation_raw.mp4 (raw Kling output)")
     print(f"  - {animation_path.name} (Kling animation)")
     for webm in webm_files[:5]:
-        print(f"  - {webm.name} (background removed)")
+        print(f"  - {webm.name} (transparent background)")
     if len(webm_files) > 5:
-        print(f"  ... and {len(webm_files)-5} more WebM files")
+        print(f"  ... and {len(webm_files)-5} more transparent WebM files")
     
     return True
 
 def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description='Bulk image to video pipeline without initial BG removal')
+    parser = argparse.ArgumentParser(description='Bulk image to transparent background videos pipeline')
     parser.add_argument('input_folder', help='Folder containing images')
     parser.add_argument('--output', help='Output folder name')
-    parser.add_argument('--grid', help='Grid size (e.g., 3x3, 4x4)')
+    parser.add_argument('--grid', help='Grid size (e.g., 5x2, 3x3)')
     parser.add_argument('--count', type=int, help='Expected image count')
     parser.add_argument('--resume', action='store_true', help='Resume from existing artifacts')
     parser.add_argument('--test', action='store_true', help='Test mode - skip Kling API')
@@ -573,7 +592,7 @@ def main():
             grid_size = (int(parts[0]), int(parts[1]))
     
     # Run pipeline
-    success = bulk_image_to_video_no_bg_removal(
+    success = bulk_image_to_transparent_bg_videos(
         args.input_folder,
         output_name=args.output,
         grid_size=grid_size,

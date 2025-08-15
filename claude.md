@@ -19,6 +19,32 @@ This is a ToonTune backend project for processing SVG animations with human-like
 - When needing to download models, weights, or external resources, STOP and provide the user with a search prompt for Perplexity
 - Ask the user to find the correct download link and provide it back
 
+## Bulk Image Animation Pipeline
+
+### Main Script: `bulk_image_to_transparent_bg_videos.py`
+Located in: `utils/bulk_animate_image/bulk_image_to_transparent_bg_videos.py`
+
+**THIS IS THE GO-TO TOOL FOR BULK IMAGE ANIMATION WITH TRANSPARENT BACKGROUNDS**
+
+This pipeline:
+1. Takes a folder of transparent character images
+2. Creates a grid (e.g., 5x2) with green screen background
+3. Sends to Kling AI for animation (89% cost savings)
+4. Splits the result and applies FFmpeg chromakey + despill for clean transparency
+5. Outputs individual WebM videos with transparent backgrounds
+
+### Usage
+```bash
+python utils/bulk_animate_image/bulk_image_to_transparent_bg_videos.py <input_folder> --grid 5x2
+```
+
+### Key Features
+- **FFmpeg Despill**: Removes green edges using `chromakey=green:0.10:0.08` + `despill=type=green:mix=0.6`
+- **Smart Prompting**: Uses BLIP-2 captioning for dynamic prompts
+- **Cost Tracking**: Tracks Replicate API costs
+- **Grid Optimization**: 5x2 default for tall character images
+- **Natural Animations**: Characters wave, show off objects, continuous movement
+
 ## Image Contour Drawing Method
 
 ### Overview
