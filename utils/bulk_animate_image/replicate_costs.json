@@ -1,0 +1,20 @@
+[
+  {
+    "timestamp": "2025-08-15T08:35:53.029842",
+    "model": "kwaivgi/kling-v2.1",
+    "mode": "standard",
+    "duration_seconds": 5,
+    "cost_usd": 0.125,
+    "processing_time_seconds": 2.0,
+    "balance_after": 9.88
+  },
+  {
+    "timestamp": "2025-08-15T08:59:46.957317",
+    "model": "kwaivgi/kling-v2.1",
+    "mode": "standard",
+    "duration_seconds": 5,
+    "cost_usd": 0.125,
+    "processing_time_seconds": 128.6,
+    "balance_after": 9.88
+  }
+]

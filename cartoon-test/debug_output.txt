@@ -1,0 +1,105 @@
+/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/cartoon-test/cartoon_face_mask_v3.py:308: DeprecationWarning: 'mode' parameter is deprecated and will be removed in Pillow 13 (2026-10-15)
+  Image.fromarray(rgba, mode="RGBA").save(cutout_path)
+[INFO] Using device: cpu
+
+============================================================
+PROCESSING: man.png
+============================================================
+[INFO] Image dimensions: 1024x1536
+
+[DEBUG] Finding head region for man
+[DEBUG] Image dimensions: 1024x1536
+[DEBUG] Strategy 1: Looking for skin tones...
+[DEBUG] Skin pixels found: 287030 pixels
+[DEBUG] Saved skin mask to man_debug_skin_mask.png
+[DEBUG] Found 17 skin contours
+[DEBUG] 16 significant contours (area > 500)
+[DEBUG] Merged contour bbox: x=138, y=63, w=735, h=1423
+[DEBUG] Expanded bbox: x=0, y=0, w=1024, h=1536
+[INFO] Final head region: [   0.    0. 1024. 1536.]
+
+[DEBUG] Running SAM2 for man
+[DEBUG] Initial box: [   0.    0. 1024. 1536.]
+[DEBUG] Using 46 positive points for SAM2
+[DEBUG] Saved point visualization to man_debug_points.png
+[DEBUG] Generating masks with SAM2...
+[DEBUG] Attempt 1 scores: [0.24395002 0.6689466  0.89667434]
+[DEBUG] Attempt 2 scores: [0.94384104 0.98459333 0.8688009 ]
+[DEBUG] Mask 0 coverage of box: 27.17%
+[DEBUG] Mask 1 coverage of box: 65.55%
+[DEBUG] Mask 2 coverage of box: 65.76%
+[DEBUG] Mask 3 coverage of box: 60.00%
+[DEBUG] Mask 4 coverage of box: 63.99%
+[DEBUG] Mask 5 coverage of box: 72.05%
+[DEBUG] Selected mask with 72.05% box coverage
+[DEBUG] Final mask coverage: 73.55% of image
+
+[DEBUG] Saving outputs for man
+[DEBUG] Saved mask: man_head_mask.png
+[DEBUG] Saved overlay: man_head_overlay.png
+[DEBUG] Saved bbox: man_head_bbox.png
+[DEBUG] Saved cutout: man_head_cutout.png
+[SUCCESS] Mask statistics:
+  - Total coverage: 73.55%
+  - Mask pixels: 1,156,877
+  - Vertical span: 99.9% of image height
+  - Mask spans rows 0 to 1535 (of 1536)
+
+============================================================
+PROCESSING: woman.png
+============================================================
+[INFO] Image dimensions: 1024x1024
+
+[DEBUG] Finding head region for woman
+[DEBUG] Image dimensions: 1024x1024
+[DEBUG] Strategy 1: Looking for skin tones...
+[DEBUG] Skin pixels found: 38157 pixels
+[DEBUG] Saved skin mask to woman_debug_skin_mask.png
+[DEBUG] Found 0 skin contours
+[DEBUG] Strategy 2: Using edge detection for cartoon outlines...
+[DEBUG] Found 1 edge contours
+[DEBUG] Largest edge contour: x=0, y=0, w=1024, h=1024
+[INFO] Final head region: [   0.    0. 1024. 1024.]
+
+[DEBUG] Running SAM2 for woman
+[DEBUG] Initial box: [   0.    0. 1024. 1024.]
+[DEBUG] Using 46 positive points for SAM2
+[DEBUG] Saved point visualization to woman_debug_points.png
+[DEBUG] Generating masks with SAM2...
+[DEBUG] Attempt 1 scores: [0.47280017 0.88491386 0.9476404 ]
+[DEBUG] Attempt 2 scores: [0.18960528 0.9765253  0.98409975]
+[DEBUG] Mask 0 coverage of box: 0.07%
+[DEBUG] Mask 1 coverage of box: 65.58%
+[DEBUG] Mask 2 coverage of box: 97.47%
+[DEBUG] Mask 3 coverage of box: 0.63%
+[DEBUG] Mask 4 coverage of box: 93.55%
+[DEBUG] Mask 5 coverage of box: 99.55%
+[DEBUG] Selected mask with 99.55% box coverage
+[DEBUG] Final mask coverage: 100.00% of image
+
+[DEBUG] Saving outputs for woman
+[DEBUG] Saved mask: woman_head_mask.png
+[DEBUG] Saved overlay: woman_head_overlay.png
+[DEBUG] Saved bbox: woman_head_bbox.png
+[DEBUG] Saved cutout: woman_head_cutout.png
+[SUCCESS] Mask statistics:
+  - Total coverage: 100.00%
+  - Mask pixels: 1,048,576
+  - Vertical span: 99.9% of image height
+  - Mask spans rows 0 to 1023 (of 1024)
+
+============================================================
+PROCESSING COMPLETE
+============================================================
+
+Results:
+
+man.png:
+  ✓ Mask: man_head_mask.png
+  ✓ Overlay: man_head_overlay.png
+
+woman.png:
+  ✓ Mask: woman_head_mask.png
+  ✓ Overlay: woman_head_overlay.png
+
+[INFO] Opening mask images...

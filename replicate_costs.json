@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2025-08-15T11:46:31.255293",
+    "model": "kwaivgi/kling-v2.1",
+    "mode": "standard",
+    "duration_seconds": 5,
+    "cost_usd": 0.125,
+    "processing_time_seconds": 131.0,
+    "balance_after": 9.88
+  }
+]
