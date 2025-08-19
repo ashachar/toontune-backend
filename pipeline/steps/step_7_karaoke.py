@@ -35,8 +35,12 @@ class KaraokeStep:
         self.dirs = dirs
         self.config = config
     
-    def run(self):
-        """Generate karaoke-style captions for edited videos."""
+    def run(self, use_final_with_cartoons=False):
+        """Generate karaoke-style captions for edited videos.
+        
+        Args:
+            use_final_with_cartoons: If True, use final_with_cartoons as input, otherwise use edited
+        """
         print("\n" + "-"*60)
         print("STEP 7: GENERATING KARAOKE CAPTIONS")
         print("-"*60)
@@ -60,9 +64,9 @@ class KaraokeStep:
         with open(scene_metadata_file, 'r') as f:
             scenes_data = json.load(f)
         
-        # Create karaoke output directory
-        karaoke_dir = self.dirs['scenes'] / 'karaoke'
-        karaoke_dir.mkdir(exist_ok=True)
+        # Output to edited directory (final output location for all processing)
+        output_dir = self.dirs['scenes_edited']
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize karaoke generator with interpolation support
         generator = KaraokeWithInterpolation()
@@ -92,25 +96,32 @@ class KaraokeStep:
                 print(f"  ⚠ No words found for scene {scene_num}")
                 continue
             
-            # Input video - prefer original if editing was skipped, otherwise use edited
+            # Determine input video based on pipeline state
+            # Priority: final_with_cartoons > embedded_phrases > edited > original
+            final_video = self.dirs['scenes'] / 'final_with_cartoons' / f"scene_{scene_num:03d}.mp4"
+            phrases_video = self.dirs['scenes'] / 'embedded_phrases' / f"scene_{scene_num:03d}.mp4"
             edited_video = self.dirs['scenes'] / 'edited' / f"scene_{scene_num:03d}.mp4"
             original_video = self.dirs['scenes'] / 'original' / f"scene_{scene_num:03d}.mp4"
             
-            # Check if editing was performed in this pipeline run
-            edit_was_skipped = not self.config.edit_videos
-            
-            if original_video.exists() and (edit_was_skipped or not edited_video.exists()):
-                input_video = str(original_video)
-                print(f"\n  Processing Scene {scene_num} (original version):")
+            # Use the most processed version available
+            if use_final_with_cartoons and final_video.exists():
+                input_video = str(final_video)
+                print(f"\n  Processing Scene {scene_num} (with cartoons):")
+            elif phrases_video.exists():
+                input_video = str(phrases_video)
+                print(f"\n  Processing Scene {scene_num} (with phrases):")
             elif edited_video.exists():
                 input_video = str(edited_video)
                 print(f"\n  Processing Scene {scene_num} (edited version):")
+            elif original_video.exists():
+                input_video = str(original_video)
+                print(f"\n  Processing Scene {scene_num} (original version):")
             else:
                 print(f"  ⚠ No video found for scene {scene_num}")
                 continue
             
-            # Output video with karaoke
-            output_video = str(karaoke_dir / f"scene_{scene_num:03d}.mp4")
+            # Output video to edited folder (final location)
+            output_video = str(output_dir / f"scene_{scene_num:03d}.mp4")
             
             print(f"    - Words to caption: {len(scene_words)}")
             print(f"    - Duration: {scene_end - scene_start:.1f}s")
@@ -128,5 +139,4 @@ class KaraokeStep:
             else:
                 print(f"  ⚠ Scene {scene_num} karaoke generation failed")
         
-        self.pipeline_state['steps_completed'].append('generate_karaoke')
-        print(f"\n  ✓ Karaoke videos saved to: {karaoke_dir}")
+        print(f"\n  ✓ Karaoke videos saved to: {output_dir}")

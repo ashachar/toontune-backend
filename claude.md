@@ -14,6 +14,15 @@ This is a ToonTune backend project for processing SVG animations with human-like
 - Draw in human-like order (head first for human figures)
 - Group nearby components for logical drawing sequences
 
+## Video Pipeline Output Rules
+**IMPORTANT: ALL final video outputs MUST go to the `scenes/edited/` folder**
+- The `scenes/edited/` folder is the ONLY output location for processed videos
+- Each processing step (phrases, cartoons, karaoke) modifies videos IN-PLACE in the edited folder
+- NO separate folders like `karaoke/`, `final_with_cartoons/`, etc.
+- Always use ORIGINAL quality scenes for processing (not downsampled)
+- Downsampled scenes are created for reference only
+- Pipeline flow: original → edited → +phrases → +cartoons → +karaoke (all in edited/)
+
 ## URL and Link Policy
 - NEVER attempt to download files or access URLs directly
 - When needing to download models, weights, or external resources, STOP and provide the user with a search prompt for Perplexity

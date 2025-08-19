@@ -484,6 +484,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "ffmpeg",
             "-i", input_video,
             "-vf", f"ass={ass_path}",
+            "-codec:v", "libx264",  # Specify video codec
+            "-crf", "18",           # High quality
+            "-preset", "fast",      # Fast encoding
             "-codec:a", "copy",
             "-y",
             output_video
@@ -500,8 +503,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             subprocess.run(cmd, capture_output=True, text=True, check=True)
             print(f"✅ Success! Video saved to: {Path(output_video).name}")
             
-            # Clean up
-            ass_path.unlink(missing_ok=True)
+            # Clean up - DISABLED for single-pass pipeline
+            # ass_path.unlink(missing_ok=True)
             return True
             
         except subprocess.CalledProcessError as e:

@@ -1,11 +1,11 @@
 # Unified Video Pipeline Structure
 
-## ✅ Consolidation Complete
+## ✅ Single Pipeline File
 
-There is now **ONE** main entry point for the unified video pipeline:
-- `unified_video_pipeline.py` - The single entry point for all video processing
+There is **ONLY ONE** pipeline entry point:
+- `unified_video_pipeline.py` - The ONLY pipeline script to use
 
-The redundant `unified_video_pipeline_refactored.py` has been archived to `archive/`.
+No archives, no duplicates, no confusion!
 
 ## File Organization
 

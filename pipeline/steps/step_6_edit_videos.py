@@ -1,8 +1,10 @@
 """
-Step 6: Video Editing
-======================
+Step 6: Video Editing (Effects Only - No Text Overlays)
+========================================================
 
 Edits original videos based on inference results.
+Only applies visual and sound effects - NO text overlays.
+Text overlays are handled by step_8_embed_phrases.py
 """
 
 import json
@@ -12,11 +14,10 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from apply_effects_to_original_scene import OriginalSceneProcessor
-from utils.text_placement.intelligent_text_placer import IntelligentTextPlacer
 
 
 class VideoEditStep:
-    """Handles video editing operations."""
+    """Handles video editing operations - effects only, no text."""
     
     def __init__(self, pipeline_state, dirs, config):
         """Initialize with pipeline references."""
@@ -26,9 +27,9 @@ class VideoEditStep:
         self.video_name = None  # Will be set by pipeline
     
     def run(self):
-        """Edit original videos based on inference results."""
+        """Edit original videos based on inference results - NO TEXT OVERLAYS."""
         print("\n" + "-"*60)
-        print("STEP 6: EDITING VIDEOS")
+        print("STEP 6: EDITING VIDEOS (Effects Only)")
         print("-"*60)
         
         if self.config.dry_run:
@@ -52,23 +53,7 @@ class VideoEditStep:
                 print(f"    Output: {edited_scene}")
         else:
             print("  [FULL MODE - Applying effects to videos]")
-            
-            # Load word-level transcript for ALL words
-            words_transcript = []
-            words_file = self.dirs['transcripts'] / 'transcript_words.json'
-            if words_file.exists():
-                with open(words_file, 'r') as f:
-                    words_data = json.load(f)
-                    words_transcript = words_data.get('words', [])
-                print(f"  Loaded {len(words_transcript)} words from transcript")
-            
-            # Load scene metadata to get time ranges
-            scenes_metadata = self.pipeline_state.get('scenes', {})
-            if not scenes_metadata or 'scenes' not in scenes_metadata:
-                scene_metadata_file = self.dirs['metadata'] / 'scenes.json'
-                if scene_metadata_file.exists():
-                    with open(scene_metadata_file, 'r') as f:
-                        scenes_metadata = json.load(f)
+            print("  NOTE: Text overlays disabled - handled by embedding steps")
             
             # Use the OriginalSceneProcessor
             base_dir = self.dirs['base'].parent
@@ -81,54 +66,22 @@ class VideoEditStep:
                 scene_count = scenes_data.get('count', 4)
             
             for scene_num in range(1, scene_count + 1):
+                # Use downsampled scenes as input to avoid any old text overlays
+                downsampled_scene = self.dirs['scenes_downsampled'] / f"scene_{scene_num:03d}.mp4"
                 original_scene = self.dirs['scenes_original'] / f"scene_{scene_num:03d}.mp4"
                 
-                if not original_scene.exists():
-                    print(f"  ⚠ Scene file not found: {original_scene}")
+                # Prefer downsampled if it exists, otherwise use original
+                if downsampled_scene.exists():
+                    input_scene = downsampled_scene
+                    print(f"  Using downsampled scene for editing: {downsampled_scene.name}")
+                elif original_scene.exists():
+                    input_scene = original_scene
+                    print(f"  Using original scene for editing: {original_scene.name}")
+                else:
+                    print(f"  ⚠ No scene file found for scene {scene_num}")
                     continue
                 
-                # Get scene time range
-                scene_info = None
-                if 'scenes' in scenes_metadata:
-                    for s in scenes_metadata['scenes']:
-                        if s['scene_number'] == scene_num:
-                            scene_info = s
-                            break
-                
-                if not scene_info:
-                    print(f"  ⚠ No scene info found for scene {scene_num}")
-                    continue
-                
-                scene_start = scene_info['start_seconds']
-                scene_end = scene_info['end_seconds']
-                
-                # Extract words for this scene
-                scene_words = []
-                for word in words_transcript:
-                    word_start = word.get('start', 0)
-                    word_end = word.get('end', word_start + 0.5)
-                    
-                    # Check if word is within this scene
-                    if scene_start <= word_start < scene_end:
-                        # Adjust timing relative to scene start
-                        scene_words.append({
-                            'word': word.get('word', ''),
-                            'start': word_start - scene_start,
-                            'end': word_end - scene_start
-                        })
-                
-                print(f"\n  Processing Scene {scene_num}:")
-                print(f"    - Scene duration: {scene_end - scene_start:.1f}s")
-                print(f"    - Words to place: {len(scene_words)}")
-                
-                # Use IntelligentTextPlacer to find optimal positions for each word
-                backgrounds_dir = self.dirs['scenes'] / 'backgrounds' / f"scene_{scene_num:03d}"
-                placer = IntelligentTextPlacer(str(original_scene), str(backgrounds_dir))
-                
-                print(f"  Extracting backgrounds and finding optimal text positions...")
-                positioned_words = placer.generate_word_positions(scene_words)
-                
-                # Load inference file for sound effects and visual effects
+                # Load inference file for sound effects and visual effects ONLY
                 inference_file = self.dirs['inferences'] / f"scene_{scene_num:03d}_inference.json"
                 sound_effects = []
                 suggested_effects = []
@@ -145,27 +98,28 @@ class VideoEditStep:
                             'volume': 0.5  # Default volume at 50%
                         })
                     
-                    # Extract visual effects if in test mode
-                    if self.config.test_mode and 'scenes' in inference:
+                    # Extract visual effects from suggested_effects
+                    if 'scenes' in inference:
                         for scene in inference['scenes']:
-                            if 'scene_description' in scene and 'suggested_effects' in scene['scene_description']:
-                                suggested_effects.extend(scene['scene_description'].get('suggested_effects', []))
+                            suggested_effects.extend(scene.get('suggested_effects', []))
                 
+                print(f"\n  Processing Scene {scene_num}:")
                 print(f"    - Sound effects: {len(sound_effects)}")
                 print(f"    - Visual effects: {len(suggested_effects)}")
+                print(f"    - Text overlays: DISABLED (handled by embedding steps)")
                 
-                # Process the scene with ALL words intelligently positioned
+                # Process the scene with NO text overlays
                 success = processor.process_scene(
                     video_name=self.video_name,
                     scene_number=scene_num,
-                    text_overlays=positioned_words,  # Use ALL words with intelligent positions
+                    text_overlays=[],  # EMPTY - No text overlays in editing step
                     sound_effects=sound_effects,
                     test_mode=self.config.test_mode,
-                    suggested_effects=suggested_effects if self.config.test_mode else None
+                    suggested_effects=suggested_effects if len(suggested_effects) > 0 else None
                 )
                 
                 if success:
-                    print(f"  ✓ Scene {scene_num} edited successfully with {len(positioned_words)} words")
+                    print(f"  ✓ Scene {scene_num} edited successfully (effects only)")
                 else:
                     print(f"  ⚠ Scene {scene_num} editing had issues")
         

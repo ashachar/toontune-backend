@@ -153,6 +153,16 @@ Examples:
         action="store_true",
         help="Skip video editing"
     )
+    parser.add_argument(
+        "--no-embed-phrases",
+        action="store_true",
+        help="Skip key phrase embedding"
+    )
+    parser.add_argument(
+        "--no-embed-cartoons",
+        action="store_true",
+        help="Skip cartoon character embedding"
+    )
     
     # Feature flags
     parser.add_argument(
@@ -201,7 +211,9 @@ Examples:
         target_scene_duration=args.target_scene_duration,
         test_mode=args.test_mode,
         generate_karaoke=args.karaoke and not args.no_karaoke,
-        karaoke_style=args.karaoke_style
+        karaoke_style=args.karaoke_style,
+        embed_phrases=not args.no_embed_phrases,
+        embed_cartoons=not args.no_embed_cartoons
     )
     
     # Create and run pipeline

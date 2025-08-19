@@ -25,3 +25,5 @@ class PipelineConfig:
     test_mode: bool = False  # When enabled, shows effect labels on video
     generate_karaoke: bool = False  # Generate karaoke-style captions
     karaoke_style: str = "continuous"  # Style: "continuous" (no flicker) or "simple"
+    embed_phrases: bool = True  # Embed key phrases as text overlays
+    embed_cartoons: bool = True  # Embed cartoon characters as animations
