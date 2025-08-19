@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Single-pass pipeline with FULL karaoke features
-================================================
+Single-Pass Video Pipeline
+===========================
 
-Uses the REAL karaoke_precise.py to generate proper word-by-word
-highlighting with colors, then combines with other overlays in single pass.
+Generates a video with all overlays in a single FFmpeg pass:
+- Karaoke with word-by-word highlighting and color rotation
+- Key phrase overlays
+- Cartoon character animations
+
+This avoids quality loss from multiple re-encodings.
 """
 
 import json
@@ -19,7 +23,7 @@ sys.path.append(str(Path(__file__).parent))
 from utils.captions.karaoke_precise import PreciseKaraoke
 
 
-class SinglePassFullPipeline:
+class SinglePassVideoPipeline:
     """Pipeline that uses REAL karaoke with all features."""
     
     def __init__(self, video_dir):
@@ -300,5 +304,15 @@ class SinglePassFullPipeline:
 
 
 if __name__ == "__main__":
-    pipeline = SinglePassFullPipeline("uploads/assets/videos/do_re_mi")
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Single-pass video pipeline with all overlays")
+    parser.add_argument("video_dir", nargs="?", default="uploads/assets/videos/do_re_mi",
+                        help="Path to video directory (default: uploads/assets/videos/do_re_mi)")
+    parser.add_argument("--scene", type=int, default=1,
+                        help="Scene number to process (default: 1)")
+    
+    args = parser.parse_args()
+    
+    pipeline = SinglePassVideoPipeline(args.video_dir)
     pipeline.run()
