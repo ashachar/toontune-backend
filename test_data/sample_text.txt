@@ -1,0 +1,9 @@
+# Sample text file for video text animator
+# Format: timestamp_in_seconds: text to display
+# Video duration: 3.7 seconds
+
+0.2: Welcome
+0.8: Ocean view
+1.4: Beautiful waves
+2.0: Perfect day
+2.6: Sail away!

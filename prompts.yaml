@@ -1,0 +1,419 @@
+prompts:
+  video_description:
+    description: Video analysis and editing plan generation
+    model: gemini-2.5-pro
+    purpose: Analyze videos and generate detailed editing plans with suggested effects
+    instances:
+    - video: do_re_mi_showcase_master
+      timestamp: '2025-08-18T08:01:27.125002'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 02_selective_color
+      timestamp: '2025-08-18T08:01:55.816652'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 03_text_behind
+      timestamp: '2025-08-18T08:01:56.588059'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 04_motion_text
+      timestamp: '2025-08-18T08:01:57.304363'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 05_animated_subtitles
+      timestamp: '2025-08-18T08:01:58.039016'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 06_floating
+      timestamp: '2025-08-18T08:01:58.768806'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 07_smooth_zoom
+      timestamp: '2025-08-18T08:01:59.477206'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 08_3d_photo
+      timestamp: '2025-08-18T08:02:00.204289'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 09_rotation
+      timestamp: '2025-08-18T08:02:00.921511'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 10_highlight_focus
+      timestamp: '2025-08-18T08:02:01.661572'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 11_progress_bar
+      timestamp: '2025-08-18T08:02:02.406608'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 12_video_in_text
+      timestamp: '2025-08-18T08:02:03.134147'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: do_re_mi_showcase_master
+      timestamp: '2025-08-18T08:02:03.868171'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 00_original
+      timestamp: '2025-08-18T08:02:04.583471'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 02_floating
+      timestamp: '2025-08-18T08:02:05.312341'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 03_zoom
+      timestamp: '2025-08-18T08:02:06.052323'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 04_progress
+      timestamp: '2025-08-18T08:02:06.782169'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: 05_motion_text
+      timestamp: '2025-08-18T08:02:07.519586'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: short_clip
+      timestamp: '2025-08-18T08:02:08.231088'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: do_re_mi_showcase_final
+      timestamp: '2025-08-18T08:02:08.950552'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: do_re_mi_small_full
+      timestamp: '2025-08-18T08:02:09.657427'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: do_re_mi_tiny_full
+      timestamp: '2025-08-18T08:02:10.385019'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T08:07:53.398372'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T08:07:54.244786'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T08:07:55.088126'
+      prompt_length: 27179
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T08:21:04.930321'
+      prompt_length: 29081
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T08:22:19.920536'
+      prompt_length: 40465
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T08:22:20.763260'
+      prompt_length: 41837
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T08:22:21.587988'
+      prompt_length: 33593
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T08:28:07.969956'
+      prompt_length: 40465
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T08:28:08.844898'
+      prompt_length: 41837
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T08:28:09.712206'
+      prompt_length: 33593
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T08:36:54.140175'
+      prompt_length: 41503
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T08:36:55.029741'
+      prompt_length: 42875
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T08:36:55.899838'
+      prompt_length: 34631
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T09:50:04.297924'
+      prompt_length: 42420
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T09:50:05.016570'
+      prompt_length: 43792
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T09:50:05.818235'
+      prompt_length: 35548
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T10:02:52.280834'
+      prompt_length: 42617
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T10:02:53.041099'
+      prompt_length: 43989
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T10:02:53.733784'
+      prompt_length: 35745
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_001
+      timestamp: '2025-08-18T11:39:30.411608'
+      prompt_length: 43930
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T11:40:56.875215'
+      prompt_length: 45302
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T11:41:47.351007'
+      prompt_length: 37058
+      response_valid: true
+      effects_suggested: 1
+    - video: scene_001
+      timestamp: '2025-08-18T12:18:56.539158'
+      prompt_length: 44445
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_002
+      timestamp: '2025-08-18T12:19:09.746680'
+      prompt_length: 45817
+      response_valid: false
+      effects_suggested: 0
+    - video: scene_003
+      timestamp: '2025-08-18T12:19:22.097559'
+      prompt_length: 37573
+      response_valid: false
+      effects_suggested: 0
+  video_segmentation:
+    description: Segment labeling for video annotation
+    model: gemini-2.0-flash-exp
+    purpose: Generate concise 2-4 word labels for video segments
+    prompt_template: "Describe each colored segment in this image with 2-4 words.\
+      \ \nThe right side shows the original image, the left shows segments.\nFocus\
+      \ only on the original image (right side) to understand what each segment represents.\n\
+      Return ONLY a JSON object with segment_id as keys and descriptions as values.\n"
+  image_captioning:
+    description: BLIP-2 captions for animation prompts
+    model: blip-2
+    purpose: Generate descriptive captions for character images to create animation
+      prompts
+  drawing_order:
+    description: Human-like drawing sequence description
+    model: gemini-2.0-flash-exp
+    purpose: Describe the drawing process for SVG animations
+    prompt_template: "Describe how a human would draw this image, starting with the\
+      \ head/face first, \nthen body parts in natural order.\n"
+  overlay_positioning:
+    description: Grid-based overlay positioning for video text elements
+    model: gemini-2.0-flash-exp
+    purpose: Determine optimal grid cells for text overlay placement
+    base_prompt: "Given a video frame with a numbered grid overlay, determine the\
+      \ best grid cells for placing the text overlay.\n\nThe overlay may span multiple\
+      \ grid cells. Provide the top-left and bottom-right corner cells.\n\nGrid coordinates\
+      \ are in format (row, column) where:\n- Row 1 is at the top, increasing downward\n\
+      - Column 1 is at the left, increasing rightward\n- Example: (3,5) means 3rd\
+      \ row from top, 5th column from left\n\nPlacement instruction: {placement}\n\
+      Text to place: \"{word}\"\nInteraction style: {interaction_style}\nElement size:\
+      \ {element_width}x{element_height} pixels\nGrid size: {grid_rows}x{grid_cols}\
+      \ cells\n\nAnalyze the frame and determine:\n1. Top-left corner cell for the\
+      \ overlay\n2. Bottom-right corner cell for the overlay\n\nIf the overlay fits\
+      \ within a single cell, both corners should be the same cell.\nIf the overlay\
+      \ needs more space, specify different cells to create a bounding rectangle.\n\
+      \nReturn ONLY a JSON object in this exact format:\n{{\n  \"top_left\": \"row,column\"\
+      ,\n  \"bottom_right\": \"row,column\"\n}}\n\nExample responses:\n- Single cell:\
+      \ {{\"top_left\": \"2,3\", \"bottom_right\": \"2,3\"}}\n- Multiple cells: {{\"\
+      top_left\": \"2,3\", \"bottom_right\": \"4,5\"}}\n- Wide text: {{\"top_left\"\
+      : \"5,2\", \"bottom_right\": \"5,8\"}}\n\nConsider:\n- The placement description\
+      \ provided\n- Visual balance and composition\n- Text/element size relative to\
+      \ grid cells\n- Avoiding occlusion of important subjects\n- The interaction\
+      \ style (whether it should move with characters or stay anchored)"
+    instances:
+    - overlay_id: scene1_overlay1_Let's
+      timestamp: 2.779
+      word: Let's
+      placement: far right edge as alternative
+      interaction_style: anchored_to_background
+      grid_size: 10x9
+      element_size: 100x50
+    - overlay_id: scene1_overlay2_start
+      timestamp: 3.579
+      word: start
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: anchored_to_background
+      grid_size: 10x9
+      element_size: 100x50
+    - overlay_id: scene1_overlay3_beginning
+      timestamp: 5.28
+      word: beginning
+      placement: far left edge as alternative
+      interaction_style: anchored_to_background
+      grid_size: 9x3
+      element_size: 250x60
+    - overlay_id: scene2_overlay4_A
+      timestamp: 13.02
+      word: A
+      placement: far left edge
+      interaction_style: floating_with_character
+      grid_size: 9x10
+      element_size: 60x60
+    - overlay_id: scene2_overlay5_B
+      timestamp: 13.72
+      word: B
+      placement: far left edge
+      interaction_style: floating_with_character
+      grid_size: 9x10
+      element_size: 60x60
+    - overlay_id: scene2_overlay6_C
+      timestamp: 14.439
+      word: C
+      placement: far left edge
+      interaction_style: floating_with_character
+      grid_size: 9x10
+      element_size: 60x60
+    - overlay_id: scene2_overlay7_Do
+      timestamp: 18.94
+      word: Do
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: anchored_to_background
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene2_overlay8_Re
+      timestamp: 19.959
+      word: Re
+      placement: far left edge as alternative
+      interaction_style: anchored_to_background
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene2_overlay9_Mi
+      timestamp: 20.059
+      word: Mi
+      placement: far left edge as alternative
+      interaction_style: anchored_to_background
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene3_overlay10_Do
+      timestamp: 30.36
+      word: Do
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: emerging_from_object
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene3_overlay11_Re
+      timestamp: 31.059
+      word: Re
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: emerging_from_object
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene3_overlay12_Mi
+      timestamp: 31.159
+      word: Mi
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: emerging_from_object
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene3_overlay13_Fa
+      timestamp: 31.399
+      word: Fa
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: emerging_from_object
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene3_overlay14_Sol
+      timestamp: 32.139
+      word: Sol
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: emerging_from_object
+      grid_size: 10x10
+      element_size: 80x50
+    - overlay_id: scene4_overlay15_deer
+      timestamp: 41.419
+      word: deer
+      placement: far left edge as alternative
+      interaction_style: anchored_to_background
+      grid_size: 9x6
+      element_size: 150x60
+    - overlay_id: scene4_overlay16_sun
+      timestamp: 46.34
+      word: sun
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: anchored_to_background
+      grid_size: 9x8
+      element_size: 120x60
+    - overlay_id: scene4_overlay17_myself
+      timestamp: 50.86
+      word: myself
+      placement: consider smaller overlay size or semi-transparent overlay
+      interaction_style: floating_with_character
+      grid_size: 10x5
+      element_size: 180x50
+    - overlay_id: scene4_overlay18_run
+      timestamp: 54.7
+      word: run
+      placement: far right edge as alternative
+      interaction_style: animated_across_screen
+      grid_size: 10x9
+      element_size: 100x50
+guidelines:
+- Use clear, specific instructions
+- Provide examples when possible
+- Specify output format explicitly
+- Include error handling instructions
+- Test with diverse inputs
+version: 1.0.0
+last_updated: '2025-01-18'

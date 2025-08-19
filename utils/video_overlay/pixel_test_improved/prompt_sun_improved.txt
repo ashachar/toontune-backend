@@ -1,0 +1,65 @@
+You are analyzing a video frame to determine where to place a text overlay.
+
+CRITICAL INSTRUCTION: The text overlay must be placed on BACKGROUND areas, NOT on top of people, faces, or main subjects in the frame. Prioritize empty sky, grass, walls, or other background elements.
+
+Frame dimensions: 256x114 pixels
+Text overlay: "sun"
+Required overlay size: 120x60 pixels
+Placement instruction: in the sky above her
+Interaction style: anchored_to_background
+
+The coordinate system:
+- Origin (0,0) is at the top-left corner
+- X increases rightward (0 to 255)
+- Y increases downward (0 to 113)
+
+PLACEMENT RULES (in order of priority):
+1. NEVER place text over faces, heads, or bodies of people/characters
+2. NEVER place text over important objects being held or interacted with
+3. PREFER placement over:
+   - Sky areas
+   - Plain backgrounds
+   - Grass or ground (if no subjects are there)
+   - Empty wall spaces
+   - Dark or uniform areas
+4. MAINTAIN readability - avoid busy patterns or high-contrast edges
+5. FOLLOW the placement instruction while respecting rules 1-4
+
+For the placement "in the sky above her":
+- First identify where subjects/characters are located
+- Then find the nearest suitable background area
+- Adjust position to avoid any overlap with subjects
+
+Return ONLY a JSON object with the pixel coordinates:
+{
+  "top_left": {
+    "x": <x_coordinate>,
+    "y": <y_coordinate>
+  },
+  "bottom_right": {
+    "x": <x_coordinate>,
+    "y": <y_coordinate>
+  },
+  "reasoning": "<brief explanation of why this position avoids subjects>"
+}
+
+The bounding box must:
+- Be exactly 120 pixels wide and 60 pixels tall
+- Not exceed frame boundaries (0 to 255 for x, 0 to 113 for y)
+- Avoid ALL subjects and main objects in the scene
+
+Example for "sun" with instruction "in the sky above her":
+If there's a person in the center-bottom of frame, and instruction is "in the sky above her":
+{
+  "top_left": {
+    "x": 20,
+    "y": 5
+  },
+  "bottom_right": {
+    "x": 139,
+    "y": 64
+  },
+  "reasoning": "Placed in upper sky area, well above the person's head to avoid any overlap"
+}
+
+Remember: bottom_right.x = top_left.x + 119, bottom_right.y = top_left.y + 59

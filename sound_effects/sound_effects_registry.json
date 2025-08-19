@@ -1,0 +1,42 @@
+{
+  "ding": {
+    "filepath": "sound_effects/downloaded/254239_y.wav.mp3",
+    "query": "ding bell short",
+    "attribution": "\"y.wav\" by kwahmah_02 (https://freesound.org/s/254239/) \u2014 License: http://creativecommons.org/licenses/by/3.0/",
+    "freesound_id": 254239,
+    "duration": 0.1,
+    "downloaded_at": "2025-08-18T12:59:56.419439"
+  },
+  "pop": {
+    "filepath": "sound_effects/downloaded/466554_Little pop.mp3",
+    "query": "pop short",
+    "attribution": "\"Little pop\" by danieldouch (https://freesound.org/s/466554/) \u2014 License: https://creativecommons.org/licenses/by/4.0/",
+    "freesound_id": 466554,
+    "duration": 0.1,
+    "downloaded_at": "2025-08-18T13:00:00.465831"
+  },
+  "swoosh": {
+    "filepath": "sound_effects/downloaded/254247_ae.wav.mp3",
+    "query": "whoosh short",
+    "attribution": "\"ae.wav\" by kwahmah_02 (https://freesound.org/s/254247/) \u2014 License: http://creativecommons.org/licenses/by/3.0/",
+    "freesound_id": 254247,
+    "duration": 0.1,
+    "downloaded_at": "2025-08-18T12:59:57.432465"
+  },
+  "chime": {
+    "filepath": "sound_effects/downloaded/491660_Chimes 3.wav.mp3",
+    "query": "chime short",
+    "attribution": "\"Chimes 3.wav\" by _bliind (https://freesound.org/s/491660/) \u2014 License: https://creativecommons.org/licenses/by/4.0/",
+    "freesound_id": 491660,
+    "duration": 0.489819,
+    "downloaded_at": "2025-08-18T12:59:58.494044"
+  },
+  "sparkle": {
+    "filepath": "sound_effects/downloaded/45213_delphis H2O SPARKLING 120.WAV.mp3",
+    "query": "sparkle short",
+    "attribution": "\"delphis H2O SPARKLING #120.WAV\" by delphidebrain (https://freesound.org/s/45213/) \u2014 License: https://creativecommons.org/licenses/by/4.0/",
+    "freesound_id": 45213,
+    "duration": 0.5,
+    "downloaded_at": "2025-08-18T12:59:59.451314"
+  }
+}

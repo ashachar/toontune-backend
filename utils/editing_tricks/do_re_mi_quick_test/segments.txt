@@ -1,0 +1,5 @@
+file 'do_re_mi_quick_test/00_original.mp4'
+file 'do_re_mi_quick_test/02_floating.mp4'
+file 'do_re_mi_quick_test/03_zoom.mp4'
+file 'do_re_mi_quick_test/04_progress.mp4'
+file 'do_re_mi_quick_test/05_motion_text.mp4'

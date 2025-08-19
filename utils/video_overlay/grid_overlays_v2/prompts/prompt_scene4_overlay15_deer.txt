@@ -1,0 +1,39 @@
+Given a video frame with a numbered grid overlay, determine the best grid cells for placing the text overlay.
+
+The overlay may span multiple grid cells. Provide the top-left and bottom-right corner cells.
+
+Grid coordinates are in format (row, column) where:
+- Row 1 is at the top, increasing downward
+- Column 1 is at the left, increasing rightward
+- Example: (3,5) means 3rd row from top, 5th column from left
+
+Placement instruction: in the grass to her right
+Text to place: "deer"
+Interaction style: anchored_to_background
+Element size: 150x60 pixels
+Grid size: 9x6 cells
+
+Analyze the frame and determine:
+1. Top-left corner cell for the overlay
+2. Bottom-right corner cell for the overlay
+
+If the overlay fits within a single cell, both corners should be the same cell.
+If the overlay needs more space, specify different cells to create a bounding rectangle.
+
+Return ONLY a JSON object in this exact format:
+{
+  "top_left": "row,column",
+  "bottom_right": "row,column"
+}
+
+Example responses:
+- Single cell: {"top_left": "2,3", "bottom_right": "2,3"}
+- Multiple cells: {"top_left": "2,3", "bottom_right": "4,5"}
+- Wide text: {"top_left": "5,2", "bottom_right": "5,8"}
+
+Consider:
+- The placement description provided
+- Visual balance and composition
+- Text/element size relative to grid cells
+- Avoiding occlusion of important subjects
+- The interaction style (whether it should move with characters or stay anchored)

@@ -1,0 +1,970 @@
+You are an expert video editor and senior director. Your task is to analyze the provided video and produce a detailed editing plan in a specific JSON format. Your analysis must be based only on the visual information in the video, without making any external assumptions about the plot, characters, or film title.
+
+CRITICAL INSTRUCTION FOR TEXT OVERLAYS: When suggesting text overlay placements, you MUST provide EXACT PIXEL COORDINATES for positioning. Specify the top-left corner (x, y) and bottom-right corner (x, y) in pixels. Consider the actual frame dimensions and available space. Many frames have subjects that fill most of the screen, leaving very limited safe areas for text. Be realistic about coordinates - ensure text doesn't occlude faces, bodies, or key action.
+
+The output MUST be a single, valid JSON object structured as follows:
+
+characters_in_video: A top-level list of objects. Identify every distinct character or logical group of characters from the entire video. For each, create an object with:
+
+name: A descriptive, generic name (e.g., "Adult Woman", "Younger Boy", "Children Group").
+
+description: A brief visual description.
+These names must be used consistently throughout the rest of the JSON.
+
+video_description: A top-level string containing a concise, high-level summary of the video's narrative and visual progression.
+
+sound_effects: A top-level list of suggested sound effects to enhance the video. Each sound effect object must contain exactly:
+
+sound: A simple, clear sound name (e.g., "whoosh", "bell", "footsteps", "splash", "chime", "pop", "swoosh", "ding").
+
+timestamp: The precise string timestamp when the sound should play (e.g., "12.500").
+
+scenes: A top-level list where the video is broken down into distinct scenes based on changes in camera angle, subject, or action. Each scene object in the list must contain:
+
+start_seconds and end_seconds: Highly accurate timestamps for the scene's duration, formatted as a string with microseconds (e.g., "43.251").
+
+scene_description: A nested object containing the following fields:
+
+characters: A list of the character name(s) present in the scene.
+
+most_prominent_figure: The main visual focus of the scene.
+
+character_actions: An object detailing what each character or group is doing.
+
+background: A description of the environment.
+
+camera_angle: The specific cinematographic term for the shot (e.g., "Long Shot", "Medium Close-Up", "High-Angle Shot").
+
+camera_movement: (Only if movement exists) A nested object with direction and pixels_per_second (as an integer speed). Omit this field entirely if the camera is static.
+
+suggested_effects: This is the most critical part. As a senior director, suggest one or more effects to enhance the scene. This must be a list of objects. Each object represents a specific, callable function from the reference documentation below and must contain:
+
+effect_fn_name: The exact string name of the function to be called (e.g., "apply_smooth_zoom").
+
+effect_timestamp: The precise string timestamp (e.g., "27.000") within the scene when the effect should trigger.
+
+effect_fn_params: A nested object containing the exact parameter names and appropriate values for the chosen function.
+
+top_left_pixels: An object with x and y coordinates in pixels for the top-left corner of the effect/overlay (e.g., {"x": 50, "y": 100}).
+
+bottom_right_pixels: An object with x and y coordinates in pixels for the bottom-right corner of the effect/overlay (e.g., {"x": 250, "y": 250}).
+
+text_overlays: (REQUIRED if transcript data is provided) A list of text placement suggestions for lyrics/dialogue. Each overlay object must contain:
+
+word: The text to display (from the transcript).
+
+start_seconds: When the text appears (matching transcript timing).
+
+end_seconds: When the text disappears.
+
+top_left_pixels: CRITICAL - An object with x and y pixel coordinates for the top-left corner of the text overlay. Must be realistic based on frame dimensions and avoid occluding subjects. Example: {"x": 10, "y": 10} for top-left corner placement.
+
+bottom_right_pixels: CRITICAL - An object with x and y pixel coordinates for the bottom-right corner of the text overlay. Together with top_left_pixels, this defines the text bounding box. Example: {"x": 90, "y": 40} for an 80x30 pixel text box.
+
+IMPORTANT COORDINATE GUIDELINES:
+  - Consider actual frame dimensions (commonly 1920x1080, 1280x720, or downsampled like 256x114)
+  - NEVER place text over faces or main subjects - check x,y coordinates carefully
+  - For a 256x114 frame with subject at center, safe areas might be: top-left (0-50, 0-20), top-right (200-256, 0-20), bottom corners
+  - Ensure bottom_right is greater than top_left in both x and y
+  - Keep text boxes reasonably sized (e.g., 80x30 pixels for single words in small frames)
+
+text_effect: The animation effect for the text itself, chosen from the text effects in the documentation (e.g., "Typewriter", "WordBuildup", "SplitText").
+
+text_effect_params: Parameters for the text effect.
+
+interaction_style: How the text interacts with the scene (e.g., "text_behind_object", "floating_with_character", "anchored_to_background", "emerging_from_water").
+
+Here is a short example of the expected output format:
+
+{
+  "characters_in_video": [
+    {
+      "name": "Man in Red Hat",
+      "description": "A man wearing a red baseball cap and a blue jacket."
+    },
+    {
+      "name": "Dog",
+      "description": "A golden retriever."
+    }
+  ],
+  "video_description": "A man plays fetch with his dog in a park on a sunny day.",
+  "sound_effects": [
+    {
+      "sound": "whoosh",
+      "timestamp": "2.800"
+    },
+    {
+      "sound": "bark",
+      "timestamp": "5.200"
+    },
+    {
+      "sound": "footsteps",
+      "timestamp": "6.100"
+    }
+  ],
+  "scenes": [
+    {
+      "start_seconds": "0.000",
+      "end_seconds": "5.120",
+      "scene_description": {
+        "characters": [
+          "Man in Red Hat"
+        ],
+        "most_prominent_figure": "Man in Red Hat",
+        "character_actions": {
+          "Man in Red Hat": "He winds up and throws a yellow tennis ball off-screen to the right."
+        },
+        "background": "A green park with trees in the distance.",
+        "camera_angle": "Medium Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_smooth_zoom",
+            "effect_timestamp": "2.500",
+            "effect_fn_params": {
+              "zoom_factor": 1.2,
+              "zoom_type": "in",
+              "easing": "ease_out"
+            },
+            "top_left_pixels": {
+              "x": 0,
+              "y": 0
+            },
+            "bottom_right_pixels": {
+              "x": 1920,
+              "y": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "fetch",
+            "start_seconds": "1.200",
+            "end_seconds": "2.000",
+            "top_left_pixels": {
+              "x": 850,
+              "y": 400
+            },
+            "bottom_right_pixels": {
+              "x": 970,
+              "y": 440
+            },
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "floating_with_character"
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "5.121",
+      "end_seconds": "10.500",
+      "scene_description": {
+        "characters": [
+          "Dog"
+        ],
+        "most_prominent_figure": "Dog",
+        "character_actions": {
+          "Dog": "The dog runs from left to right across the field, chasing the ball."
+        },
+        "background": "A large, open grassy field.",
+        "camera_angle": "Long Shot",
+        "camera_movement": {
+          "direction": "Pan Right",
+          "pixels_per_second": 250
+        },
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_speed_ramp",
+            "effect_timestamp": "7.000",
+            "effect_fn_params": {
+              "speed_points": [
+                [
+                  1.8,
+                  1.0
+                ],
+                [
+                  2.0,
+                  0.5
+                ],
+                [
+                  2.5,
+                  1.5
+                ]
+              ],
+              "interpolation": "smooth"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+IMPORTANT INSTRUCTIONS FOR TEXT PLACEMENT WITH PIXEL COORDINATES:
+- Each word from the transcript must be positioned with EXACT pixel coordinates
+- Provide top_left_pixels (x, y) and bottom_right_pixels (x, y) for every text overlay
+- Consider the actual frame dimensions when setting coordinates
+- For 1920x1080 frames: safe text areas might be (10,10)-(200,50) for top-left, (1720,10)-(1910,50) for top-right
+- For 256x114 downsampled frames: safe areas might be (5,5)-(85,35) for top-left, (170,5)-(250,35) for top-right
+- VERIFY coordinates don't place text over faces or main subjects
+- The box defined by coordinates should be appropriately sized for the word (80x30 for short words, 120x40 for longer)
+- Use the text animation classes (Typewriter, WordBuildup, SplitText) for text appearance
+- Consider using apply_text_behind_subject or apply_video_in_text for creative text integration
+
+IMPORTANT INSTRUCTIONS FOR COORDINATE CALCULATIONS:
+- Always ensure bottom_right.x > top_left.x and bottom_right.y > top_left.y
+- Width = bottom_right.x - top_left.x (should be 80-200 pixels for single words)
+- Height = bottom_right.y - top_left.y (should be 30-60 pixels for text)
+- For effects covering full frame: top_left=(0,0), bottom_right=(frame_width, frame_height)
+- Consider visual hierarchy - important words should have larger bounding boxes
+- Leave padding around text - don't place coordinates at exact frame edges
+
+IMPORTANT INSTRUCTIONS FOR SOUND EFFECTS:
+- Suggest sound effects that enhance key moments and actions
+- Keep sound names simple and universal (e.g., "whoosh", "ding", "pop")
+- Time sounds precisely to match visual events
+- Consider both diegetic sounds (from the scene) and non-diegetic sounds (for emphasis)
+- Typical sounds: whoosh, swoosh, pop, ding, chime, bell, click, snap, splash, thud, bounce, sparkle
+- Place 5-10 sound effects throughout the video for natural enhancement
+
+
+
+TRANSCRIPT TIMING DATA:
+The following JSON contains word-by-word timing for the audio in this video. Use this to place text naturally in the scene.
+{
+  "scene_number": 2,
+  "total_words": 102,
+  "duration_seconds": 58.98,
+  "words": [
+    {
+      "word": "So",
+      "start_seconds": "0.940",
+      "end_seconds": "1.760",
+      "duration_ms": 820
+    },
+    {
+      "word": "a",
+      "start_seconds": "2.559",
+      "end_seconds": "2.879",
+      "duration_ms": 320
+    },
+    {
+      "word": "needle",
+      "start_seconds": "2.879",
+      "end_seconds": "3.120",
+      "duration_ms": 241
+    },
+    {
+      "word": "pulling",
+      "start_seconds": "3.120",
+      "end_seconds": "3.499",
+      "duration_ms": 379
+    },
+    {
+      "word": "thread",
+      "start_seconds": "3.499",
+      "end_seconds": "5.140",
+      "duration_ms": 1641
+    },
+    {
+      "word": "La",
+      "start_seconds": "6.120",
+      "end_seconds": "6.199",
+      "duration_ms": 79
+    },
+    {
+      "word": "a",
+      "start_seconds": "6.379",
+      "end_seconds": "6.879",
+      "duration_ms": 500
+    },
+    {
+      "word": "note",
+      "start_seconds": "6.879",
+      "end_seconds": "6.999",
+      "duration_ms": 120
+    },
+    {
+      "word": "to",
+      "start_seconds": "6.999",
+      "end_seconds": "7.699",
+      "duration_ms": 700
+    },
+    {
+      "word": "follow",
+      "start_seconds": "7.699",
+      "end_seconds": "7.699",
+      "duration_ms": 0
+    },
+    {
+      "word": "so",
+      "start_seconds": "7.699",
+      "end_seconds": "7.980",
+      "duration_ms": 281
+    },
+    {
+      "word": "Ti",
+      "start_seconds": "9.659",
+      "end_seconds": "9.900",
+      "duration_ms": 241
+    },
+    {
+      "word": "a",
+      "start_seconds": "10.439",
+      "end_seconds": "10.860",
+      "duration_ms": 421
+    },
+    {
+      "word": "drink",
+      "start_seconds": "10.860",
+      "end_seconds": "10.900",
+      "duration_ms": 40
+    },
+    {
+      "word": "with",
+      "start_seconds": "10.900",
+      "end_seconds": "11.259",
+      "duration_ms": 359
+    },
+    {
+      "word": "jam",
+      "start_seconds": "11.259",
+      "end_seconds": "11.540",
+      "duration_ms": 281
+    },
+    {
+      "word": "and",
+      "start_seconds": "11.540",
+      "end_seconds": "12.799",
+      "duration_ms": 1259
+    },
+    {
+      "word": "bread",
+      "start_seconds": "12.799",
+      "end_seconds": "12.799",
+      "duration_ms": 0
+    },
+    {
+      "word": "That",
+      "start_seconds": "13.240",
+      "end_seconds": "13.460",
+      "duration_ms": 220
+    },
+    {
+      "word": "will",
+      "start_seconds": "13.460",
+      "end_seconds": "13.740",
+      "duration_ms": 280
+    },
+    {
+      "word": "bring",
+      "start_seconds": "13.740",
+      "end_seconds": "14.100",
+      "duration_ms": 360
+    },
+    {
+      "word": "us",
+      "start_seconds": "14.100",
+      "end_seconds": "14.759",
+      "duration_ms": 659
+    },
+    {
+      "word": "back",
+      "start_seconds": "14.759",
+      "end_seconds": "15.159",
+      "duration_ms": 400
+    },
+    {
+      "word": "to",
+      "start_seconds": "15.159",
+      "end_seconds": "16.019",
+      "duration_ms": 860
+    },
+    {
+      "word": "Do",
+      "start_seconds": "16.019",
+      "end_seconds": "16.159",
+      "duration_ms": 140
+    },
+    {
+      "word": "oh",
+      "start_seconds": "16.220",
+      "end_seconds": "16.759",
+      "duration_ms": 539
+    },
+    {
+      "word": "oh",
+      "start_seconds": "16.759",
+      "end_seconds": "17.240",
+      "duration_ms": 481
+    },
+    {
+      "word": "oh",
+      "start_seconds": "17.240",
+      "end_seconds": "17.619",
+      "duration_ms": 379
+    },
+    {
+      "word": "Do",
+      "start_seconds": "17.680",
+      "end_seconds": "18.079",
+      "duration_ms": 399
+    },
+    {
+      "word": "a",
+      "start_seconds": "18.360",
+      "end_seconds": "18.979",
+      "duration_ms": 619
+    },
+    {
+      "word": "deer",
+      "start_seconds": "18.979",
+      "end_seconds": "18.979",
+      "duration_ms": 0
+    },
+    {
+      "word": "a",
+      "start_seconds": "19.339",
+      "end_seconds": "20.280",
+      "duration_ms": 941
+    },
+    {
+      "word": "female",
+      "start_seconds": "20.280",
+      "end_seconds": "20.280",
+      "duration_ms": 0
+    },
+    {
+      "word": "deer",
+      "start_seconds": "20.280",
+      "end_seconds": "21.079",
+      "duration_ms": 799
+    },
+    {
+      "word": "Re",
+      "start_seconds": "21.680",
+      "end_seconds": "21.680",
+      "duration_ms": 0
+    },
+    {
+      "word": "a",
+      "start_seconds": "21.939",
+      "end_seconds": "22.439",
+      "duration_ms": 500
+    },
+    {
+      "word": "drop",
+      "start_seconds": "22.439",
+      "end_seconds": "22.439",
+      "duration_ms": 0
+    },
+    {
+      "word": "of",
+      "start_seconds": "22.439",
+      "end_seconds": "23.079",
+      "duration_ms": 640
+    },
+    {
+      "word": "golden",
+      "start_seconds": "23.079",
+      "end_seconds": "23.079",
+      "duration_ms": 0
+    },
+    {
+      "word": "sun",
+      "start_seconds": "23.079",
+      "end_seconds": "23.879",
+      "duration_ms": 800
+    },
+    {
+      "word": "Mi",
+      "start_seconds": "25.400",
+      "end_seconds": "25.460",
+      "duration_ms": 60
+    },
+    {
+      "word": "a",
+      "start_seconds": "25.659",
+      "end_seconds": "25.939",
+      "duration_ms": 280
+    },
+    {
+      "word": "name",
+      "start_seconds": "25.939",
+      "end_seconds": "26.420",
+      "duration_ms": 481
+    },
+    {
+      "word": "I",
+      "start_seconds": "26.420",
+      "end_seconds": "26.860",
+      "duration_ms": 440
+    },
+    {
+      "word": "call",
+      "start_seconds": "26.860",
+      "end_seconds": "27.240",
+      "duration_ms": 380
+    },
+    {
+      "word": "myself",
+      "start_seconds": "27.240",
+      "end_seconds": "28.000",
+      "duration_ms": 760
+    },
+    {
+      "word": "Fa",
+      "start_seconds": "28.000",
+      "end_seconds": "29.100",
+      "duration_ms": 1100
+    },
+    {
+      "word": "a",
+      "start_seconds": "29.280",
+      "end_seconds": "29.559",
+      "duration_ms": 279
+    },
+    {
+      "word": "long",
+      "start_seconds": "29.559",
+      "end_seconds": "29.799",
+      "duration_ms": 240
+    },
+    {
+      "word": "long",
+      "start_seconds": "30.000",
+      "end_seconds": "30.000",
+      "duration_ms": 0
+    },
+    {
+      "word": "way",
+      "start_seconds": "30.000",
+      "end_seconds": "30.159",
+      "duration_ms": 159
+    },
+    {
+      "word": "to",
+      "start_seconds": "30.159",
+      "end_seconds": "30.460",
+      "duration_ms": 301
+    },
+    {
+      "word": "run",
+      "start_seconds": "30.460",
+      "end_seconds": "31.939",
+      "duration_ms": 1479
+    },
+    {
+      "word": "So",
+      "start_seconds": "32.680",
+      "end_seconds": "32.680",
+      "duration_ms": 0
+    },
+    {
+      "word": "a",
+      "start_seconds": "32.960",
+      "end_seconds": "33.439",
+      "duration_ms": 479
+    },
+    {
+      "word": "needle",
+      "start_seconds": "33.439",
+      "end_seconds": "33.640",
+      "duration_ms": 201
+    },
+    {
+      "word": "pulling",
+      "start_seconds": "33.640",
+      "end_seconds": "34.059",
+      "duration_ms": 419
+    },
+    {
+      "word": "thread",
+      "start_seconds": "34.059",
+      "end_seconds": "35.519",
+      "duration_ms": 1460
+    },
+    {
+      "word": "La",
+      "start_seconds": "36.000",
+      "end_seconds": "36.439",
+      "duration_ms": 439
+    },
+    {
+      "word": "a",
+      "start_seconds": "36.540",
+      "end_seconds": "37.000",
+      "duration_ms": 460
+    },
+    {
+      "word": "note",
+      "start_seconds": "37.000",
+      "end_seconds": "37.079",
+      "duration_ms": 79
+    },
+    {
+      "word": "to",
+      "start_seconds": "37.079",
+      "end_seconds": "37.799",
+      "duration_ms": 720
+    },
+    {
+      "word": "follow",
+      "start_seconds": "37.799",
+      "end_seconds": "37.799",
+      "duration_ms": 0
+    },
+    {
+      "word": "so",
+      "start_seconds": "37.799",
+      "end_seconds": "38.579",
+      "duration_ms": 780
+    },
+    {
+      "word": "Ti",
+      "start_seconds": "39.659",
+      "end_seconds": "39.960",
+      "duration_ms": 301
+    },
+    {
+      "word": "a",
+      "start_seconds": "40.360",
+      "end_seconds": "40.699",
+      "duration_ms": 339
+    },
+    {
+      "word": "drink",
+      "start_seconds": "40.699",
+      "end_seconds": "40.839",
+      "duration_ms": 140
+    },
+    {
+      "word": "with",
+      "start_seconds": "40.839",
+      "end_seconds": "41.079",
+      "duration_ms": 240
+    },
+    {
+      "word": "jam",
+      "start_seconds": "41.079",
+      "end_seconds": "41.320",
+      "duration_ms": 241
+    },
+    {
+      "word": "and",
+      "start_seconds": "41.320",
+      "end_seconds": "42.320",
+      "duration_ms": 1000
+    },
+    {
+      "word": "bread",
+      "start_seconds": "42.320",
+      "end_seconds": "42.559",
+      "duration_ms": 239
+    },
+    {
+      "word": "That",
+      "start_seconds": "42.640",
+      "end_seconds": "43.119",
+      "duration_ms": 479
+    },
+    {
+      "word": "will",
+      "start_seconds": "43.119",
+      "end_seconds": "43.360",
+      "duration_ms": 241
+    },
+    {
+      "word": "bring",
+      "start_seconds": "43.360",
+      "end_seconds": "43.699",
+      "duration_ms": 339
+    },
+    {
+      "word": "us",
+      "start_seconds": "43.699",
+      "end_seconds": "44.299",
+      "duration_ms": 600
+    },
+    {
+      "word": "back",
+      "start_seconds": "44.299",
+      "end_seconds": "44.720",
+      "duration_ms": 421
+    },
+    {
+      "word": "to",
+      "start_seconds": "44.720",
+      "end_seconds": "45.259",
+      "duration_ms": 539
+    },
+    {
+      "word": "Do",
+      "start_seconds": "45.259",
+      "end_seconds": "45.720",
+      "duration_ms": 461
+    },
+    {
+      "word": "A",
+      "start_seconds": "45.979",
+      "end_seconds": "46.360",
+      "duration_ms": 381
+    },
+    {
+      "word": "deer",
+      "start_seconds": "46.360",
+      "end_seconds": "46.519",
+      "duration_ms": 159
+    },
+    {
+      "word": "a",
+      "start_seconds": "46.860",
+      "end_seconds": "47.199",
+      "duration_ms": 339
+    },
+    {
+      "word": "female",
+      "start_seconds": "47.199",
+      "end_seconds": "47.780",
+      "duration_ms": 581
+    },
+    {
+      "word": "deer",
+      "start_seconds": "47.780",
+      "end_seconds": "48.280",
+      "duration_ms": 500
+    },
+    {
+      "word": "Re",
+      "start_seconds": "49.259",
+      "end_seconds": "49.259",
+      "duration_ms": 0
+    },
+    {
+      "word": "a",
+      "start_seconds": "49.379",
+      "end_seconds": "50.000",
+      "duration_ms": 621
+    },
+    {
+      "word": "drop",
+      "start_seconds": "50.000",
+      "end_seconds": "50.019",
+      "duration_ms": 19
+    },
+    {
+      "word": "of",
+      "start_seconds": "50.019",
+      "end_seconds": "50.280",
+      "duration_ms": 261
+    },
+    {
+      "word": "golden",
+      "start_seconds": "50.280",
+      "end_seconds": "50.579",
+      "duration_ms": 299
+    },
+    {
+      "word": "sun",
+      "start_seconds": "50.579",
+      "end_seconds": "52.040",
+      "duration_ms": 1461
+    },
+    {
+      "word": "Mi",
+      "start_seconds": "52.839",
+      "end_seconds": "52.839",
+      "duration_ms": 0
+    },
+    {
+      "word": "a",
+      "start_seconds": "53.119",
+      "end_seconds": "53.600",
+      "duration_ms": 481
+    },
+    {
+      "word": "name",
+      "start_seconds": "53.600",
+      "end_seconds": "53.780",
+      "duration_ms": 180
+    },
+    {
+      "word": "I",
+      "start_seconds": "53.780",
+      "end_seconds": "54.299",
+      "duration_ms": 519
+    },
+    {
+      "word": "call",
+      "start_seconds": "54.299",
+      "end_seconds": "54.659",
+      "duration_ms": 360
+    },
+    {
+      "word": "myself",
+      "start_seconds": "54.659",
+      "end_seconds": "55.360",
+      "duration_ms": 701
+    },
+    {
+      "word": "Fa",
+      "start_seconds": "55.360",
+      "end_seconds": "56.320",
+      "duration_ms": 960
+    },
+    {
+      "word": "a",
+      "start_seconds": "56.500",
+      "end_seconds": "56.860",
+      "duration_ms": 360
+    },
+    {
+      "word": "long",
+      "start_seconds": "56.860",
+      "end_seconds": "57.079",
+      "duration_ms": 219
+    },
+    {
+      "word": "long",
+      "start_seconds": "57.259",
+      "end_seconds": "57.259",
+      "duration_ms": 0
+    },
+    {
+      "word": "way",
+      "start_seconds": "57.259",
+      "end_seconds": "57.479",
+      "duration_ms": 220
+    },
+    {
+      "word": "to",
+      "start_seconds": "57.479",
+      "end_seconds": "57.740",
+      "duration_ms": 261
+    },
+    {
+      "word": "run",
+      "start_seconds": "57.740",
+      "end_seconds": "58.979",
+      "duration_ms": 1239
+    }
+  ]
+}
+
+
+
+Use the following comprehensive library of functions to make your choices for the suggested_effects and text_overlays fields. You must use the exact function names and parameters as defined here.
+
+================================================================================
+TOONTUNE VIDEO EFFECTS AND ANIMATIONS REFERENCE
+================================================================================
+
+================================================================================
+EDITING TRICKS (utils/editing_tricks/)
+================================================================================
+
+### Color Effects
+----------------------------------------
+apply_color_splash(input_video: Union[str, Path], target_color: Tuple[int, int, int] = (255, 0, 0), tolerance: float = 30.0, segment_subject: bool = True, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_color_splash_to_frame(frame: np.ndarray, target_color: Tuple[int, int, int], tolerance: float, subject_mask: Optional[np.ndarray] = None) -> np.ndarray
+apply_selective_color(input_video: Union[str, Path], color_adjustments: List[dict], output_path: Optional[Union[str, Path]] = None) -> Path
+apply_selective_color_to_frame(frame: np.ndarray, adjustment: dict) -> np.ndarray
+
+### Text Effects
+----------------------------------------
+apply_text_behind_subject(input_video: Union[str, Path], text: str, position: Tuple[int, int] = None, font_scale: float = 2.0, font_color: Tuple[int, int, int] = (255, 255, 255), font_thickness: int = 3, segment_foreground: bool = True, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_motion_tracking_text(input_video: Union[str, Path], text: str, track_point: Optional[Tuple[int, int]] = None, offset: Tuple[int, int] = (0, -50), font_scale: float = 1.0, font_color: Tuple[int, int, int] = (255, 255, 255), font_thickness: int = 2, background_color: Optional[Tuple[int, int, int]] = (0, 0, 0), output_path: Optional[Union[str, Path]] = None) -> Path
+apply_animated_subtitle(input_video: Union[str, Path], subtitles: List[Dict[str, any]], font_scale: float = 1.0, font_color: Tuple[int, int, int] = (255, 255, 255), background_color: Tuple[int, int, int] = (0, 0, 0), animation_type: str = 'fade', output_path: Optional[Union[str, Path]] = None) -> Path
+apply_subtitle_animation(frame: np.ndarray, text: str, position: Union[str, Tuple[int, int]], progress: float, animation_type: str, font: int, font_scale: float, font_color: Tuple[int, int, int], bg_color: Tuple[int, int, int]) -> np.ndarray
+
+### Motion Effects
+----------------------------------------
+apply_floating_effect(input_video: Union[str, Path], amplitude: float = 20.0, frequency: float = 0.5, direction: str = 'vertical', phase_shift: float = 0.0, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_smooth_zoom(input_video: Union[str, Path], zoom_factor: float = 1.5, zoom_center: Optional[Tuple[int, int]] = None, zoom_type: str = 'in', easing: str = 'ease_in_out', hold_frames: int = 0, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_3d_photo_effect(input_video: Union[str, Path], parallax_strength: float = 30.0, num_layers: int = 5, movement_type: str = 'horizontal', use_depth_estimation: bool = True, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_zoom_to_frame(frame: np.ndarray, zoom: float, center: Tuple[int, int]) -> np.ndarray
+apply_easing(t: float, easing_type: str) -> float
+apply_parallax_effect(frame: np.ndarray, depth_map: np.ndarray, dx: float, dy: float, num_layers: int) -> np.ndarray
+apply_rotation_effect(input_video: Union[str, Path], rotation_speed: float = 30.0, rotation_axis: str = 'z', pivot_point: Optional[Tuple[int, int]] = None, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_3d_rotation(frame: np.ndarray, angle: float, axis: str, pivot: Tuple[int, int]) -> np.ndarray
+apply_dolly_zoom(input_video: Union[str, Path], dolly_speed: float = 0.02, dolly_direction: str = 'in', smooth_acceleration: bool = True, crop_to_original: bool = True, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_rack_focus(input_video: Union[str, Path], focus_points: List[Tuple[int, int]], focus_timings: Optional[List[float]] = None, blur_strength: float = 15.0, transition_duration: float = 1.0, use_depth: bool = False, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_handheld_shake(input_video: Union[str, Path], shake_intensity: float = 5.0, shake_frequency: float = 2.0, rotation_amount: float = 1.0, smooth_motion: bool = True, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_speed_ramp(input_video: Union[str, Path], speed_points: List[Tuple[float, float]], interpolation: str = 'smooth', maintain_duration: bool = False, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_bloom_effect(input_video: Union[str, Path], threshold: float = 200, bloom_intensity: float = 1.5, blur_radius: int = 21, color_shift: Optional[Tuple[float, float, float]] = None, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_ken_burns(input_image: Union[str, Path], duration: float = 5.0, fps: int = 30, start_scale: float = 1.0, end_scale: float = 1.3, start_position: Optional[Tuple[int, int]] = None, end_position: Optional[Tuple[int, int]] = None, easing: str = 'ease_in_out', output_path: Optional[Union[str, Path]] = None) -> Path
+apply_light_sweep(input_video: Union[str, Path], sweep_duration: float = 1.0, sweep_width: int = 100, sweep_angle: float = 45.0, sweep_color: Tuple[int, int, int] = (255, 255, 200), sweep_intensity: float = 0.5, repeat_interval: Optional[float] = None, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_selective_blur(frame: np.ndarray, focus_point: Tuple[int, int], max_blur: float, depth_map: Optional[np.ndarray] = None) -> np.ndarray
+
+### Layout Effects
+----------------------------------------
+apply_highlight_focus(input_video: Union[str, Path], focus_area: Optional[Tuple[int, int, int, int]] = None, blur_strength: int = 21, vignette: bool = True, track_subject: bool = False, output_path: Optional[Union[str, Path]] = None) -> Path
+add_progress_bar(input_video: Union[str, Path], bar_height: int = 5, bar_color: Tuple[int, int, int] = (0, 255, 0), background_color: Tuple[int, int, int] = (50, 50, 50), position: str = 'bottom', style: str = 'solid', output_path: Optional[Union[str, Path]] = None) -> Path
+apply_video_in_text(input_video: Union[str, Path], text: str, font_scale: float = 10.0, font_thickness: int = 30, position: Optional[Tuple[int, int]] = None, output_path: Optional[Union[str, Path]] = None) -> Path
+apply_split_screen(videos: List[Union[str, Path]], layout: str = 'horizontal', border_width: int = 2, border_color: Tuple[int, int, int] = (255, 255, 255), output_path: Optional[Union[str, Path]] = None) -> Path
+
+================================================================================
+ANIMATIONS (utils/animations/)
+================================================================================
+
+All animation classes inherit from Animation base class.
+Common parameters: element_path, background_path, position, duration, fps
+
+Size-transforming animations (inherit from ScaleTransformAnimation):
+  - Support start_width, start_height, end_width, end_height parameters
+  - Include: ZoomIn, ZoomOut, StretchSquash, DepthZoom
+
+### Motion Effects
+----------------------------------------
+Bounce(element_path: str, background_path: str, position: Tuple[int, int], bounce_height: float = 200, num_bounces: int = 3, bounce_duration: int = 45, bounce_type: str = 'in', gravity: float = 0.8, damping: float = 0.6, squash_stretch: bool = True, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Carousel(element_path: str, background_path: str, position: Tuple[int, int], num_items: int = 6, radius: float = 150, rotation_speed: float = 1.5, tilt_angle: float = 15, perspective_scale: bool = True, fade_back: bool = True, vertical_carousel: bool = False, oscillate: bool = False, item_rotation: bool = True, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+DepthZoom(element_path: str, background_path: str, position: Tuple[int, int], zoom_type: str = 'approach', start_depth: float = -5, end_depth: float = 2, focal_length: float = 50, depth_blur: bool = True, motion_blur: bool = True, parallax_layers: int = 0, fog_effect: bool = True, camera_shake: bool = False, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+EmergenceFromStaticPoint(element_path: str, background_path: str, position: Tuple[int, int], direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, emergence_speed: float = 1.0, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Roll(element_path: str, background_path: str, position: Tuple[int, int], roll_direction: str = 'right', roll_type: str = 'in', roll_duration: int = 45, rotations: float = 2.0, bounce_effect: bool = True, bounce_amplitude: float = 10, easing: str = 'ease_out', deformation: bool = True, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Rotate3D(element_path: str, background_path: str, position: Tuple[int, int], rotation_axis: str = 'y', rotation_speed: float = 2.0, perspective_distance: float = 500, lighting: bool = True, depth_blur: bool = True, wobble: bool = False, rotation_direction: str = 'forward', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Spin(element_path: str, background_path: str, position: Tuple[int, int], spin_degrees: float = 360, spin_duration: int = 30, spin_type: str = 'in', spin_direction: str = 'clockwise', easing: str = 'linear', scale_during_spin: bool = True, scale_factor: float = 0.8, motion_blur: bool = False, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Warp(element_path: str, background_path: str, position: Tuple[int, int], warp_type: str = 'rubber', warp_intensity: float = 0.5, warp_center: Optional[Tuple[int, int]] = None, warp_radius: float = 100, oscillate: bool = True, frequency: float = 1.0, randomize: bool = False, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Wave(element_path: str, background_path: str, position: Tuple[int, int], wave_type: str = 'horizontal', wave_amplitude: float = 20, wave_frequency: float = 2.0, wave_speed: float = 1.0, wave_direction: str = 'forward', damping: float = 0.0, phase_offset: float = 0.0, distort_edges: bool = True, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+
+### Transition Effects
+----------------------------------------
+FadeIn(element_path: str, background_path: str, position: Tuple[int, int], center_point: Optional[Tuple[int, int]] = None, fade_speed: float = 0.05, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+FadeOut(element_path: str, background_path: str, position: Tuple[int, int], center_point: Optional[Tuple[int, int]] = None, fade_speed: float = 0.05, fade_start_frame: int = 0, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Flip(element_path: str, background_path: str, position: Tuple[int, int], flip_axis: str = 'horizontal', flip_duration: int = 30, flip_direction: str = 'forward', flip_type: str = 'in', num_flips: float = 1.0, perspective_strength: float = 0.7, show_back: bool = False, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+SlideIn(element_path: str, background_path: str, position: Tuple[int, int], slide_direction: str = 'left', slide_duration: int = 30, easing: str = 'ease_out', overshoot: float = 0.0, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+SlideOut(element_path: str, background_path: str, position: Tuple[int, int], slide_direction: str = 'right', slide_duration: int = 30, slide_start_frame: int = 0, easing: str = 'ease_in', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+ZoomIn(element_path: str, background_path: str, position: Tuple[int, int], start_scale: float = 0.0, end_scale: float = 1.0, zoom_duration: int = 20, zoom_center: Optional[Tuple[int, int]] = None, easing: str = 'ease_out', rotation_during_zoom: float = 0, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+ZoomOut(element_path: str, background_path: str, position: Tuple[int, int], start_scale: float = 1.0, end_scale: float = 0.0, zoom_duration: int = 20, zoom_start_frame: int = 0, zoom_center: Optional[Tuple[int, int]] = None, easing: str = 'ease_in', rotation_during_zoom: float = 0, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+
+### Visual Effects
+----------------------------------------
+Glitch(element_path: str, background_path: str, position: Tuple[int, int], glitch_intensity: float = 0.5, glitch_frequency: float = 0.3, glitch_duration: int = 3, rgb_shift: bool = True, scan_lines: bool = True, pixel_sort: bool = True, color_invert: bool = True, displacement: bool = True, noise: bool = True, glitch_pattern: str = 'random', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+LensFlare(element_path: str, background_path: str, position: Tuple[int, int], flare_type: str = 'anamorphic', flare_position: Optional[Tuple[int, int]] = None, flare_intensity: float = 1.0, flare_color: str = '#FFFF88', num_artifacts: int = 5, movement: bool = True, rainbow_effect: bool = True, bloom: bool = True, flicker: bool = False, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+NeonGlow(element_path: str, background_path: str, position: Tuple[int, int], glow_color: str = '#00FF00', glow_intensity: float = 0.8, glow_radius: int = 10, pulse: bool = True, pulse_speed: float = 1.0, edge_detect: bool = True, multi_color: bool = False, flicker: bool = True, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Particles(element_path: str, background_path: str, position: Tuple[int, int], particle_type: str = 'sparkles', num_particles: int = 50, particle_size: float = 0.03, particle_direction: str = 'up', particle_speed: float = 1.0, formation_type: str = 'dissolve', color_variation: bool = True, glow_effect: bool = True, turbulence: float = 0.3, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+Shatter(element_path: str, background_path: str, position: Tuple[int, int], shatter_type: str = 'glass', num_pieces: int = 16, shatter_point: Optional[Tuple[int, int]] = None, explosion_force: float = 1.0, gravity: float = 0.5, rotation_speed: float = 1.0, fade_fragments: bool = True, shatter_delay: int = 0, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+
+### Text Effects
+----------------------------------------
+SplitText(element_path: str, background_path: str, position: Tuple[int, int], text: Optional[str] = None, split_mode: str = 'word', split_direction: str = 'horizontal', split_timing: str = 'simultaneous', split_distance: int = 200, rotation_on_split: bool = True, fade_on_split: bool = False, rejoin: bool = False, font_size: int = 48, font_color: str = '#FFFFFF', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None)
+Typewriter(element_path: str, background_path: str, position: Tuple[int, int], text: Optional[str] = None, font_size: int = 48, font_color: str = '#FFFFFF', typing_speed: int = 2, cursor_visible: bool = True, cursor_blink_rate: int = 15, text_position: Optional[Tuple[int, int]] = None, sound_effect: bool = False, line_height: float = 1.2, direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None)
+WordBuildup(element_path: str, background_path: str, position: Tuple[int, int], text: Optional[str] = None, buildup_mode: str = 'fade', word_delay: int = 5, entrance_direction: str = 'bottom', emphasis_effect: bool = True, hold_duration: int = 30, font_size: int = 48, font_color: str = '#FFFFFF', highlight_color: str = '#FFFF00', alignment: str = 'center', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None)
+
+### Transform Effects
+----------------------------------------
+Skew(element_path: str, background_path: str, position: Tuple[int, int], skew_type: str = 'horizontal', skew_angle: float = 30, oscillate: bool = True, frequency: float = 1.0, easing: str = 'sine', anchor_point: str = 'center', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+StretchSquash(element_path: str, background_path: str, position: Tuple[int, int], deform_type: str = 'elastic', intensity: float = 0.5, frequency: float = 1.0, axis: str = 'vertical', preserve_volume: bool = True, anticipation: bool = True, follow_through: bool = True, easing: str = 'elastic', direction: float = 0, start_frame: int = 0, animation_start_frame: int = 0, path: Optional[List[Tuple[int, int, int]]] = None, fps: int = 30, duration: float = 7.0, temp_dir: Optional[str] = None, remove_background: bool = True, background_color: str = '0x000000', background_similarity: float = 0.15)
+
+================================================================================
+SUMMARY
+================================================================================
+Total Editing Effects: 28
+Total Animation Classes: 28
+Grand Total: 56 effects
+
+================================================================================
+END OF EFFECTS REFERENCE
+================================================================================

@@ -1,0 +1,631 @@
+{
+  "characters_in_video": [
+    {
+      "name": "Children Group",
+      "description": "A group of children in matching outfits."
+    },
+    {
+      "name": "Adult Woman",
+      "description": "A woman in a brown dress."
+    }
+  ],
+  "video_description": "A group of children, led by an adult woman, are seen running and singing in a field against a mountainous backdrop.",
+  "sound_effects": [
+    {
+      "sound": "chime",
+      "timestamp": "0.579"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "4.380"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "7.480"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "10.480"
+    },
+    {
+      "sound": "ding",
+      "timestamp": "14.659"
+    }
+  ],
+  "scenes": [
+    {
+      "start_seconds": "0.000",
+      "end_seconds": "17.420",
+      "scene_description": {
+        "characters": [
+          "Children Group",
+          "Adult Woman"
+        ],
+        "most_prominent_figure": "Children Group",
+        "character_actions": {
+          "Children Group": "Running across the field. Later, they stand in a line and sing.",
+          "Adult Woman": "Standing near the group of children."
+        },
+        "background": "A green field with mountains in the background.",
+        "camera_angle": "Long Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_smooth_zoom",
+            "effect_timestamp": "0.000",
+            "effect_fn_params": {
+              "zoom_factor": 1.1,
+              "zoom_type": "in",
+              "easing": "ease_in_out"
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "So",
+            "start_seconds": "0.579",
+            "end_seconds": "1.099",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "1.219",
+            "end_seconds": "1.620",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "needle",
+            "start_seconds": "1.620",
+            "end_seconds": "1.779",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "pulling",
+            "start_seconds": "1.779",
+            "end_seconds": "2.179",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "thread",
+            "start_seconds": "2.179",
+            "end_seconds": "3.639",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "La",
+            "start_seconds": "4.380",
+            "end_seconds": "4.620",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "4.779",
+            "end_seconds": "4.999",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "note",
+            "start_seconds": "4.999",
+            "end_seconds": "5.099",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "to",
+            "start_seconds": "5.099",
+            "end_seconds": "5.359",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "follow",
+            "start_seconds": "5.359",
+            "end_seconds": "5.700",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "so",
+            "start_seconds": "5.700",
+            "end_seconds": "6.399",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Ti",
+            "start_seconds": "7.480",
+            "end_seconds": "7.779",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "8.219",
+            "end_seconds": "8.420",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "drink",
+            "start_seconds": "8.420",
+            "end_seconds": "8.539",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "with",
+            "start_seconds": "8.539",
+            "end_seconds": "8.779",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "jam",
+            "start_seconds": "8.779",
+            "end_seconds": "8.999",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "and",
+            "start_seconds": "8.999",
+            "end_seconds": "9.260",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "bread",
+            "start_seconds": "9.260",
+            "end_seconds": "10.219",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "That",
+            "start_seconds": "10.480",
+            "end_seconds": "10.719",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "will",
+            "start_seconds": "10.719",
+            "end_seconds": "10.920",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "bring",
+            "start_seconds": "10.920",
+            "end_seconds": "11.260",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "us",
+            "start_seconds": "11.260",
+            "end_seconds": "11.819",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "back",
+            "start_seconds": "11.819",
+            "end_seconds": "12.200",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "to",
+            "start_seconds": "12.200",
+            "end_seconds": "12.740",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Do",
+            "start_seconds": "12.740",
+            "end_seconds": "14.160",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Do",
+            "start_seconds": "14.659",
+            "end_seconds": "14.939",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "re",
+            "start_seconds": "14.939",
+            "end_seconds": "15.140",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "mi",
+            "start_seconds": "15.159",
+            "end_seconds": "15.280",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "fa",
+            "start_seconds": "15.539",
+            "end_seconds": "15.539",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "so",
+            "start_seconds": "15.599",
+            "end_seconds": "15.760",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "la",
+            "start_seconds": "15.760",
+            "end_seconds": "15.959",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "ti",
+            "start_seconds": "15.959",
+            "end_seconds": "16.159",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "do",
+            "start_seconds": "16.220",
+            "end_seconds": "16.480",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "so",
+            "start_seconds": "16.580",
+            "end_seconds": "17.000",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "do",
+            "start_seconds": "17.000",
+            "end_seconds": "17.420",
+            "placement": "top left corner away from subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

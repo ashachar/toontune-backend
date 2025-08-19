@@ -1,0 +1,954 @@
+{
+  "characters_in_video": [
+    {
+      "name": "Adult Woman",
+      "description": "A woman with short blonde hair, wearing a brown dress and playing a guitar."
+    },
+    {
+      "name": "Children Group",
+      "description": "A group of seven children, dressed in matching outfits."
+    }
+  ],
+  "video_description": "A woman plays a guitar and sings with a group of children in a grassy field with mountains in the background. They sing a song together and dance.",
+  "sound_effects": [
+    {
+      "sound": "chime",
+      "timestamp": "1.760"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "5.140"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "7.980"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "12.799"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "17.619"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "21.079"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "23.879"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "28.000"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "31.939"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "35.519"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "38.579"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "42.559"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "45.720"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "48.280"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "52.040"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "55.360"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "58.979"
+    }
+  ],
+  "scenes": [
+    {
+      "start_seconds": "0.000",
+      "end_seconds": "12.800",
+      "scene_description": {
+        "characters": [
+          "Adult Woman",
+          "Children Group"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Playing a guitar and singing.",
+          "Children Group": "Sitting on the grass, listening and starting to sing along."
+        },
+        "background": "A grassy field with a mountain range in the background.",
+        "camera_angle": "Long Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_smooth_zoom",
+            "effect_timestamp": "5.000",
+            "effect_fn_params": {
+              "zoom_factor": 1.1,
+              "zoom_type": "in",
+              "easing": "ease_in_out"
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "So",
+            "start_seconds": "0.940",
+            "end_seconds": "1.760",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "2.559",
+            "end_seconds": "2.879",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "needle",
+            "start_seconds": "2.879",
+            "end_seconds": "3.120",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "pulling",
+            "start_seconds": "3.120",
+            "end_seconds": "3.499",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "thread",
+            "start_seconds": "3.499",
+            "end_seconds": "5.140",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "La",
+            "start_seconds": "6.120",
+            "end_seconds": "6.199",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "6.379",
+            "end_seconds": "6.879",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "note",
+            "start_seconds": "6.879",
+            "end_seconds": "6.999",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "to",
+            "start_seconds": "6.999",
+            "end_seconds": "7.699",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "follow",
+            "start_seconds": "7.699",
+            "end_seconds": "7.699",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "so",
+            "start_seconds": "7.699",
+            "end_seconds": "7.980",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Ti",
+            "start_seconds": "9.659",
+            "end_seconds": "9.900",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "10.439",
+            "end_seconds": "10.860",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "drink",
+            "start_seconds": "10.860",
+            "end_seconds": "10.900",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "with",
+            "start_seconds": "10.900",
+            "end_seconds": "11.259",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "jam",
+            "start_seconds": "11.259",
+            "end_seconds": "11.540",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "and",
+            "start_seconds": "11.540",
+            "end_seconds": "12.799",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "bread",
+            "start_seconds": "12.799",
+            "end_seconds": "12.799",
+            "placement": "top left corner with background visible",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "12.800",
+      "end_seconds": "17.680",
+      "scene_description": {
+        "characters": [
+          "Adult Woman"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Playing guitar and singing."
+        },
+        "background": "Mountains and greenery in the background.",
+        "camera_angle": "Medium Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_bloom_effect",
+            "effect_timestamp": "15.000",
+            "effect_fn_params": {
+              "threshold": 200,
+              "bloom_intensity": 1.2,
+              "blur_radius": 20
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "That",
+            "start_seconds": "13.240",
+            "end_seconds": "13.460",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "will",
+            "start_seconds": "13.460",
+            "end_seconds": "13.740",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "bring",
+            "start_seconds": "13.740",
+            "end_seconds": "14.100",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "us",
+            "start_seconds": "14.100",
+            "end_seconds": "14.759",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "back",
+            "start_seconds": "14.759",
+            "end_seconds": "15.159",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "to",
+            "start_seconds": "15.159",
+            "end_seconds": "16.019",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Do",
+            "start_seconds": "16.019",
+            "end_seconds": "16.159",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "oh",
+            "start_seconds": "16.220",
+            "end_seconds": "16.759",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "oh",
+            "start_seconds": "16.759",
+            "end_seconds": "17.240",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "oh",
+            "start_seconds": "17.240",
+            "end_seconds": "17.619",
+            "placement": "semi-transparent overlay",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "17.680",
+      "end_seconds": "32.000",
+      "scene_description": {
+        "characters": [
+          "Adult Woman",
+          "Children Group"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Playing a guitar and singing.",
+          "Children Group": "Singing along, interacting with her."
+        },
+        "background": "A grassy field with mountains in the background.",
+        "camera_angle": "Long Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_motion_tracking_text",
+            "effect_timestamp": "20.000",
+            "effect_fn_params": {
+              "text": "Deer",
+              "track_point": [
+                500,
+                500
+              ],
+              "offset": [
+                50,
+                -30
+              ],
+              "font_scale": 0.7,
+              "font_color": [
+                255,
+                255,
+                255
+              ],
+              "font_thickness": 2,
+              "background_color": [
+                0,
+                0,
+                0
+              ]
+            },
+            "size_pixels": {
+              "width": 200,
+              "height": 150
+            }
+          },
+          {
+            "effect_fn_name": "apply_motion_tracking_text",
+            "effect_timestamp": "23.000",
+            "effect_fn_params": {
+              "text": "Sun",
+              "track_point": [
+                500,
+                500
+              ],
+              "offset": [
+                50,
+                -30
+              ],
+              "font_scale": 0.7,
+              "font_color": [
+                255,
+                255,
+                255
+              ],
+              "font_thickness": 2,
+              "background_color": [
+                0,
+                0,
+                0
+              ]
+            },
+            "size_pixels": {
+              "width": 200,
+              "height": 150
+            }
+          },
+          {
+            "effect_fn_name": "apply_motion_tracking_text",
+            "effect_timestamp": "27.000",
+            "effect_fn_params": {
+              "text": "Mi",
+              "track_point": [
+                500,
+                500
+              ],
+              "offset": [
+                50,
+                -30
+              ],
+              "font_scale": 0.7,
+              "font_color": [
+                255,
+                255,
+                255
+              ],
+              "font_thickness": 2,
+              "background_color": [
+                0,
+                0,
+                0
+              ]
+            },
+            "size_pixels": {
+              "width": 200,
+              "height": 150
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Do",
+            "start_seconds": "17.680",
+            "end_seconds": "18.079",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "18.360",
+            "end_seconds": "18.979",
+            "placement": "far right edge clear of subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "deer",
+            "start_seconds": "18.979",
+            "end_seconds": "18.979",
+            "placement": "far right edge clear of subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "19.339",
+            "end_seconds": "20.280",
+            "placement": "far right edge clear of subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "female",
+            "start_seconds": "20.280",
+            "end_seconds": "20.280",
+            "placement": "far right edge clear of subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "deer",
+            "start_seconds": "20.280",
+            "end_seconds": "21.079",
+            "placement": "far right edge clear of subjects",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Re",
+            "start_seconds": "21.680",
+            "end_seconds": "21.680",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "21.939",
+            "end_seconds": "22.439",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "drop",
+            "start_seconds": "22.439",
+            "end_seconds": "22.439",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "of",
+            "start_seconds": "22.439",
+            "end_seconds": "23.079",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "golden",
+            "start_seconds": "23.079",
+            "end_seconds": "23.079",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "sun",
+            "start_seconds": "23.079",
+            "end_seconds": "23.879",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "Mi",
+            "start_seconds": "25.400",
+            "end_seconds": "25.460",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "a",
+            "start_seconds": "25.659",
+            "end_seconds": "25.939",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "name",
+            "start_seconds": "25.939",
+            "end_seconds": "26.420",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "I",
+            "start_seconds": "26.420",
+            "end_seconds": "26.860",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 30
+            }
+          },
+          {
+            "word": "call",
+            "start_seconds": "26.860",
+            "end_seconds": "27.240",
+            "placement": "top left corner with background visible",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buil

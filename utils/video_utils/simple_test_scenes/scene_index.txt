@@ -1,0 +1,15 @@
+Scene Index for simple_test
+==================================================
+
+Scene 001:
+  Start: 0.00s (frame 0)
+  End: 7.20s (frame 180)
+  Duration: 7.20s
+  File: scene_001.mp4
+
+Scene 002:
+  Start: 7.60s (frame 190)
+  End: 15.00s (frame 375)
+  Duration: 7.40s
+  File: scene_002.mp4
+

@@ -1,0 +1,46 @@
+You are analyzing a video frame to determine where to place a text overlay.
+
+Frame dimensions: 256x114 pixels
+Text overlay: "Let's"
+Required overlay size: 100x50 pixels
+Placement instruction: top left corner
+Interaction style: anchored_to_background
+
+The coordinate system:
+- Origin (0,0) is at the top-left corner
+- X increases rightward (0 to 255)
+- Y increases downward (0 to 113)
+
+Based on the placement instruction and the visual content of the frame, determine the exact pixel bounds for the overlay.
+
+Return ONLY a JSON object with the pixel coordinates:
+{
+  "top_left": {
+    "x": <x_coordinate>,
+    "y": <y_coordinate>
+  },
+  "bottom_right": {
+    "x": <x_coordinate>,
+    "y": <y_coordinate>
+  }
+}
+
+The bounding box should:
+1. Be exactly 100 pixels wide and 50 pixels tall
+2. Follow the placement instruction "top left corner"
+3. Not exceed frame boundaries (0 to 255 for x, 0 to 113 for y)
+4. Be positioned for optimal visual balance and readability
+
+Example valid response for a 100x50 overlay in top-left corner:
+{
+  "top_left": {
+    "x": 20,
+    "y": 20
+  },
+  "bottom_right": {
+    "x": 119,
+    "y": 69
+  }
+}
+
+Important: bottom_right.x = top_left.x + 99, bottom_right.y = top_left.y + 49

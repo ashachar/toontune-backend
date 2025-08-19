@@ -1,0 +1,50 @@
+[
+  {
+    "word": "Let's",
+    "start": 7.92,
+    "end": 8.56,
+    "x": 650,
+    "y": 270,
+    "fontsize": 48
+  },
+  {
+    "word": "start",
+    "start": 8.56,
+    "end": 9.1,
+    "x": 650,
+    "y": 270,
+    "fontsize": 48
+  },
+  {
+    "word": "at",
+    "start": 9.1,
+    "end": 9.34,
+    "x": 650,
+    "y": 270,
+    "fontsize": 48
+  },
+  {
+    "word": "the",
+    "start": 9.34,
+    "end": 9.579,
+    "x": 650,
+    "y": 270,
+    "fontsize": 48
+  },
+  {
+    "word": "very",
+    "start": 9.579,
+    "end": 10.1,
+    "x": 650,
+    "y": 270,
+    "fontsize": 48
+  },
+  {
+    "word": "beginning",
+    "start": 10.1,
+    "end": 11.479,
+    "x": 650,
+    "y": 270,
+    "fontsize": 48
+  }
+]

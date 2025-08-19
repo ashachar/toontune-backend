@@ -1,0 +1,437 @@
+{
+  "video_path": "uploads/assets/videos/do_re_mi_with_music/scenes/scene_001.mp4",
+  "overlays": [
+    {
+      "scene_index": 0,
+      "word": "Let's",
+      "timestamp": 2.779,
+      "placement_description": "top left corner",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene1_overlay1_Let's.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene1_overlay1_Let's.txt",
+      "grid_size": [
+        10,
+        9
+      ],
+      "element_size": [
+        100,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 0,
+      "word": "start",
+      "timestamp": 3.579,
+      "placement_description": "following 'Let's'",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene1_overlay2_start.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene1_overlay2_start.txt",
+      "grid_size": [
+        10,
+        9
+      ],
+      "element_size": [
+        100,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 0,
+      "word": "beginning",
+      "timestamp": 5.28,
+      "placement_description": "bottom right corner",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene1_overlay3_beginning.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene1_overlay3_beginning.txt",
+      "grid_size": [
+        9,
+        3
+      ],
+      "element_size": [
+        250,
+        60
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 1,
+      "word": "A",
+      "timestamp": 13.02,
+      "placement_description": "near the boy on the left",
+      "interaction_style": "floating_with_character",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene2_overlay4_A.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene2_overlay4_A.txt",
+      "grid_size": [
+        9,
+        10
+      ],
+      "element_size": [
+        60,
+        60
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 1,
+      "word": "B",
+      "timestamp": 13.72,
+      "placement_description": "near the girl in the middle",
+      "interaction_style": "floating_with_character",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene2_overlay5_B.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene2_overlay5_B.txt",
+      "grid_size": [
+        9,
+        10
+      ],
+      "element_size": [
+        60,
+        60
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 1,
+      "word": "C",
+      "timestamp": 14.439,
+      "placement_description": "near the smallest child on the right",
+      "interaction_style": "floating_with_character",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene2_overlay6_C.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene2_overlay6_C.txt",
+      "grid_size": [
+        9,
+        10
+      ],
+      "element_size": [
+        60,
+        60
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 1,
+      "word": "Do",
+      "timestamp": 18.94,
+      "placement_description": "above the woman's head",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene2_overlay7_Do.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene2_overlay7_Do.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 1,
+      "word": "Re",
+      "timestamp": 19.959,
+      "placement_description": "to the right of 'Do'",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene2_overlay8_Re.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene2_overlay8_Re.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 1,
+      "word": "Mi",
+      "timestamp": 20.059,
+      "placement_description": "to the right of 'Re'",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene2_overlay9_Mi.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene2_overlay9_Mi.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 2,
+      "word": "Do",
+      "timestamp": 30.36,
+      "placement_description": "emanating from her guitar",
+      "interaction_style": "emerging_from_object",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene3_overlay10_Do.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene3_overlay10_Do.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 2,
+      "word": "Re",
+      "timestamp": 31.059,
+      "placement_description": "next to 'Do'",
+      "interaction_style": "emerging_from_object",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene3_overlay11_Re.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene3_overlay11_Re.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 2,
+      "word": "Mi",
+      "timestamp": 31.159,
+      "placement_description": "next to 'Re'",
+      "interaction_style": "emerging_from_object",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene3_overlay12_Mi.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene3_overlay12_Mi.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 2,
+      "word": "Fa",
+      "timestamp": 31.399,
+      "placement_description": "next to 'Mi'",
+      "interaction_style": "emerging_from_object",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene3_overlay13_Fa.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene3_overlay13_Fa.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 2,
+      "word": "Sol",
+      "timestamp": 32.139,
+      "placement_description": "next to 'Fa'",
+      "interaction_style": "emerging_from_object",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene3_overlay14_Sol.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene3_overlay14_Sol.txt",
+      "grid_size": [
+        10,
+        10
+      ],
+      "element_size": [
+        80,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 3,
+      "word": "deer",
+      "timestamp": 41.419,
+      "placement_description": "in the grass to her right",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene4_overlay15_deer.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene4_overlay15_deer.txt",
+      "grid_size": [
+        9,
+        6
+      ],
+      "element_size": [
+        150,
+        60
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 3,
+      "word": "sun",
+      "timestamp": 46.34,
+      "placement_description": "in the sky above her",
+      "interaction_style": "anchored_to_background",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene4_overlay16_sun.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene4_overlay16_sun.txt",
+      "grid_size": [
+        9,
+        8
+      ],
+      "element_size": [
+        120,
+        60
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 3,
+      "word": "myself",
+      "timestamp": 50.86,
+      "placement_description": "next to her face, pointing to her",
+      "interaction_style": "floating_with_character",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene4_overlay17_myself.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene4_overlay17_myself.txt",
+      "grid_size": [
+        10,
+        5
+      ],
+      "element_size": [
+        180,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    },
+    {
+      "scene_index": 3,
+      "word": "run",
+      "timestamp": 54.7,
+      "placement_description": "moving quickly from left to right at the bottom",
+      "interaction_style": "animated_across_screen",
+      "grid_frame": "utils/video_overlay/grid_overlays_v2/grid_scene4_overlay18_run.png",
+      "prompt_file": "utils/video_overlay/grid_overlays_v2/prompts/prompt_scene4_overlay18_run.txt",
+      "grid_size": [
+        10,
+        9
+      ],
+      "element_size": [
+        100,
+        50
+      ],
+      "scene_size": [
+        1920,
+        1080
+      ],
+      "cells": "DRY_RUN",
+      "pixel_bounds": "DRY_RUN",
+      "inference_file": "DRY_RUN"
+    }
+  ]
+}

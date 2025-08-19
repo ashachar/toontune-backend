@@ -1,0 +1,13 @@
+Given a video frame with a numbered grid overlay, determine the best grid cell number for placing the text "Re".
+
+Placement instruction: next to 'Do', from the guitar
+Interaction style: floating_with_character
+
+Analyze the frame and return ONLY the grid cell number (e.g., "42") where this text should be placed.
+Consider:
+- The placement description provided
+- Visual balance and composition
+- Avoiding occlusion of important subjects
+- The interaction style (whether it should move with characters or stay anchored)
+
+Return only the cell number, nothing else.

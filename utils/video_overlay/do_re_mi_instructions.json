@@ -1,0 +1,500 @@
+{
+  "characters_in_video": [
+    {
+      "name": "Adult Woman",
+      "description": "A woman with short blonde hair, wearing a rustic brown and cream-colored dress, singing and playing an acoustic guitar."
+    },
+    {
+      "name": "Children Group",
+      "description": "A group of seven children of various ages, sitting on the grass, wearing matching pale green and white patterned outfits."
+    }
+  ],
+  "video_description": "In a scenic mountain meadow, a woman with a guitar teaches a group of children how to sing using the song 'Do-Re-Mi'. The video alternates between close-up shots of the woman singing and wider shots that include the children listening attentively.",
+  "sound_effects": [
+    {
+      "sound": "chime",
+      "timestamp": "3.000"
+    },
+    {
+      "sound": "ding",
+      "timestamp": "13.500"
+    },
+    {
+      "sound": "swoosh",
+      "timestamp": "13.901"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "17.700"
+    },
+    {
+      "sound": "pop",
+      "timestamp": "41.419"
+    },
+    {
+      "sound": "sparkle",
+      "timestamp": "46.340"
+    },
+    {
+      "sound": "whoosh",
+      "timestamp": "54.099"
+    }
+  ],
+  "scenes": [
+    {
+      "start_seconds": "0.000",
+      "end_seconds": "12.750",
+      "scene_description": {
+        "characters": [
+          "Adult Woman"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Sings and plays an acoustic guitar, looking directly at the camera and smiling."
+        },
+        "background": "A lush green hillside with a distant castle and mountains shrouded in haze.",
+        "camera_angle": "Medium Close-Up",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_smooth_zoom",
+            "effect_timestamp": "0.500",
+            "effect_fn_params": {
+              "zoom_factor": 1.1,
+              "zoom_type": "in",
+              "easing": "ease_in_out"
+            }
+          },
+          {
+            "effect_fn_name": "apply_bloom_effect",
+            "effect_timestamp": "1.000",
+            "effect_fn_params": {
+              "threshold": 190,
+              "bloom_intensity": 1.2,
+              "blur_radius": 15
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Let's",
+            "start_seconds": "2.779",
+            "end_seconds": "3.579",
+            "placement": "bottom left corner of the screen",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "start",
+            "start_seconds": "3.579",
+            "end_seconds": "4.079",
+            "placement": "bottom left, after 'Let's'",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 3,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "beginning",
+            "start_seconds": "5.280",
+            "end_seconds": "6.420",
+            "placement": "following the first line of text",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 4,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background"
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "12.751",
+      "end_seconds": "13.850",
+      "scene_description": {
+        "characters": [
+          "Children Group"
+        ],
+        "most_prominent_figure": "Children Group",
+        "character_actions": {
+          "Children Group": "Three children are sitting on a blanket on the grass, looking towards the woman."
+        },
+        "background": "A green, grassy field.",
+        "camera_angle": "Medium Shot",
+        "text_overlays": [
+          {
+            "word": "A",
+            "start_seconds": "13.020",
+            "end_seconds": "13.720",
+            "placement": "above the leftmost child's head",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 2
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "B",
+            "start_seconds": "13.720",
+            "end_seconds": "14.119",
+            "placement": "above the middle child's head",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 2
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "C",
+            "start_seconds": "14.439",
+            "end_seconds": "14.460",
+            "placement": "above the rightmost child's head",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 2
+            },
+            "interaction_style": "floating_with_character"
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "13.851",
+      "end_seconds": "30.100",
+      "scene_description": {
+        "characters": [
+          "Adult Woman",
+          "Children Group"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Sits in the center, playing the guitar and singing to the children.",
+          "Children Group": "The children are gathered around her on the grass, listening and singing along."
+        },
+        "background": "A vast green mountainside with a valley and other mountains in the far background.",
+        "camera_angle": "Long Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_ken_burns",
+            "effect_timestamp": "14.000",
+            "effect_fn_params": {
+              "duration": 16,
+              "start_scale": 1.0,
+              "end_scale": 1.05,
+              "start_position": [
+                480,
+                270
+              ],
+              "end_position": [
+                500,
+                260
+              ],
+              "easing": "ease_in_out"
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Do",
+            "start_seconds": "17.700",
+            "end_seconds": "17.719",
+            "placement": "emanating from the guitar soundhole",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 3
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "Re",
+            "start_seconds": "17.719",
+            "end_seconds": "17.739",
+            "placement": "next to 'Do', from the guitar",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 3
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "Mi",
+            "start_seconds": "18.420",
+            "end_seconds": "18.440",
+            "placement": "next to 'Re', from the guitar",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 3
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "Do",
+            "start_seconds": "26.180",
+            "end_seconds": "27.059",
+            "placement": "hovering over the children on the left",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "scale",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "Re",
+            "start_seconds": "27.280",
+            "end_seconds": "27.379",
+            "placement": "hovering over the woman",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "scale",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "Mi",
+            "start_seconds": "27.620",
+            "end_seconds": "28.020",
+            "placement": "hovering over the children on the right",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "scale",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "30.101",
+      "end_seconds": "39.750",
+      "scene_description": {
+        "characters": [
+          "Adult Woman"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Sings the musical scale, then pauses thoughtfully, looking up to the sky."
+        },
+        "background": "A lush green hillside with a distant castle.",
+        "camera_angle": "Medium Close-Up",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_rack_focus",
+            "effect_timestamp": "37.000",
+            "effect_fn_params": {
+              "focus_points": [
+                [
+                  480,
+                  270
+                ],
+                [
+                  600,
+                  100
+                ]
+              ],
+              "blur_strength": 10,
+              "transition_duration": 1.5
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Fa",
+            "start_seconds": "31.399",
+            "end_seconds": "31.739",
+            "placement": "appears near her left shoulder",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 1
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "Sol",
+            "start_seconds": "32.139",
+            "end_seconds": "32.139",
+            "placement": "appears above 'Fa'",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 1
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "La",
+            "start_seconds": "32.139",
+            "end_seconds": "32.439",
+            "placement": "appears above 'Sol'",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 1
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "Ti",
+            "start_seconds": "33.500",
+            "end_seconds": "33.939",
+            "placement": "appears at the top of the note stack",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 1
+            },
+            "interaction_style": "floating_with_character"
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "39.751",
+      "end_seconds": "54.760",
+      "scene_description": {
+        "characters": [
+          "Adult Woman"
+        ],
+        "most_prominent_figure": "Adult Woman",
+        "character_actions": {
+          "Adult Woman": "Resumes singing with renewed energy, explaining the meaning of each musical note."
+        },
+        "background": "A lush green hillside with a distant castle.",
+        "camera_angle": "Medium Close-Up",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_light_sweep",
+            "effect_timestamp": "46.000",
+            "effect_fn_params": {
+              "sweep_duration": 1.5,
+              "sweep_width": 150,
+              "sweep_angle": 60,
+              "sweep_color": [
+                255,
+                255,
+                220
+              ],
+              "sweep_intensity": 0.4
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Do",
+            "start_seconds": "40.119",
+            "end_seconds": "40.840",
+            "placement": "Left of the woman's head",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "deer",
+            "start_seconds": "41.419",
+            "end_seconds": "41.939",
+            "placement": "in the grass at the bottom right",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "scale",
+              "word_delay": 2
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "Re",
+            "start_seconds": "44.840",
+            "end_seconds": "44.840",
+            "placement": "Left of the woman's head, below 'Do'",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "sun",
+            "start_seconds": "46.340",
+            "end_seconds": "47.200",
+            "placement": "in the sky area, top right",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "highlight_color": "#FFFF00",
+              "emphasis_effect": true
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "Mi",
+            "start_seconds": "48.520",
+            "end_seconds": "48.919",
+            "placement": "Left of the woman's head, below 'Re'",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "myself",
+            "start_seconds": "50.860",
+            "end_seconds": "51.680",
+            "placement": "briefly over the woman's chest",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 3
+            },
+            "interaction_style": "floating_with_character"
+          },
+          {
+            "word": "Fa",
+            "start_seconds": "52.479",
+            "end_seconds": "52.900",
+            "placement": "Left of the woman's head, below 'Mi'",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background"
+          },
+          {
+            "word": "run",
+            "start_seconds": "54.700",
+            "end_seconds": "54.759",
+            "placement": "bottom right corner",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "horizontal",
+              "split_distance": 250,
+              "rejoin": false
+            },
+            "interaction_style": "anchored_to_background"
+          }
+        ]
+      }
+    }
+  ]
+}

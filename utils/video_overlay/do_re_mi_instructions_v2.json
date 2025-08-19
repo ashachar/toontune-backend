@@ -1,0 +1,483 @@
+{
+  "characters_in_video": [
+    {
+      "name": "Woman with Guitar",
+      "description": "An adult woman with short blonde hair, wearing a light-colored top and a brown pinafore, playing an acoustic guitar."
+    },
+    {
+      "name": "Children Group",
+      "description": "A group of several children, including boys and girls of various ages, sitting on the grass in matching patterned outfits."
+    }
+  ],
+  "video_description": "A woman with a guitar teaches a group of children to sing on a scenic mountainside, using the 'Do-Re-Mi' song to explain the musical scale through memorable phrases.",
+  "sound_effects": [
+    {
+      "sound": "chime",
+      "timestamp": "3.500"
+    },
+    {
+      "sound": "swoosh",
+      "timestamp": "13.500"
+    },
+    {
+      "sound": "pop",
+      "timestamp": "17.700"
+    },
+    {
+      "sound": "ding",
+      "timestamp": "19.200"
+    },
+    {
+      "sound": "chime",
+      "timestamp": "26.500"
+    },
+    {
+      "sound": "sparkle",
+      "timestamp": "40.119"
+    },
+    {
+      "sound": "whoosh",
+      "timestamp": "54.700"
+    }
+  ],
+  "scenes": [
+    {
+      "start_seconds": "0.000",
+      "end_seconds": "13.020",
+      "scene_description": {
+        "characters": [
+          "Woman with Guitar"
+        ],
+        "most_prominent_figure": "Woman with Guitar",
+        "character_actions": {
+          "Woman with Guitar": "Sings the introduction of a song while playing an acoustic guitar, looking directly at the camera."
+        },
+        "background": "A vibrant green meadow on a mountainside, with a forested hill and a distant castle-like structure under a clear sky.",
+        "camera_angle": "Medium Close-Up",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_bloom_effect",
+            "effect_timestamp": "4.000",
+            "effect_fn_params": {
+              "threshold": 180,
+              "bloom_intensity": 1.2,
+              "blur_radius": 15
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Let's",
+            "start_seconds": "2.779",
+            "end_seconds": "3.579",
+            "placement": "top left corner",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 100,
+              "height": 50
+            }
+          },
+          {
+            "word": "start",
+            "start_seconds": "3.579",
+            "end_seconds": "4.079",
+            "placement": "following 'Let's'",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 100,
+              "height": 50
+            }
+          },
+          {
+            "word": "beginning",
+            "start_seconds": "5.280",
+            "end_seconds": "6.420",
+            "placement": "bottom right corner",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 5,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 250,
+              "height": 60
+            }
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "13.021",
+      "end_seconds": "30.359",
+      "scene_description": {
+        "characters": [
+          "Woman with Guitar",
+          "Children Group"
+        ],
+        "most_prominent_figure": "Woman with Guitar",
+        "character_actions": {
+          "Woman with Guitar": "Continues singing and playing the guitar, now leading the group of children.",
+          "Children Group": "The children sit attentively on the grass, listening and beginning to sing along."
+        },
+        "background": "A wide expanse of the green mountainside, showing the entire group and the vast landscape behind them.",
+        "camera_angle": "Long Shot",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_smooth_zoom",
+            "effect_timestamp": "14.000",
+            "effect_fn_params": {
+              "zoom_factor": 1.1,
+              "zoom_type": "in",
+              "easing": "ease_in_out"
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "A",
+            "start_seconds": "13.020",
+            "end_seconds": "13.720",
+            "placement": "near the boy on the left",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "pop",
+              "word_delay": 2
+            },
+            "interaction_style": "floating_with_character",
+            "size_pixels": {
+              "width": 60,
+              "height": 60
+            }
+          },
+          {
+            "word": "B",
+            "start_seconds": "13.720",
+            "end_seconds": "14.119",
+            "placement": "near the girl in the middle",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "pop",
+              "word_delay": 2
+            },
+            "interaction_style": "floating_with_character",
+            "size_pixels": {
+              "width": 60,
+              "height": 60
+            }
+          },
+          {
+            "word": "C",
+            "start_seconds": "14.439",
+            "end_seconds": "14.460",
+            "placement": "near the smallest child on the right",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "pop",
+              "word_delay": 2
+            },
+            "interaction_style": "floating_with_character",
+            "size_pixels": {
+              "width": 60,
+              "height": 60
+            }
+          },
+          {
+            "word": "Do",
+            "start_seconds": "18.940",
+            "end_seconds": "19.540",
+            "placement": "above the woman's head",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 1,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          },
+          {
+            "word": "Re",
+            "start_seconds": "19.959",
+            "end_seconds": "19.959",
+            "placement": "to the right of 'Do'",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 1,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          },
+          {
+            "word": "Mi",
+            "start_seconds": "20.059",
+            "end_seconds": "20.399",
+            "placement": "to the right of 'Re'",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 1,
+              "cursor_visible": false
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "30.360",
+      "end_seconds": "39.000",
+      "scene_description": {
+        "characters": [
+          "Woman with Guitar"
+        ],
+        "most_prominent_figure": "Woman with Guitar",
+        "character_actions": {
+          "Woman with Guitar": "Sings the full solfege scale, then pauses and looks up thoughtfully, as if coming up with a new idea."
+        },
+        "background": "A close-up view of the green meadow and distant forested hill.",
+        "camera_angle": "Medium Close-Up",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_light_sweep",
+            "effect_timestamp": "37.000",
+            "effect_fn_params": {
+              "sweep_duration": 1.5,
+              "sweep_width": 200,
+              "sweep_angle": 60,
+              "sweep_color": [
+                255,
+                255,
+                220
+              ],
+              "sweep_intensity": 0.4
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "Do",
+            "start_seconds": "30.360",
+            "end_seconds": "30.760",
+            "placement": "emanating from her guitar",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "vertical",
+              "split_distance": 50
+            },
+            "interaction_style": "emerging_from_object",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          },
+          {
+            "word": "Re",
+            "start_seconds": "31.059",
+            "end_seconds": "31.059",
+            "placement": "next to 'Do'",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "vertical",
+              "split_distance": 50
+            },
+            "interaction_style": "emerging_from_object",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          },
+          {
+            "word": "Mi",
+            "start_seconds": "31.159",
+            "end_seconds": "31.379",
+            "placement": "next to 'Re'",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "vertical",
+              "split_distance": 50
+            },
+            "interaction_style": "emerging_from_object",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          },
+          {
+            "word": "Fa",
+            "start_seconds": "31.399",
+            "end_seconds": "31.739",
+            "placement": "next to 'Mi'",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "vertical",
+              "split_distance": 50
+            },
+            "interaction_style": "emerging_from_object",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          },
+          {
+            "word": "Sol",
+            "start_seconds": "32.139",
+            "end_seconds": "32.139",
+            "placement": "next to 'Fa'",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "vertical",
+              "split_distance": 50
+            },
+            "interaction_style": "emerging_from_object",
+            "size_pixels": {
+              "width": 80,
+              "height": 50
+            }
+          }
+        ]
+      }
+    },
+    {
+      "start_seconds": "39.001",
+      "end_seconds": "55.000",
+      "scene_description": {
+        "characters": [
+          "Woman with Guitar"
+        ],
+        "most_prominent_figure": "Woman with Guitar",
+        "character_actions": {
+          "Woman with Guitar": "Begins singing the main verse of 'Do-Re-Mi,' explaining each note with a memorable phrase and expressive facial gestures."
+        },
+        "background": "A close-up view of the green meadow and distant forested hill.",
+        "camera_angle": "Medium Close-Up",
+        "suggested_effects": [
+          {
+            "effect_fn_name": "apply_highlight_focus",
+            "effect_timestamp": "40.000",
+            "effect_fn_params": {
+              "focus_area": [
+                400,
+                100,
+                1120,
+                980
+              ],
+              "blur_strength": 5,
+              "vignette": true
+            },
+            "size_pixels": {
+              "width": 1920,
+              "height": 1080
+            }
+          }
+        ],
+        "text_overlays": [
+          {
+            "word": "deer",
+            "start_seconds": "41.419",
+            "end_seconds": "41.939",
+            "placement": "in the grass to her right",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5,
+              "entrance_direction": "bottom"
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 150,
+              "height": 60
+            }
+          },
+          {
+            "word": "sun",
+            "start_seconds": "46.340",
+            "end_seconds": "47.200",
+            "placement": "in the sky above her",
+            "text_effect": "WordBuildup",
+            "text_effect_params": {
+              "buildup_mode": "fade",
+              "word_delay": 5,
+              "highlight_color": "#FFFF00",
+              "emphasis_effect": true
+            },
+            "interaction_style": "anchored_to_background",
+            "size_pixels": {
+              "width": 120,
+              "height": 60
+            }
+          },
+          {
+            "word": "myself",
+            "start_seconds": "50.860",
+            "end_seconds": "51.680",
+            "placement": "next to her face, pointing to her",
+            "text_effect": "Typewriter",
+            "text_effect_params": {
+              "typing_speed": 4,
+              "cursor_visible": false
+            },
+            "interaction_style": "floating_with_character",
+            "size_pixels": {
+              "width": 180,
+              "height": 50
+            }
+          },
+          {
+            "word": "run",
+            "start_seconds": "54.700",
+            "end_seconds": "54.759",
+            "placement": "moving quickly from left to right at the bottom",
+            "text_effect": "SplitText",
+            "text_effect_params": {
+              "split_mode": "letter",
+              "split_direction": "horizontal",
+              "split_distance": 300
+            },
+            "interaction_style": "animated_across_screen",
+            "size_pixels": {
+              "width": 100,
+              "height": 50
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
