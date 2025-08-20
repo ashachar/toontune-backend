@@ -1,5 +1,12 @@
 # Claude Assistant Instructions
 
+## /summarize Command - CRITICAL RULE
+**The Python script for /summarize must NEVER decide which files are relevant!**
+- Claude MUST use Grep/Glob tools to find relevant files
+- Claude MUST curate a focused list (5-20 files max) 
+- The Python script (`create_issue_xml.py`) is 100% deterministic - it only formats what Claude provides
+- NEVER modify the script to search for files automatically
+
 ## File Creation Notifications
 When creating any file during inference, always mention it as the last output of your response.
 Also mention which files were created in the current inference session.

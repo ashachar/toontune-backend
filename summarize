@@ -1,0 +1,29 @@
+#!/bin/bash
+# Wrapper for /summarize command
+# Usage: ./summarize "issue description"
+
+if [ -z "$1" ]; then
+    echo "Usage: ./summarize \"issue description\""
+    echo "Example: ./summarize \"text animation not working properly\""
+    exit 1
+fi
+
+# Run the Python script
+python summarize_issue.py "$1"
+
+# Get the generated filename
+ISSUE_NAME=$(echo "$1" | grep -o '\b[a-zA-Z]\+\b' | head -3 | tr '\n' '_' | sed 's/_$//' | tr '[:upper:]' '[:lower:]')
+if [ -z "$ISSUE_NAME" ]; then
+    ISSUE_NAME="issue"
+fi
+
+FILENAME="issue_description_${ISSUE_NAME}.xml"
+
+# Copy to clipboard if file exists
+if [ -f "$FILENAME" ]; then
+    cat "$FILENAME" | pbcopy
+    echo "✓ XML copied to clipboard"
+    echo "File: $FILENAME"
+else
+    echo "Error: Could not find generated file"
+fi
