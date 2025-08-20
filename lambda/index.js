@@ -13,6 +13,7 @@ const { detectLanguage } = require('./functions/detectLanguage');
 const { generateDoodleAsset } = require('./functions/generateDoodleAsset');
 const { applyStyleToProject } = require('./functions/applyStyleToProject');
 const { batchProcessProject } = require('./functions/batchProcessProject');
+const processTextAnimation = require('./functions/processTextAnimation');
 const { validateInput } = require('./utils/validation');
 const { formatResponse, formatError } = require('./utils/response');
 const { logger } = require('./utils/logger');
@@ -30,8 +31,10 @@ const functions = {
   generateDoodleAsset,
   applyStyleToProject,
   batchProcessProject,
+  processTextAnimation,
   // Legacy functions (backward compatibility)
   'generate-doodle': generateDoodleAsset,
+  'text-animation': processTextAnimation,
 };
 
 // Lambda handler

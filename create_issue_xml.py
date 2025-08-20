@@ -122,9 +122,12 @@ def get_project_tree(root_dir: str, relevant_files: list = None) -> str:
 def create_xml_from_files(issue: str, file_paths: list, project_root: str = ".", debug_prefix: str = None) -> str:
     """Create XML string from the given files"""
     
+    # Add the required suffix to the issue description
+    issue_with_suffix = issue + "\n\nYour task is to create a concise, self-contained markdown fenced by single code widget, with instructions how the agent that reads your instructions should proceed. include thorough code examples and references and also high-level instructions. assume he's not so smart."
+    
     # Create root element
     root = ET.Element("context")
-    root.set("issue", issue)
+    root.set("issue", issue_with_suffix)
     
     # Add files section
     files_elem = ET.SubElement(root, "files")
@@ -178,7 +181,7 @@ def create_xml_from_files(issue: str, file_paths: list, project_root: str = ".",
     # Add summary
     summary_elem = ET.SubElement(root, "summary")
     summary_elem.set("total_files", str(len(file_paths)))
-    summary_elem.set("issue", issue)
+    summary_elem.set("issue", issue)  # Use original issue without suffix for summary
     
     # Add debugging instructions
     if debug_prefix:

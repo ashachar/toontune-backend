@@ -1,0 +1,21 @@
+# Use AWS Lambda Python runtime
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install system dependencies
+RUN yum install -y libGL libgthread-2.0 libSM libXext libXrender libgomp && yum clean all
+
+# Copy requirements
+COPY python/requirements-lambda.txt /tmp/requirements.txt
+
+# Install Python packages
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy animation modules
+COPY ../utils /var/task/utils
+
+# Copy Lambda function
+COPY python/text_animation_processor.py /var/task/
+COPY python/lambda_handler.py /var/task/
+
+# Set handler
+CMD ["lambda_handler.lambda_handler"]
