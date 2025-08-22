@@ -273,6 +273,13 @@ class WordDissolve(Animation):
             region_mask = mask_i[y0:y1, x0:x1]
             sprite[~region_mask, 3] = 0
             
+            # Keep sprites at their original opacity from frozen_text_rgba
+            # If they were at 50% alpha from TextBehindSegment, maintain that
+            # so they properly fade out during dissolve
+            sprite_alpha = sprite[:, :, 3]
+            if sprite_alpha.max() > 0 and sprite_alpha.max() < 200:
+                self._dbg(f"Sprite {i} has faded alpha {sprite_alpha.max():.0f} from handoff")
+            
             # Clean up very faint alpha pixels that can cause gray line artifacts
             # These are often anti-aliasing artifacts at sprite edges
             alpha_threshold = 5  # Out of 255
@@ -471,7 +478,12 @@ class WordDissolve(Animation):
 
         # ---- Phase A: stable ----
         if frame_idx < self.stable_frames:
-            if self.frozen_text_rgba is not None:
+            # Check if we should skip stable phase rendering
+            # This can happen if letters start dissolving immediately
+            if self.stable_frames <= 0 or (self.letter_dissolvers and self.letter_dissolvers[0]["start_frame"] <= frame_idx):
+                # Skip stable phase - go directly to dissolve logic
+                pass
+            elif self.frozen_text_rgba is not None:
                 text_rgba = self.frozen_text_rgba
                 a = text_rgba[:, :, 3].astype(np.float32) / 255.0
                 if bg_vis is not None:
@@ -530,7 +542,7 @@ class WordDissolve(Animation):
         # CRITICAL FIX: If ALL letters are completed, return frame without any text
         if len(completed) == len(self.word):
             self._dbg(f"frame={frame_idx}: All letters completed, returning clean frame")
-            return result  # result is frame.copy() from line 511
+            return frame  # Return the ORIGINAL frame, not result
 
         # (1) Grow the persistent kill mask exactly when a letter STARTS dissolving
         if self._dead_mask is not None:
@@ -596,41 +608,54 @@ class WordDissolve(Animation):
                 hole_radius = int(round(max(dims) * 0.25))  # Increased from 0.10 to prevent edge artifacts
         frame_hole = self._union_hole_mask(H, W, dissolving + completed, dilate_px=hole_radius)
 
-        # (3) Compose the base frozen text with PERMANENT + FRAME holes
-        # CRITICAL: Only render letters that haven't started dissolving yet
-        base_rgba = self.frozen_text_rgba
-        base_rgb = base_rgba[:, :, :3].astype(np.float32)
-        base_a = base_rgba[:, :, 3].astype(np.float32) / 255.0
+        # (3) Compose the base frozen text with per-letter masking
+        # Each letter disappears from base ONLY when its specific dissolve starts
+        if len(not_started) > 0:
+            # Some letters haven't started - render only those
+            base_rgba = self.frozen_text_rgba
+            base_rgb = base_rgba[:, :, :3].astype(np.float32)
+            base_a = base_rgba[:, :, 3].astype(np.float32) / 255.0
 
-        # Create mask for letters that should be visible in base
-        # Only show letters in not_started state
-        base_letter_mask = np.ones((H, W), dtype=np.float32)
-        for i in dissolving + completed:
-            S = self.letter_sprites[i]
-            if S:
-                x0, y0, x1, y1 = S["bbox"]
-                # Use the actual sprite alpha to avoid overlapping adjacent letters
-                sprite_alpha = S["sprite"][:, :, 3].astype(np.float32) / 255.0
-                
-                # Apply slight dilation to cover outlines
-                alpha_img = Image.fromarray((sprite_alpha * 255).astype(np.uint8))
-                # Small dilation to cover outlines without overlapping neighbors
-                dilated = alpha_img.filter(ImageFilter.MaxFilter(size=5))
-                sprite_alpha_dilated = np.array(dilated).astype(np.float32) / 255.0
-                
-                # Subtract this sprite from the base mask
-                mask_region = base_letter_mask[y0:y1, x0:x1]
-                np.minimum(mask_region, 1.0 - sprite_alpha_dilated, out=mask_region)
-        
-        # Apply the mask to remove dissolving/completed letters from base
-        base_a = base_a * base_letter_mask
-        
-        if bg_vis is not None:
-            base_a = base_a * bg_vis
+            # Create mask to hide letters that are dissolving or completed
+            # Keep letters that haven't started yet
+            base_letter_mask = np.ones((H, W), dtype=np.float32)
+            
+            for i in dissolving + completed:
+                S = self.letter_sprites[i]
+                if S:
+                    x0, y0, x1, y1 = S["bbox"]
+                    # Use the actual sprite alpha to avoid overlapping adjacent letters
+                    sprite_alpha = S["sprite"][:, :, 3].astype(np.float32) / 255.0
+                    
+                    # AGGRESSIVE dilation to FULLY remove any trace of the letter
+                    # This ensures NO ghost remains at the original position
+                    alpha_img = Image.fromarray((sprite_alpha * 255).astype(np.uint8))
+                    # Larger dilation to cover ALL traces including anti-aliasing and glow
+                    dilated = alpha_img.filter(ImageFilter.MaxFilter(size=11))
+                    sprite_alpha_dilated = np.array(dilated).astype(np.float32) / 255.0
+                    
+                    # Threshold to make it binary - either fully masked or not
+                    # This prevents partial transparency creating ghosts
+                    sprite_alpha_dilated = (sprite_alpha_dilated > 0.1).astype(np.float32)
+                    
+                    # Completely remove this sprite area from the base mask
+                    mask_region = base_letter_mask[y0:y1, x0:x1]
+                    mask_region *= (1.0 - sprite_alpha_dilated)
+            
+            # Apply the mask to remove dissolving/completed letters from base
+            base_a = base_a * base_letter_mask
+            
+            if bg_vis is not None:
+                base_a = base_a * bg_vis
 
-        base_f = result.astype(np.float32)
-        out = base_f * (1.0 - base_a[..., None]) + base_rgb * base_a[..., None]
-        result = np.clip(out, 0, 255).astype(np.uint8)
+            base_f = result.astype(np.float32)
+            out = base_f * (1.0 - base_a[..., None]) + base_rgb * base_a[..., None]
+            result = np.clip(out, 0, 255).astype(np.uint8)
+            
+            self._dbg(f"frame={frame_idx}: Rendering {len(not_started)} letters in base, hiding {len(dissolving)} dissolving")
+        else:
+            # All letters have started dissolving - no base text
+            self._dbg(f"frame={frame_idx}: All letters dissolving/completed, NO base text")
 
         # (4) Draw dissolving letters on top
         for i in dissolving:
