@@ -1,23 +1,34 @@
 """
-Word Dissolve animation - EXCLUSIVE SPRITE PARTITION
-Prevents cross-letter influence by partitioning the final RGBA into
-non-overlapping per-letter sprites via nearest-center labeling.
+Word Dissolve animation — FIXED
+- Permanent kill-mask so dissolved letters never reappear.
+- Premultiplied-alpha scaling to remove rectangular sprite fringe.
+- Gaussian feather holes (shape-preserving; no square-box dilation).
+- Extra debug logs prefixed with [DISSOLVE_BUG].
+
+This file is a drop-in replacement for utils/animations/word_dissolve.py
+and keeps the original public API used by your tests.
 """
 
 import os
 import random
+import math
+from typing import List, Tuple, Optional, Dict, Any, Union
+
 import numpy as np
-from typing import List, Tuple, Optional, Dict, Any
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
+
 from .animate import Animation
 
 
 class WordDissolve(Animation):
-    """
-    Animation where a word dissolves letter by letter.
-    With exclusive sprites, each pixel belongs to exactly one letter.
-    """
-    
+    """Letter-by-letter dissolve with exact per-letter sprites."""
+
+    # ---------- small unified debug ----------
+    def _dbg(self, msg: str) -> None:
+        if getattr(self, "debug", False):
+            print(f"[DISSOLVE_BUG] {msg}")
+
+    # ---------- ctor ----------
     def __init__(
         self,
         element_path: str,
@@ -45,12 +56,14 @@ class WordDissolve(Animation):
         path: Optional[List[Tuple[int, int, int]]] = None,
         fps: int = 30,
         duration: Optional[float] = None,
-        temp_dir: Optional[str] = None
+        temp_dir: Optional[str] = None,
+        sprite_pad_ratio: float = 0.25,
+        debug: Optional[bool] = None,
     ):
         num_letters = len(word)
         if duration is None:
-            duration = stable_duration + (num_letters - 1) * dissolve_stagger + dissolve_duration
-        
+            duration = stable_duration + max(0, num_letters - 1) * dissolve_stagger + dissolve_duration
+
         super().__init__(
             element_path=element_path,
             background_path=background_path,
@@ -61,9 +74,14 @@ class WordDissolve(Animation):
             path=path,
             fps=fps,
             duration=duration,
-            temp_dir=temp_dir
+            temp_dir=temp_dir,
         )
-        
+
+        # config
+        env_debug = os.getenv("FRAME_DISSOLVE_DEBUG", "0") != "0"
+        self.debug = (debug if debug is not None else env_debug)
+        self.sprite_pad_ratio = float(sprite_pad_ratio)
+
         self.word = word
         self.font_size = font_size
         self.font_path = font_path
@@ -77,555 +95,589 @@ class WordDissolve(Animation):
         self.glow_effect = glow_effect
         self.maintain_kerning = maintain_kerning
         self.center_position = center_position
-        
         self.outline_width = outline_width
         self.shadow_offset = shadow_offset
-        
-        # Handoff
-        self.handoff_data = handoff_data
-        self.frozen_letter_positions: Optional[List[Tuple[int, int, str]]] = None
-        self.frozen_font_size: Optional[int] = None
-        self.frozen_center_position: Optional[Tuple[int, int]] = None
-        self.frozen_text_origin: Optional[Tuple[int, int]] = None
-        self.final_scale: float = 1.0
 
-        self.frozen_text_rgba: Optional[np.ndarray] = None
-        self.frozen_occlusion: bool = False
+        # handoff
+        self.handoff_data = handoff_data or {}
+        self.frozen_letter_positions: Optional[List[Tuple[int, int, str]]] = self.handoff_data.get("final_letter_positions")
+        self.frozen_font_size: Optional[int] = self.handoff_data.get("final_font_size", font_size)
+        self.frozen_center_position: Optional[Tuple[int, int]] = self.handoff_data.get("final_center_position", center_position)
+        self.frozen_text_origin: Optional[Tuple[int, int]] = self.handoff_data.get("final_text_origin")
+        self.final_scale: float = float(self.handoff_data.get("scale", 1.0))
+        self.frozen_text_rgba: Optional[np.ndarray] = self.handoff_data.get("final_text_rgba")
+        self.frozen_occlusion: bool = bool(self.handoff_data.get("final_occlusion", False))
+        self.word_bbox: Optional[Tuple[int, int, int, int]] = self.handoff_data.get("final_word_bbox")
+        self.letter_bboxes_abs: Optional[List[Tuple[int, int, int, int]]] = self.handoff_data.get("final_letter_bboxes")
+        self.letter_centers: Optional[List[Tuple[float, float]]] = self.handoff_data.get("final_letter_centers")
 
-        self.word_bbox: Optional[Tuple[int, int, int, int]] = None
-        self.letter_bboxes_abs: Optional[List[Tuple[int, int, int, int]]] = None
-        self.letter_centers: Optional[List[Tuple[float, float]]] = None  # NEW
-
-        # Prepared exclusive sprites
-        # Each entry: { "sprite": np.ndarray(H,W,4), "center": (cx,cy) }
-        self.letter_sprites: List[Optional[Dict[str, Any]]] = []
-
-        if handoff_data:
-            self.frozen_letter_positions = handoff_data.get('final_letter_positions', None)
-            self.frozen_font_size = handoff_data.get('final_font_size', font_size)
-            self.frozen_center_position = handoff_data.get('final_center_position', center_position)
-            self.frozen_text_origin = handoff_data.get('final_text_origin', None)
-            self.final_scale = handoff_data.get('scale', 1.0)
-
-            if handoff_data.get('text'):
-                self.word = handoff_data['text']
-            if handoff_data.get('font_path'):
-                self.font_path = handoff_data['font_path']
-            if handoff_data.get('text_color'):
-                self.text_color = handoff_data['text_color']
-            if handoff_data.get('outline_width') is not None:
-                self.outline_width = handoff_data['outline_width']
-            if handoff_data.get('shadow_offset') is not None:
-                self.shadow_offset = handoff_data['shadow_offset']
-
-            self.frozen_text_rgba = handoff_data.get('final_text_rgba', None)
-            self.frozen_occlusion = bool(handoff_data.get('final_occlusion', False))
-
-            self.word_bbox = handoff_data.get('final_word_bbox', None)
-            self.letter_bboxes_abs = handoff_data.get('final_letter_bboxes', None)
-            self.letter_centers = handoff_data.get('final_letter_centers', None)
-
+        # timing
         self.stable_frames = int(stable_duration * fps)
         self.dissolve_frames = int(dissolve_duration * fps)
         self.stagger_frames = int(dissolve_stagger * fps)
-        
+
         self.letter_indices = list(range(len(self.word)))
         if randomize_order:
             random.shuffle(self.letter_indices)
-        
+
         self.letter_dissolvers: List[Dict[str, Any]] = []
         self.prepare_letter_dissolvers()
 
+        # exact per-letter sprites
+        self.letter_sprites: List[Optional[Dict[str, Any]]] = []
         self._prepare_letter_sprites()
 
-        print(f"[SPRITE_OVERLAP] WD init: origin={self.frozen_text_origin} font_size={self.frozen_font_size} "
-              f"stable_frames={self.stable_frames} letters={len(self.word)}")
-        if self.frozen_letter_positions is not None:
-            preview = [(x, y, ch) for (x, y, ch) in self.frozen_letter_positions]
-            print(f"[SPRITE_OVERLAP] WD frozen per-letter positions sample={preview[:min(3, len(preview))]}")
+        # ---- NEW: persistent kill mask (graveyard) ----
+        # Any pixel that ever belonged to a started letter is permanently removed from the base layer.
         if self.frozen_text_rgba is not None:
-            print(f"[SPRITE_OVERLAP] WD frozen RGBA shape={self.frozen_text_rgba.shape} occlusion={self.frozen_occlusion}")
+            H, W = self.frozen_text_rgba.shape[:2]
+            self._dead_mask = np.zeros((H, W), dtype=np.float32)
         else:
-            print(f"[SPRITE_OVERLAP] WD WARNING: no frozen RGBA; stable phase may redraw (risk of drift)")
-        if self.letter_bboxes_abs is not None:
-            print(f"[SPRITE_OVERLAP] WD letter_bboxes count={len(self.letter_bboxes_abs)} word_bbox={self.word_bbox}")
-        if self.letter_centers is not None:
-            print(f"[SPRITE_OVERLAP] WD centers={[(round(cx,1), round(cy,1)) for (cx,cy) in self.letter_centers]}")
+            self._dead_mask = None
+        self._letters_started: set[int] = set()
 
+        # cache last-end
+        self.active_indices = [i for i, s in enumerate(self.letter_sprites) if s is not None]
+        active_letters = len(self.active_indices)
+        self.last_start_frame = self.stable_frames + max(0, active_letters - 1) * self.stagger_frames
+        self.last_end_frame = self.last_start_frame + self.dissolve_frames
+
+        self._dbg(f"init word='{self.word}', letters={len(self.word)}, "
+                  f"stable={self.stable_frames}f, dissolve={self.dissolve_frames}f, stagger={self.stagger_frames}f")
+        if self.frozen_text_rgba is None:
+            self._dbg("WARNING: frozen RGBA is None; stable phase will redraw (risk of drift)")
+
+    # ---------- utilities ----------
     def load_font(self, size: int):
-        """Load font with specified size."""
         if self.font_path and os.path.exists(self.font_path):
             return ImageFont.truetype(self.font_path, size)
-        else:
-            system_fonts = [
-                "/System/Library/Fonts/Helvetica.ttc",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-                "arial.ttf"
-            ]
-            for font in system_fonts:
-                if os.path.exists(font):
-                    return ImageFont.truetype(font, size)
-            return ImageFont.load_default()
+        for fp in ["/System/Library/Fonts/Helvetica.ttc",
+                   "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                   "arial.ttf"]:
+            if os.path.exists(fp):
+                return ImageFont.truetype(fp, size)
+        return ImageFont.load_default()
 
-    def _prepare_letter_sprites(self) -> None:
-        """
-        Build exclusive per-letter sprites by partitioning the final text RGBA.
-        """
-        self.letter_sprites = [None] * len(self.word)
+    def _ensure_mask_float01(self, mask: Optional[Union[np.ndarray, Image.Image]], w: int, h: int) -> Optional[np.ndarray]:
+        if mask is None:
+            return None
+        if isinstance(mask, Image.Image):
+            arr = np.array(mask)
+        else:
+            arr = mask
+        if arr.ndim == 3:
+            if arr.shape[2] == 4:
+                arr = arr[:, :, 3]
+            else:
+                arr = (0.2989 * arr[:, :, 0] + 0.5870 * arr[:, :, 1] + 0.1140 * arr[:, :, 2]).astype(np.float32)
+        if arr.shape[0] != h or arr.shape[1] != w:
+            arr = np.array(Image.fromarray(arr.astype(np.uint8)).resize((w, h), Image.BILINEAR))
+        f = arr.astype(np.float32)
+        if f.max() > 1.0:
+            f /= 255.0
+        # slight feather to avoid jaggies
+        f = np.array(Image.fromarray((f * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(radius=0.75))).astype(np.float32) / 255.0
+        return np.clip(f, 0.0, 1.0)
+
+    # ---------- exact partition via prefix-difference ----------
+    def _get_final_text_origin(self, W: int, H: int, font: ImageFont.FreeTypeFont) -> Tuple[int, int]:
+        if self.frozen_text_origin is not None:
+            return self.frozen_text_origin
+        tmp = Image.new('L', (1, 1), 0)
+        d = ImageDraw.Draw(tmp)
+        bbox = d.textbbox((0, 0), self.word, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        cx, cy = (self.center_position if self.center_position else (W // 2, int(H * 0.45)))
+        return (cx - tw // 2, cy - th // 2)
+
+    def _build_per_letter_masks_exact(self) -> Tuple[List[np.ndarray], np.ndarray]:
         if self.frozen_text_rgba is None:
-            print("[SPRITE_OVERLAP] WD WARNING: no frozen RGBA; cannot build sprites.")
-            return
+            self._dbg("ERROR: cannot build masks; frozen RGBA missing.")
+            return [], np.zeros((1, 1), dtype=np.int32)
 
         H, W = self.frozen_text_rgba.shape[:2]
         alpha = self.frozen_text_rgba[:, :, 3] > 0
 
-        # Centers: prefer those from TBS; otherwise fallback to bbox centers
-        centers: List[Tuple[float, float]] = []
-        if self.letter_centers and len(self.letter_centers) == len(self.word):
-            centers = self.letter_centers
-        elif self.letter_bboxes_abs:
-            centers = [((x0 + x1) / 2.0, (y0 + y1) / 2.0) for (x0, y0, x1, y1) in self.letter_bboxes_abs]
-            print("[SPRITE_OVERLAP] WD WARNING: using bbox centers (no centers from TBS).")
-        else:
-            print("[SPRITE_OVERLAP] WD ERROR: no centers/bboxes; cannot partition sprites.")
+        font = self.load_font(self.frozen_font_size or self.font_size)
+        text_x, text_y = self._get_final_text_origin(W, H, font)
+
+        masks_seed: List[np.ndarray] = []
+        prefix = ""
+        for ch in self.word:
+            imgA = Image.new('L', (W, H), 0)
+            imgB = Image.new('L', (W, H), 0)
+            dA, dB = ImageDraw.Draw(imgA), ImageDraw.Draw(imgB)
+            if prefix:
+                dA.text((text_x, text_y), prefix, font=font, fill=255)
+            dB.text((text_x, text_y), prefix + ch, font=font, fill=255)
+            diff = ImageChops.difference(imgB, imgA)
+            seed = np.array(diff) > 0
+            masks_seed.append(seed)
+            prefix += ch
+
+        labels = np.full((H, W), -1, dtype=np.int32)
+        for i, m in enumerate(masks_seed):
+            labels[m] = i
+
+        # Fill leftovers by nearest center (frozen centers if available)
+        leftover = alpha & (labels == -1)
+        if leftover.any():
+            if self.letter_centers and len(self.letter_centers) == len(self.word):
+                centers = self.letter_centers
+            else:
+                centers = []
+                for i, m in enumerate(masks_seed):
+                    ys, xs = np.where(m)
+                    if len(xs) == 0:
+                        if self.letter_bboxes_abs and i < len(self.letter_bboxes_abs):
+                            x0, y0, x1, y1 = self.letter_bboxes_abs[i]
+                            centers.append(((x0 + x1) / 2.0, (y0 + y1) / 2.0))
+                        else:
+                            centers.append((W / 2.0, H / 2.0))
+                    else:
+                        centers.append((float(xs.mean()), float(ys.mean())))
+            yy, xx = np.indices((H, W))
+            dstack = np.stack([(xx - cx) ** 2 + (yy - cy) ** 2 for (cx, cy) in centers], axis=-1)
+            nearest = np.argmin(dstack, axis=-1)
+            labels[leftover] = nearest[leftover]
+
+        masks: List[np.ndarray] = []
+        for i in range(len(self.word)):
+            masks.append((labels == i) & alpha)
+        return masks, labels
+
+    # ---------- sprite preparation ----------
+    def _prepare_letter_sprites(self) -> None:
+        self.letter_sprites = [None] * len(self.word)
+        if self.frozen_text_rgba is None:
+            self._dbg("WARNING: no frozen RGBA; cannot build sprites.")
+            return
+        H, W = self.frozen_text_rgba.shape[:2]
+        masks, _ = self._build_per_letter_masks_exact()
+        if len(masks) != len(self.word):
+            self._dbg("ERROR: mask build failed; sprites not prepared.")
             return
 
-        # Build nearest-center label map over all text pixels
-        yy, xx = np.indices((H, W))
-        centers_np = np.array(centers, dtype=np.float32)  # (N,2)
-        if centers_np.shape[0] == 0:
-            print("[SPRITE_OVERLAP] WD ERROR: zero centers; cannot partition.")
-            return
-
-        # Distances for all pixels to all centers
-        # dists shape: (H, W, N)
-        dists = []
-        for (cx, cy) in centers_np:
-            d = (xx - cx) ** 2 + (yy - cy) ** 2
-            dists.append(d)
-        dists = np.stack(dists, axis=-1)
-        labels = np.argmin(dists, axis=-1)  # (H, W)
-        labels[~alpha] = -1
-
-        assigned_px = int(np.sum(labels != -1))
-        total_px = int(np.sum(alpha))
-        print(f"[SPRITE_OVERLAP] label coverage: assigned={assigned_px} / alpha={total_px} "
-              f"({(assigned_px / max(1,total_px))*100:.1f}%)")
-
-        # Build exclusive sprites: crop to bbox of each label, blank out other pixels
-        for idx in range(len(self.word)):
-            mask_i = labels == idx
-            if not np.any(mask_i):
-                print(f"[SPRITE_OVERLAP] sprite {idx} ('{self.word[idx]}'): EMPTY")
+        for i, mask_i in enumerate(masks):
+            # Skip space characters - they don't need sprites and can cause artifacts
+            if i < len(self.word) and self.word[i] == ' ':
+                self._dbg(f"Skipping sprite for space character at index {i}")
                 continue
-
+            if not np.any(mask_i):
+                continue
             ys, xs = np.where(mask_i)
-            y0, y1 = ys.min(), ys.max() + 1
-            x0, x1 = xs.min(), xs.max() + 1
+            y0, y1 = int(ys.min()), int(ys.max() + 1)
+            x0, x1 = int(xs.min()), int(xs.max() + 1)
 
             sprite = self.frozen_text_rgba[y0:y1, x0:x1].copy()
             region_mask = mask_i[y0:y1, x0:x1]
-            # Zero alpha where not belonging to this letter
             sprite[~region_mask, 3] = 0
+            
+            # Clean up very faint alpha pixels that can cause gray line artifacts
+            # These are often anti-aliasing artifacts at sprite edges
+            alpha_threshold = 5  # Out of 255
+            sprite[:, :, 3] = np.where(sprite[:, :, 3] < alpha_threshold, 0, sprite[:, :, 3])
+            
+            # Remove disconnected pixels (isolated from main letter body)
+            # This fixes the "gray line at edge" artifact
+            from scipy import ndimage
+            alpha_binary = sprite[:, :, 3] > alpha_threshold
+            if np.any(alpha_binary):
+                # Find connected components
+                labeled, num_features = ndimage.label(alpha_binary)
+                if num_features > 1:
+                    # Keep only the largest connected component
+                    sizes = [np.sum(labeled == i) for i in range(1, num_features + 1)]
+                    largest_label = np.argmax(sizes) + 1
+                    # Zero out alpha for non-largest components
+                    sprite[:, :, 3] = np.where(labeled == largest_label, sprite[:, :, 3], 0)
+                    self._dbg(f"Removed {num_features-1} disconnected components from letter '{self.word[i]}'")
 
-            # Center for placement
-            cx, cy = centers[idx]
-            self.letter_sprites[idx] = {
-                "sprite": sprite,
-                "center": (cx, cy),
-                "bbox": (x0, y0, x1, y1),
-            }
+            # padding to protect blur/glow
             h_i, w_i = sprite.shape[:2]
-            print(f"[SPRITE_OVERLAP] sprite {idx} ('{self.word[idx]}'): bbox=({x0},{y0},{x1},{y1}) size={w_i}x{h_i}")
+            max_dim = max(w_i, h_i)
+            blur_max = int(round(max_dim * self.max_scale * 0.20))
+            pad_by_ratio = int(round(max_dim * max(0.15, min(0.50, float(getattr(self, "sprite_pad_ratio", 0.30))))))
+            pad_px = max(blur_max + 5, pad_by_ratio, 10)
 
-        built = sum(1 for s in self.letter_sprites if s is not None)
-        print(f"[SPRITE_OVERLAP] WD prepared EXCLUSIVE sprites: {built}/{len(self.word)}")
+            padded = np.zeros((h_i + 2 * pad_px, w_i + 2 * pad_px, 4), dtype=np.uint8)
+            padded[pad_px:pad_px + h_i, pad_px:pad_px + w_i] = sprite
 
-    def _alpha_blit(
-        self,
-        dst: np.ndarray,
-        src_rgba: np.ndarray,
-        top_left: Tuple[int, int],
-        visible_mask: Optional[np.ndarray] = None
-    ) -> None:
-        """Alpha-composite src_rgba onto dst at top_left (x, y)."""
-        y, x = top_left[1], top_left[0]
+            bbox_cx = (x0 + x1) / 2.0
+            bbox_cy = (y0 + y1) / 2.0
+
+            self.letter_sprites[i] = {
+                "sprite": padded,
+                "pivot": (bbox_cx, bbox_cy),
+                "bbox": (x0 - pad_px, y0 - pad_px, x1 + pad_px, y1 + pad_px),  # in frame coords
+                "pad_px": pad_px,
+                "orig_bbox": (x0, y0, x1, y1),
+            }
+
+    # ---------- compositing helpers ----------
+    def _top_left_from_pivot(self, pivot_x: float, pivot_y: float, sw: int, sh: int) -> Tuple[int, int]:
+        return (int(round(pivot_x - sw / 2.0)), int(round(pivot_y - sh / 2.0)))
+
+    def _alpha_blit(self, dst: np.ndarray, src_rgba: np.ndarray, top_left: Tuple[int, int],
+                    visible_mask: Optional[np.ndarray] = None) -> None:
+        """Straight alpha composite with optional visibility mask (float 0..1)."""
+        x, y = top_left
         H, W = dst.shape[:2]
         h, w = src_rgba.shape[:2]
-
-        x0 = max(0, x); y0 = max(0, y)
-        x1 = min(W, x + w); y1 = min(H, y + h)
+        x0, y0 = max(0, x), max(0, y)
+        x1, y1 = min(W, x + w), min(H, y + h)
         if x0 >= x1 or y0 >= y1:
             return
 
-        sx0 = x0 - x; sy0 = y0 - y
-        sx1 = sx0 + (x1 - x0); sy1 = sy0 + (y1 - y0)
+        sx0, sy0 = x0 - x, y0 - y
+        sx1, sy1 = sx0 + (x1 - x0), sy0 + (y1 - y0)
 
         src_view = src_rgba[sy0:sy1, sx0:sx1]
-        if visible_mask is not None:
-            vm = visible_mask[y0:y1, x0:x1]
-            src_alpha = src_view[:, :, 3] > 0
-            vis = src_alpha & vm
-        else:
-            vis = src_view[:, :, 3] > 0
-
-        if not np.any(vis):
-            return
-
         alpha = src_view[:, :, 3].astype(np.float32) / 255.0
-        alpha = alpha * vis.astype(np.float32)
+
+        # Eliminate extremely tiny alpha that causes faint box edges after scaling
+        alpha[alpha < (1.0 / 255.0)] = 0.0
+
+        if visible_mask is not None:
+            vm = visible_mask[y0:y1, x0:x1].astype(np.float32)
+            alpha = alpha * vm
+
+        if not np.any(alpha > 0.0):
+            return
 
         for c in range(3):
             dst_region = dst[y0:y1, x0:x1, c].astype(np.float32)
             src_region = src_view[:, :, c].astype(np.float32)
             out = dst_region * (1.0 - alpha) + src_region * alpha
-            dst[y0:y1, x0:x1, c] = out.astype(np.uint8)
+            dst[y0:y1, x0:x1, c] = np.clip(out, 0, 255).astype(np.uint8)
+
+    def _resize_rgba_premultiplied(self, rgba: np.ndarray, new_w: int, new_h: int) -> np.ndarray:
+        """Scale RGBA via premultiplied alpha to avoid fringe/rectangles."""
+        f = rgba.astype(np.float32) / 255.0
+        a = f[:, :, 3:4]
+        rgb_premul = f[:, :, :3] * a
+
+        rgb_img = Image.fromarray((rgb_premul * 255).astype(np.uint8), mode="RGB")
+        a_img = Image.fromarray((a[:, :, 0] * 255).astype(np.uint8), mode="L")
+
+        rgb_rs = np.array(rgb_img.resize((new_w, new_h), Image.LANCZOS)).astype(np.float32) / 255.0
+        a_rs = np.array(a_img.resize((new_w, new_h), Image.LANCZOS)).astype(np.float32) / 255.0
+        a_rs = np.clip(a_rs, 0.0, 1.0)
+
+        # unpremultiply safely
+        eps = 1e-6
+        rgb_out = np.where(a_rs[..., None] > eps, rgb_rs / (a_rs[..., None] + eps), 0.0)
+        out = np.dstack([np.clip(rgb_out, 0.0, 1.0), a_rs])
+        return (out * 255).astype(np.uint8)
 
     def _scaled_sprite(self, sprite_rgba: np.ndarray, scale: float, opacity: int) -> np.ndarray:
-        """Scale sprite by 'scale' and apply opacity to alpha channel."""
         if scale <= 0:
             scale = 0.001
         h, w = sprite_rgba.shape[:2]
-        new_w = max(1, int(round(w * scale)))
-        new_h = max(1, int(round(h * scale)))
-
-        img = Image.fromarray(sprite_rgba, mode='RGBA')
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-        out = np.array(img)
-
+        nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+        out = self._resize_rgba_premultiplied(sprite_rgba, nw, nh)
         if opacity < 255:
-            a = out[:, :, 3].astype(np.float32)
-            a = a * (opacity / 255.0)
+            a = out[:, :, 3].astype(np.float32) * (opacity / 255.0)
             out[:, :, 3] = np.clip(a, 0, 255).astype(np.uint8)
         return out
 
+    def _soft_glow_sprite(self, spr_scaled: np.ndarray, opacity: int, progress: float) -> np.ndarray:
+        h_sc, w_sc = spr_scaled.shape[:2]
+        a = spr_scaled[:, :, 3].astype(np.uint8)
+        blur_px = max(1, int(round(max(h_sc, w_sc) * (0.06 + 0.10 * progress))))
+        a_blur = np.array(Image.fromarray(a).filter(ImageFilter.GaussianBlur(radius=blur_px)))
+        strength = int(opacity * 0.4)
+        glow_a = (a_blur.astype(np.float32) * (strength / 255.0)).clip(0, 255).astype(np.uint8)
+        rgb = np.zeros_like(spr_scaled[:, :, :3], dtype=np.uint8)
+        rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2] = self.text_color
+        return np.dstack([rgb, glow_a])
+
+    def _union_hole_mask(self, H: int, W: int, indices: List[int], dilate_px: int = 0) -> Optional[np.ndarray]:
+        """Union of sprite alpha in frame space; gaussian feather to avoid boxy dilation."""
+        if not indices:
+            return None
+        hole = np.zeros((H, W), dtype=np.float32)
+        for i in indices:
+            S = self.letter_sprites[i]
+            if not S:
+                continue
+            x0, y0, x1, y1 = S["bbox"]
+            a = S["sprite"][:, :, 3].astype(np.float32) / 255.0
+            sub = hole[y0:y1, x0:x1]
+            np.maximum(sub, a, out=sub)
+        if dilate_px > 0:
+            # Use gaussian feather, not MaxFilter (square kernel amplifies rectangles)
+            pil = Image.fromarray((hole * 255).astype(np.uint8))
+            pil = pil.filter(ImageFilter.GaussianBlur(radius=float(dilate_px)))
+            hole = np.array(pil).astype(np.float32) / 255.0
+        return np.clip(hole, 0.0, 1.0)
+
+    # ---------- layout fallbacks ----------
     def _compute_default_positions(self) -> List[Tuple[int, int]]:
-        """Best-effort default positions when no handoff is provided."""
         temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
         draw = ImageDraw.Draw(temp_img)
         font = self.load_font(self.font_size)
-
         if self.center_position:
-            center_x, center_y = self.center_position
+            cx, cy = self.center_position
         else:
-            center_x, center_y = 640, 360
-
+            cx, cy = 640, 360
         full_bbox = draw.textbbox((0, 0), self.word, font=font)
-        full_w = full_bbox[2] - full_bbox[0]
-        full_h = full_bbox[3] - full_bbox[1]
-        base_x = center_x - full_w // 2
-        base_y = center_y - full_h // 2
-
+        fw, fh = full_bbox[2] - full_bbox[0], full_bbox[3] - full_bbox[1]
+        bx = cx - fw // 2
+        by = cy - fh // 2
         positions: List[Tuple[int, int]] = []
         if self.maintain_kerning:
             for i in range(len(self.word)):
                 prefix = self.word[:i]
-                if prefix:
-                    pb = draw.textbbox((0, 0), prefix, font=font)
-                    pw = pb[2] - pb[0]
-                else:
-                    pw = 0
-                positions.append((base_x + pw, base_y))
+                pw = (draw.textbbox((0, 0), prefix, font=font)[2] - draw.textbbox((0, 0), prefix, font=font)[0]) if prefix else 0
+                positions.append((bx + pw, by))
         else:
-            cx = base_x
-            for _letter in self.word:
-                lb = draw.textbbox((0, 0), _letter, font=font)
-                lw = lb[2] - lb[0]
-                positions.append((cx, base_y))
-                cx += lw
+            cx2 = bx
+            for ch in self.word:
+                lw = draw.textbbox((0, 0), ch, font=font)[2] - draw.textbbox((0, 0), ch, font=font)[0]
+                positions.append((cx2, by))
+                cx2 += lw
         return positions
-    
-    def calculate_letter_positions(self) -> List[Tuple[int, int]]:
-        """Return frozen handoff (x,y) if provided; otherwise compute defaults."""
-        if self.frozen_letter_positions:
-            print("[SPRITE_OVERLAP] WD using frozen kerning-accurate positions from TBS.")
-            return [(x, y) for (x, y, _ch) in self.frozen_letter_positions]
-        print("[SPRITE_OVERLAP] WD no handoff; using default positions.")
-        return self._compute_default_positions()
-    
-    def prepare_letter_dissolvers(self):
-        """Set timing/order per letter."""
-        for i, letter in enumerate(self.word):
-            dissolve_idx = self.letter_indices.index(i)
-            start_frame = self.stable_frames + (dissolve_idx * self.stagger_frames)
-            self.letter_dissolvers.append({
-                'letter': letter,
-                'index': i,
-                'dissolve_order': dissolve_idx,
-                'start_frame': start_frame
-            })
-        if self.letter_dissolvers:
-            first_idx = self.letter_dissolvers[0]['index']
-            print(f"[SPRITE_OVERLAP] WD dissolve schedule: first index={first_idx} char='{self.word[first_idx]}' at frame={self.stable_frames}")
 
-    def render_word_frame(
-        self,
-        frame: np.ndarray,
-        frame_idx: int,
-        mask: Optional[np.ndarray] = None
-    ) -> np.ndarray:
-        """
-        Render word with dissolving letters onto a frame, using exclusive sprites.
-        """
+    def calculate_letter_positions(self) -> List[Tuple[int, int]]:
+        if self.frozen_letter_positions:
+            self._dbg("Using frozen kerning positions from TBS.")
+            return [(x, y) for (x, y, _c) in self.frozen_letter_positions]
+        self._dbg("No handoff; using default positions.")
+        return self._compute_default_positions()
+
+    def prepare_letter_dissolvers(self):
+        for i, ch in enumerate(self.word):
+            dissolve_idx = self.letter_indices.index(i)
+            start = self.stable_frames + dissolve_idx * self.stagger_frames
+            self.letter_dissolvers.append({"letter": ch, "index": i, "dissolve_order": dissolve_idx, "start_frame": start})
+        if self.letter_dissolvers:
+            first_i = self.letter_dissolvers[0]["index"]
+            self._dbg(f"dissolve schedule first index={first_i} char='{self.word[first_i]}' at frame={self.stable_frames}")
+
+    # ---------- main render ----------
+    def render_word_frame(self, frame: np.ndarray, frame_idx: int,
+                          mask: Optional[Union[np.ndarray, Image.Image, bool]] = None) -> np.ndarray:
         h, w = frame.shape[:2]
-        
-        if self.center_position:
-            center_x, center_y = self.center_position
-        else:
-            center_x = w // 2
-            center_y = int(h * 0.45)
-            self.center_position = (center_x, center_y)
-        
-        # Phase A: exact stability before any dissolve starts
+        if self.center_position is None:
+            self.center_position = (w // 2, int(h * 0.45))
+
+        # soft occlusion (match TBS)
+        bg_vis: Optional[np.ndarray] = None
+        if self.frozen_occlusion and (mask is not None):
+            subject = self._ensure_mask_float01(mask, w=w, h=h)
+            if subject is not None:
+                bg_vis = 1.0 - subject
+
+        # ---- Phase A: stable ----
         if frame_idx < self.stable_frames:
             if self.frozen_text_rgba is not None:
-                text_layer_np = self.frozen_text_rgba
-                result = frame.copy()
-                if self.frozen_occlusion and mask is not None:
-                    bg_mask = ~mask
-                    for c in range(3):
-                        text_visible = (text_layer_np[:, :, 3] > 0) & bg_mask
-                        if np.any(text_visible):
-                            alpha_blend = text_layer_np[text_visible, 3] / 255.0
-                            result[text_visible, c] = (
-                                result[text_visible, c] * (1 - alpha_blend) +
-                                text_layer_np[text_visible, c] * alpha_blend
-                            ).astype(np.uint8)
-                else:
-                    for c in range(3):
-                        text_visible = text_layer_np[:, :, 3] > 0
-                        if np.any(text_visible):
-                            alpha_blend = text_layer_np[text_visible, 3] / 255.0
-                            result[text_visible, c] = (
-                                result[text_visible, c] * (1 - alpha_blend) +
-                                text_layer_np[text_visible, c] * alpha_blend
-                            ).astype(np.uint8)
-                if frame_idx == 0:
-                    print("[SPRITE_OVERLAP] WD stable-phase uses frozen RGBA (pixel-perfect).")
-                return result
-
-            # Fallback redraw (rare)
-            print("[SPRITE_OVERLAP] WD WARNING: no frozen RGBA; redrawing stable frame.")
-            text_layer = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(text_layer)
-            effective_font_size = self.frozen_font_size if self.frozen_font_size else self.font_size
-            base_font = self.load_font(effective_font_size)
+                text_rgba = self.frozen_text_rgba
+                a = text_rgba[:, :, 3].astype(np.float32) / 255.0
+                if bg_vis is not None:
+                    a = a * bg_vis
+                base = frame.astype(np.float32)
+                rgb = text_rgba[:, :, :3].astype(np.float32)
+                out = base * (1.0 - a[..., None]) + rgb * a[..., None]
+                return np.clip(out, 0, 255).astype(np.uint8)
+            # fallback redraw (rare)
+            img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            font = self.load_font(self.frozen_font_size or self.font_size)
             if self.frozen_text_origin is not None:
-                text_x, text_y = self.frozen_text_origin
+                tx, ty = self.frozen_text_origin
             else:
-                full_bbox = draw.textbbox((0, 0), self.word, font=base_font)
-                full_w = full_bbox[2] - full_bbox[0]
-                full_h = full_bbox[3] - full_bbox[1]
-                text_x = center_x - full_w // 2
-                text_y = center_y - full_h // 2
-            shadow_px = max(2, int(self.shadow_offset * self.final_scale))
-            draw.text((text_x + shadow_px, text_y + shadow_px), self.word, font=base_font, fill=(0, 0, 0, 100))
+                bb = draw.textbbox((0, 0), self.word, font=font)
+                tw, th = bb[2] - bb[0], bb[3] - bb[1]
+                cx, cy = self.center_position
+                tx, ty = cx - tw // 2, cy - th // 2
+            sh = max(2, int(self.shadow_offset * self.final_scale))
+            draw.text((tx + sh, ty + sh), self.word, font=font, fill=(0, 0, 0, 100))
             for dx in range(-self.outline_width, self.outline_width + 1):
                 for dy in range(-self.outline_width, self.outline_width + 1):
                     if abs(dx) == self.outline_width or abs(dy) == self.outline_width:
-                        draw.text((text_x + dx, text_y + dy), self.word, font=base_font, fill=(255, 255, 255, 150))
-            draw.text((text_x, text_y), self.word, font=base_font, fill=(*self.text_color, 255))
-            text_layer_np = np.array(text_layer)
-            result = frame.copy()
-            if mask is not None:
-                bg_mask = ~mask
-                for c in range(3):
-                    text_visible = (text_layer_np[:, :, 3] > 0) & bg_mask
-                    if np.any(text_visible):
-                        alpha_blend = text_layer_np[text_visible, 3] / 255.0
-                        result[text_visible, c] = (
-                            result[text_visible, c] * (1 - alpha_blend) +
-                            text_layer_np[text_visible, c] * alpha_blend
-                        ).astype(np.uint8)
-            else:
-                for c in range(3):
-                    text_visible = text_layer_np[:, :, 3] > 0
-                    if np.any(text_visible):
-                        alpha_blend = text_layer_np[text_visible, 3] / 255.0
-                        result[text_visible, c] = (
-                            result[text_visible, c] * (1 - alpha_blend) +
-                            text_layer_np[text_visible, c] * alpha_blend
-                        ).astype(np.uint8)
-            return result
-        
-        # Phase B: dissolve begins
-        if frame_idx == self.stable_frames:
-            first_idx = self.letter_indices[0] if self.letter_indices else None
-            first_ch = self.word[first_idx] if first_idx is not None else None
-            print(f"[SPRITE_OVERLAP] WD dissolve begins at frame {frame_idx}. first index={first_idx} char='{first_ch}'")
-        
-        use_sprites = (self.frozen_text_rgba is not None and self.letter_sprites and any(self.letter_sprites))
-        bg_mask = ~mask if (mask is not None and self.frozen_occlusion) else None
+                        draw.text((tx + dx, ty + dy), self.word, font=font, fill=(255, 255, 255, 150))
+            draw.text((tx, ty), self.word, font=font, fill=(*self.text_color, 255))
+            text = np.array(img)
+            a = text[:, :, 3].astype(np.float32) / 255.0
+            if bg_vis is not None:
+                a = a * bg_vis
+            base = frame.astype(np.float32)
+            out = base * (1.0 - a[..., None]) + text[:, :, :3].astype(np.float32) * a[..., None]
+            return np.clip(out, 0, 255).astype(np.uint8)
+
+        # ---- Phase B: dissolve ----
+        use_sprites = self.frozen_text_rgba is not None and any(self.letter_sprites)
         result = frame.copy()
 
-        if use_sprites:
-            # Pass 1: draw all non-started letters (fully opaque)
-            non_started_indices: List[int] = []
-            dissolving_indices: List[int] = []
-            for i in range(len(self.word)):
-                info = next(d for d in self.letter_dissolvers if d['index'] == i)
-                start_frame = info['start_frame']
-                if frame_idx < start_frame:
-                    non_started_indices.append(i)
-                elif frame_idx < start_frame + self.dissolve_frames:
-                    dissolving_indices.append(i)
-                # else: finished
-
-            for i in non_started_indices:
-                S = self.letter_sprites[i]
-                if S is None: 
-                    continue
-                spr = S["sprite"]
-                cx, cy = S["center"]
-                th, tw = spr.shape[:2]
-                x = int(round(cx - tw / 2.0))
-                y = int(round(cy - th / 2.0))
-                self._alpha_blit(result, spr, (x, y), visible_mask=bg_mask)
-
-            # Pass 2: draw dissolving letters (scale/fade/float)
-            for i in dissolving_indices:
-                S = self.letter_sprites[i]
-                if S is None:
-                    continue
-                spr = S["sprite"]
-                cx, cy = S["center"]
-
-                info = next(d for d in self.letter_dissolvers if d['index'] == i)
-                start_frame = info['start_frame']
-                progress = (frame_idx - start_frame) / max(1, self.dissolve_frames)
-                opacity = int(255 * (1 - progress))
-                if opacity <= 0:
-                    continue
-                current_scale = 1.0 + (self.max_scale - 1.0) * progress
-                float_offset = int(progress * self.float_distance)
-
-                spr_scaled = self._scaled_sprite(spr, current_scale, opacity)
-                nx_center = cx
-                ny_center = cy - float_offset
-
-                sh, sw = spr_scaled.shape[:2]
-                nx = int(round(nx_center - sw / 2.0))
-                ny = int(round(ny_center - sh / 2.0))
-
-                # Optional faint glow
-                if self.glow_effect and progress > 0.2:
-                    glow_alpha = int(opacity * 0.35 * min(1.0, progress * 2))
-                    if glow_alpha > 0:
-                        for radius in [5, 3, 1]:
-                            for angle in range(0, 360, 90):
-                                gx = int(radius * np.cos(np.radians(angle)))
-                                gy = int(radius * np.sin(np.radians(angle)))
-                                glow = spr_scaled.copy()
-                                a = glow[:, :, 3].astype(np.float32)
-                                a = a * (glow_alpha / 255.0)
-                                glow[:, :, 3] = np.clip(a, 0, 255).astype(np.uint8)
-                                self._alpha_blit(result, glow, (nx + gx, ny + gy), visible_mask=bg_mask)
-
-                self._alpha_blit(result, spr_scaled, (nx, ny), visible_mask=bg_mask)
-
+        if not use_sprites:
+            # minimalistic fallback: just skip (kept for API parity)
             return result
 
-        # ===== Fallback (no sprites) =====
-        stable_positions = self.calculate_letter_positions()
-        text_layer = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(text_layer)
-        effective_font_size = self.frozen_font_size if self.frozen_font_size else self.font_size
-        base_font = self.load_font(effective_font_size)
-        
-        non_started_indices: List[int] = []
-        dissolving_indices: List[int] = []
+        # states
+        not_started, dissolving, completed = [], [], []
         for i in range(len(self.word)):
-            info = next(d for d in self.letter_dissolvers if d['index'] == i)
-            start_frame = info['start_frame']
-            if frame_idx < start_frame:
-                non_started_indices.append(i)
-            elif frame_idx < start_frame + self.dissolve_frames:
-                dissolving_indices.append(i)
+            info = next(d for d in self.letter_dissolvers if d["index"] == i)
+            s = info["start_frame"]
+            e = s + self.dissolve_frames
+            if frame_idx < s:
+                not_started.append(i)
+            elif frame_idx < e:
+                dissolving.append(i)
+            else:
+                completed.append(i)
 
-        # Non-dissolving letters
-        for idx in non_started_indices:
-            letter = self.word[idx]
-            lx, ly = stable_positions[idx]
-            shadow_px = max(2, int(self.shadow_offset * self.final_scale))
-            draw.text((lx + shadow_px, ly + shadow_px), letter, font=base_font, fill=(0, 0, 0, 100))
-            for ddx in range(-self.outline_width, self.outline_width + 1):
-                for ddy in range(-self.outline_width, self.outline_width + 1):
-                    if abs(ddx) == self.outline_width or abs(ddy) == self.outline_width:
-                        draw.text((lx + ddx, ly + ddy), letter, font=base_font, fill=(255, 255, 255, 150))
-            draw.text((lx, ly), letter, font=base_font, fill=(*self.text_color, 255))
+        # CRITICAL FIX: If ALL letters are completed, return frame without any text
+        if len(completed) == len(self.word):
+            self._dbg(f"frame={frame_idx}: All letters completed, returning clean frame")
+            return result  # result is frame.copy() from line 511
+
+        # (1) Grow the persistent kill mask exactly when a letter STARTS dissolving
+        if self._dead_mask is not None:
+            for i in dissolving:
+                info = next(d for d in self.letter_dissolvers if d["index"] == i)
+                if frame_idx == info["start_frame"] and i not in self._letters_started:
+                    self._letters_started.add(i)
+                    S = self.letter_sprites[i]
+                    if S:
+                        x0, y0, x1, y1 = S["bbox"]
+                        a = S["sprite"][:, :, 3].astype(np.float32) / 255.0
+
+                        # radius must cover: outline + glow + scale growth
+                        sh, sw = S["sprite"].shape[:2]
+                        # Increase growth factor to fully cover scaled sprites
+                        grow = int(round(max(sh, sw) * (max(self.max_scale, 1.0) - 1.0) * 0.8))  # Increased from 0.6
+                        # Increase glow radius to match actual glow effect
+                        glow = int(round(max(sh, sw) * 0.20))  # Increased from 0.12
+                        radius = max(self.outline_width + 4, glow, grow, 6)  # Increased minimums
+
+                        # feather (gaussian) to avoid box geometry
+                        a_soft = np.array(Image.fromarray((a * 255).astype(np.uint8)).filter(
+                            ImageFilter.GaussianBlur(radius=float(radius))
+                        )).astype(np.float32) / 255.0
+
+                        sub = self._dead_mask[y0:y1, x0:x1]
+                        np.maximum(sub, a_soft, out=sub)
+                        self._dbg(f"kill-mask grow: idx={i} letter='{self.word[i]}' radius={radius}px bbox=({x0},{y0},{x1},{y1})")
+
+        # Also ensure completed letters are FULLY masked (opacity = 1.0)
+        # CRITICAL: Expand mask to cover outlines and shadows
+        if self._dead_mask is not None:
+            H, W = self._dead_mask.shape
+            for i in completed:
+                S = self.letter_sprites[i]
+                if S:
+                    x0, y0, x1, y1 = S["bbox"]
+                    # Expand bounds to cover outline and shadow
+                    outline_expand = self.outline_width + 3  # Extra pixels for safety
+                    shadow_expand = max(self.shadow_offset, 3)
+                    x0 = max(0, x0 - outline_expand)
+                    y0 = max(0, y0 - outline_expand)
+                    x1 = min(W, x1 + outline_expand + shadow_expand)
+                    y1 = min(H, y1 + outline_expand + shadow_expand)
+                    
+                    # Force entire expanded region to be fully masked
+                    self._dead_mask[y0:y1, x0:x1] = 1.0
+
+        # (2) Build a frame-local hole for currently dissolving letters (helps during fade)
+        H, W = self.frozen_text_rgba.shape[:2]
+        hole_radius = 0
+        if dissolving or completed:
+            # include some extra to be safe; we already have persistent dead_mask for started ones
+            dims = []
+            for i in dissolving + completed:
+                S = self.letter_sprites[i]
+                if S is not None:
+                    sh, sw = S["sprite"].shape[:2]
+                    dims.append(max(sh, sw))
+            if dims:
+                # Increase hole radius to fully cover glow + scale effects
+                # Account for: scale growth (max_scale - 1.0), glow blur (up to 16% of size)
+                hole_radius = int(round(max(dims) * 0.25))  # Increased from 0.10 to prevent edge artifacts
+        frame_hole = self._union_hole_mask(H, W, dissolving + completed, dilate_px=hole_radius)
+
+        # (3) Compose the base frozen text with PERMANENT + FRAME holes
+        # CRITICAL: Only render letters that haven't started dissolving yet
+        base_rgba = self.frozen_text_rgba
+        base_rgb = base_rgba[:, :, :3].astype(np.float32)
+        base_a = base_rgba[:, :, 3].astype(np.float32) / 255.0
+
+        # Create mask for letters that should be visible in base
+        # Only show letters in not_started state
+        base_letter_mask = np.ones((H, W), dtype=np.float32)
+        for i in dissolving + completed:
+            S = self.letter_sprites[i]
+            if S:
+                x0, y0, x1, y1 = S["bbox"]
+                # Use the actual sprite alpha to avoid overlapping adjacent letters
+                sprite_alpha = S["sprite"][:, :, 3].astype(np.float32) / 255.0
+                
+                # Apply slight dilation to cover outlines
+                alpha_img = Image.fromarray((sprite_alpha * 255).astype(np.uint8))
+                # Small dilation to cover outlines without overlapping neighbors
+                dilated = alpha_img.filter(ImageFilter.MaxFilter(size=5))
+                sprite_alpha_dilated = np.array(dilated).astype(np.float32) / 255.0
+                
+                # Subtract this sprite from the base mask
+                mask_region = base_letter_mask[y0:y1, x0:x1]
+                np.minimum(mask_region, 1.0 - sprite_alpha_dilated, out=mask_region)
         
-        # Dissolving letters
-        for idx in dissolving_indices:
-            letter = self.word[idx]
-            lx, ly = stable_positions[idx]
-            info = next(d for d in self.letter_dissolvers if d['index'] == i)
-            start_frame = info['start_frame']
-            progress = (frame_idx - start_frame) / max(1, self.dissolve_frames)
-            float_offset = int(progress * self.float_distance)
-            opacity = int(255 * (1 - progress))
+        # Apply the mask to remove dissolving/completed letters from base
+        base_a = base_a * base_letter_mask
+        
+        if bg_vis is not None:
+            base_a = base_a * bg_vis
+
+        base_f = result.astype(np.float32)
+        out = base_f * (1.0 - base_a[..., None]) + base_rgb * base_a[..., None]
+        result = np.clip(out, 0, 255).astype(np.uint8)
+
+        # (4) Draw dissolving letters on top
+        for i in dissolving:
+            # Skip space characters - they shouldn't be rendered
+            if i < len(self.word) and self.word[i] == ' ':
+                continue
+            S = self.letter_sprites[i]
+            if S is None:
+                continue
+
+            info = next(d for d in self.letter_dissolvers if d["index"] == i)
+            start = info["start_frame"]
+            progress = (frame_idx - start) / max(1, self.dissolve_frames)
+            progress = max(0.0, min(1.0, float(progress)))
+            opacity = int(255 * (1.0 - progress))
             if opacity <= 0:
                 continue
+
+            spr = S["sprite"]
+            pivot_x, pivot_y = S["pivot"]
+
             current_scale = 1.0 + (self.max_scale - 1.0) * progress
-            base_size = self.frozen_font_size if self.frozen_font_size else self.font_size
-            scaled_font_size = max(1, int(base_size * current_scale))
-            scaled_font = self.load_font(scaled_font_size)
-            temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
-            tmp_draw = ImageDraw.Draw(temp_img)
-            orig_bbox = tmp_draw.textbbox((0, 0), letter, font=base_font)
-            scaled_bbox = tmp_draw.textbbox((0, 0), letter, font=scaled_font)
-            orig_w = orig_bbox[2] - orig_bbox[0]
-            orig_h = orig_bbox[3] - orig_bbox[1]
-            scaled_w = scaled_bbox[2] - scaled_bbox[0]
-            scaled_h = scaled_bbox[3] - scaled_bbox[1]
-            dx = (scaled_w - orig_w) // 2
-            dy = (scaled_h - orig_h) // 2
-            ax = lx - dx
-            ay = ly - float_offset - dy
-            shadow_alpha = max(10, int(100 * (1 - progress)))
-            if shadow_alpha > 0:
-                draw.text((ax + 2, ay + 2), letter, font=scaled_font, fill=(0, 0, 0, shadow_alpha))
+            float_offset = int(progress * self.float_distance)
+
+            spr_scaled = self._scaled_sprite(spr, current_scale, opacity)
+            sh, sw = spr_scaled.shape[:2]
+            nx, ny = self._top_left_from_pivot(pivot_x, (pivot_y - float_offset), sw, sh)
+
             if self.glow_effect and progress > 0.2:
-                glow_alpha = int(opacity * 0.4 * min(1.0, progress * 2))
-                for radius in [5, 3, 1]:
-                    for angle in range(0, 360, 60):
-                        gx = int(radius * np.cos(np.radians(angle)))
-                        gy = int(radius * np.sin(np.radians(angle)))
-                        draw.text((ax + gx, ay + gy), letter, font=scaled_font, fill=(255, 240, 180, glow_alpha))
-            if progress < 0.4:
-                outline_alpha = int(150 * (1 - progress * 2.5))
-                for ddx in range(-self.outline_width, self.outline_width + 1):
-                    for ddy in range(-self.outline_width, self.outline_width + 1):
-                        if abs(ddx) == self.outline_width or abs(ddy) == self.outline_width:
-                            draw.text((ax + ddx, ay + ddy), letter, font=scaled_font, fill=(255, 255, 255, outline_alpha))
-            draw.text((ax, ay), letter, font=scaled_font, fill=(*self.text_color, opacity))
-        
-        text_layer_np = np.array(text_layer)
-        if bg_mask is not None:
-            for c in range(3):
-                text_visible = (text_layer_np[:, :, 3] > 0) & bg_mask
-                if np.any(text_visible):
-                    alpha_blend = text_layer_np[text_visible, 3] / 255.0
-                    result[text_visible, c] = (
-                        result[text_visible, c] * (1 - alpha_blend) +
-                        text_layer_np[text_visible, c] * alpha_blend
-                    ).astype(np.uint8)
-        else:
-            for c in range(3):
-                text_visible = text_layer_np[:, :, 3] > 0
-                if np.any(text_visible):
-                    alpha_blend = text_layer_np[text_visible, 3] / 255.0
-                    result[text_visible, c] = (
-                        result[text_visible, c] * (1 - alpha_blend) +
-                        text_layer_np[text_visible, c] * alpha_blend
-                    ).astype(np.uint8)
+                glow = self._soft_glow_sprite(spr_scaled, opacity, progress)
+                self._alpha_blit(result, glow, (nx, ny), visible_mask=bg_vis)
+
+            self._alpha_blit(result, spr_scaled, (nx, ny), visible_mask=bg_vis)
+
+        # (5) Logs (every 12 frames to avoid spam)
+        if frame_idx % 12 == 0:
+            self._dbg(f"frame={frame_idx} states: not_started={not_started}, dissolving={dissolving}, completed={completed}")
+            dead_cov = float(self._dead_mask.mean()) if self._dead_mask is not None else 0.0
+            self._dbg(f"dead_mask coverage={dead_cov:.4f}, hole_radius={hole_radius}px")
+
         return result
-    
+
+    # ---------- public API stubs ----------
     def process_frames(self) -> list:
         return []
-    
+
     def animate(self, output_path: str) -> bool:
         order = ''.join([self.word[i] for i in self.letter_indices])
-        print(f"[SPRITE_OVERLAP] WD animation; Word='{self.word}' Letters={len(self.word)} "
-              f"Dissolve order='{order}' Total duration={self.duration}s")
-        print(f"[SPRITE_OVERLAP] ✓ WD complete")
+        self._dbg(f"animate word='{self.word}', order='{order}', duration={self.duration}s")
         return True

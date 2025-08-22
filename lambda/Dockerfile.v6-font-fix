@@ -1,0 +1,49 @@
+# Start from the v4 working image
+FROM 562404437786.dkr.ecr.us-east-1.amazonaws.com/text-animation-lambda:v4
+
+# Build deps
+RUN yum install -y gcc gcc-c++ make && \
+    yum clean all && rm -rf /var/cache/yum
+
+# Install fonts for proper text rendering
+RUN yum install -y fontconfig tar && \
+    mkdir -p /usr/share/fonts/truetype/liberation && \
+    curl -L https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz -o /tmp/fonts.tar.gz && \
+    tar -xzf /tmp/fonts.tar.gz -C /tmp && \
+    cp /tmp/liberation-fonts-ttf-2.1.5/*.ttf /usr/share/fonts/truetype/liberation/ && \
+    fc-cache -f -v && \
+    rm -rf /tmp/fonts.tar.gz /tmp/liberation-fonts-ttf-2.1.5 && \
+    yum clean all
+
+# rembg + pinned deps
+RUN pip install --no-cache-dir \
+      numpy==1.24.3 \
+      rembg==2.0.59 \
+      onnxruntime==1.16.3 \
+      opencv-python-headless==4.8.1.78 \
+      imageio-ffmpeg==0.5.1 \
+      pillow==10.4.0 && \
+    python - <<'PY' || true
+from rembg import new_session
+new_session('u2net')
+print('[LAMBDA_MANIFEST] U2Net model cached during build')
+PY
+
+# Updated processor & animations with fixed font path
+COPY lambda/python/text_animation_processor.py ${LAMBDA_TASK_ROOT}/
+COPY utils/animations/ ${LAMBDA_TASK_ROOT}/utils/animations/
+
+# Early runtime debug
+COPY lambda/python/sitecustomize.py ${LAMBDA_TASK_ROOT}/sitecustomize.py
+
+# Environment variables
+ENV NUMBA_CACHE_DIR=/tmp
+ENV NUMBA_DISABLE_JIT=0
+ENV PYTHONUNBUFFERED=1
+ENV U2NET_HOME=/tmp
+ENV HOME=/tmp
+# Set default font path
+ENV TEXT_FONT_PATH=/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf
+
+# Handler
+CMD ["lambda_handler.lambda_handler"]

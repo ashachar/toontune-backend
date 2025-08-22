@@ -1,0 +1,38 @@
+# Start from the working v4 image (existing in your ECR)
+FROM 562404437786.dkr.ecr.us-east-1.amazonaws.com/text-animation-lambda:v4
+
+# Build deps
+RUN yum install -y gcc gcc-c++ make && \
+    yum clean all && rm -rf /var/cache/yum
+
+# rembg + pinned deps (compatibility)
+RUN pip install --no-cache-dir \
+      numpy==1.24.3 \
+      rembg==2.0.59 \
+      onnxruntime==1.16.3 \
+      opencv-python-headless==4.8.1.78 \
+      imageio-ffmpeg==0.5.1 \
+      pillow==10.4.0 && \
+    python - <<'PY' || true
+from rembg import new_session
+new_session('u2net')
+print('[LAMBDA_MANIFEST] U2Net model cached during build (incremental)')
+PY
+
+# Updated processor & animations
+COPY lambda/python/text_animation_processor.py ${LAMBDA_TASK_ROOT}/
+COPY utils/animations/ ${LAMBDA_TASK_ROOT}/utils/animations/
+
+# Early runtime debug (auto-imported by Python)
+COPY lambda/python/sitecustomize.py ${LAMBDA_TASK_ROOT}/sitecustomize.py
+
+# Fix numba cache issue in Lambda environment
+ENV NUMBA_CACHE_DIR=/tmp
+ENV NUMBA_DISABLE_JIT=0
+ENV PYTHONUNBUFFERED=1
+# Fix rembg model cache location
+ENV U2NET_HOME=/tmp
+ENV HOME=/tmp
+
+# Handler unchanged
+CMD ["lambda_handler.lambda_handler"]

@@ -12,6 +12,16 @@ When creating any file during inference, always mention it as the last output of
 Also mention which files were created in the current inference session.
 Additionally, mention any output files (artifacts) that were generated as a result of running code or tests.
 
+## Video Output Format Requirements
+**ALL video outputs MUST be encoded in H.264 format for compatibility**
+- Use `libx264` codec with FFmpeg
+- Add `-pix_fmt yuv420p` for maximum compatibility
+- Add `-movflags +faststart` for web streaming
+- Standard conversion command:
+  ```bash
+  ffmpeg -i input.mp4 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -movflags +faststart output_h264.mp4
+  ```
+
 ## Project Context
 This is a ToonTune backend project for processing SVG animations with human-like drawing sequences.
 

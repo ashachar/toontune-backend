@@ -1,0 +1,17 @@
+FROM public.ecr.aws/lambda/python:3.11
+
+# Copy requirements
+COPY requirements.txt /tmp/
+
+# Install packages
+RUN pip install --no-cache-dir \
+                -t /opt/python \
+                -r /tmp/requirements.txt
+
+# Pre-download the U2Net model
+RUN python -c "from rembg import new_session; new_session('u2net'); print('[LAMBDA_ANIM] U2Net model cached')" || true
+
+# Create the zip from inside the container
+RUN cd /opt && zip -r9 /tmp/layer.zip python
+
+CMD ["cp", "/tmp/layer.zip", "/output/layer.zip"]
