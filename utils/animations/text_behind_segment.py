@@ -423,17 +423,26 @@ class TextBehindSegment(Animation):
         text_alpha = (text_layer_np[:, :, 3].astype(np.float32) / 255.0)[..., None]  # (h, w, 1)
         text_rgb = text_layer_np[:, :, :3].astype(np.float32)  # (h, w, 3)
         
-        # Apply transparency during shrink phase to show text moving to back
-        if phase == "foreground" and frame_idx > 0:
-            # During shrink (phase 1), fade from 1.0 to 0.5 alpha
-            phase_progress = frame_idx / self.phase1_end if self.phase1_end > 0 else 1
-            target_alpha = 1.0 - (0.5 * phase_progress)  # Goes from 1.0 to 0.5
-            text_alpha = text_alpha * target_alpha
+        # Apply transparency ONLY AFTER text passes behind subject
+        if phase == "foreground":
+            # During shrink (phase 1), text stays FULLY OPAQUE
+            # No fading at all - text is still in front
+            pass  # Keep text_alpha as is (fully opaque)
         elif phase == "transition":
-            # During transition (phase 2), maintain 0.5 alpha
-            text_alpha = text_alpha * 0.5
+            # During transition (phase 2), text passes behind - START FADING HERE
+            # Use exponential curve for dramatic fade as it goes behind
+            phase_progress = (frame_idx - self.phase1_end) / (self.phase2_end - self.phase1_end)
+            
+            # Exponential function for smooth fade from 1.0 to 0.5
+            import math
+            k = 3.0  # Curve factor - higher = more exponential
+            exp_progress = (math.exp(k * phase_progress) - 1) / (math.exp(k) - 1)
+            
+            # Fade from fully opaque (1.0) to semi-transparent (0.5)
+            target_alpha = 1.0 - (0.5 * exp_progress)
+            text_alpha = text_alpha * target_alpha
         elif phase == "background":
-            # During stable behind (phase 3), keep at 0.5 alpha
+            # During stable behind (phase 3), maintain 0.5 alpha
             # The final fade out will happen during dissolve
             text_alpha = text_alpha * 0.5
 
