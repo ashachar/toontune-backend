@@ -1,0 +1,60 @@
+{
+  "video": "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/videos/do_re_mi/scenes/downsampled/scene_001.mp4",
+  "style": "wry",
+  "silence_analysis": {
+    "total_periods": 6,
+    "usable_periods": 6,
+    "total_silence_time": 22.400000000000002,
+    "selected_periods": 6
+  },
+  "snarks": [
+    {
+      "time": 0.2,
+      "text": "Ah yes, exactly what we needed right now.",
+      "duration": 3.088,
+      "style": "wry",
+      "silence_window": 6.0
+    },
+    {
+      "time": 6.4,
+      "text": "Pure artistic vision.",
+      "duration": 1.37,
+      "style": "wry",
+      "silence_window": 2.5
+    },
+    {
+      "time": 10.7,
+      "text": "Genius move.",
+      "duration": 0.882,
+      "style": "wry",
+      "silence_window": 2.1
+    },
+    {
+      "time": 28.099999999999998,
+      "text": "Noted.",
+      "duration": 0.441,
+      "style": "wry",
+      "silence_window": 1.8
+    },
+    {
+      "time": 37.300000000000004,
+      "text": "This is definitely the highlight of my existence.",
+      "duration": 2.903,
+      "style": "wry",
+      "silence_window": 8.4
+    },
+    {
+      "time": 51.6,
+      "text": "Cool.",
+      "duration": 0.464,
+      "style": "wry",
+      "silence_window": 1.6
+    }
+  ],
+  "settings": {
+    "min_silence_duration": 1.5,
+    "silence_threshold": -40,
+    "duck_level": -12,
+    "fade_duration": "400ms"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "video": "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/videos/do_re_mi/scenes/downsampled/scene_001.mp4",
+  "total_silent_periods": 8,
+  "usable_silent_periods": 8,
+  "snarks_generated": 6,
+  "snarks": [
+    {
+      "time": 10.2,
+      "silence_duration": 4.3,
+      "text": "Ah yes, because that's exactly what we needed right now.",
+      "max_duration": 4.0,
+      "style": "condescending",
+      "priority": 8,
+      "context": "Let's start at the very beginn"
+    },
+    {
+      "time": 14.6,
+      "silence_duration": 9.9,
+      "text": "This is definitely the highlight of my existence.",
+      "max_duration": 9.6,
+      "style": "condescending",
+      "priority": 8,
+      "context": "Let's start at the very beginn"
+    },
+    {
+      "time": 25.4,
+      "silence_duration": 8.6,
+      "text": "I'm sure this will age like fine wine.",
+      "max_duration": 8.299999999999999,
+      "style": "condescending",
+      "priority": 8,
+      "context": "transition"
+    },
+    {
+      "time": 37.3,
+      "silence_duration": 6.4,
+      "text": "Music theory at its peak.",
+      "max_duration": 6.1000000000000005,
+      "style": "condescending",
+      "priority": 8,
+      "context": "Do, Re, Mi, Fa, Sol, La, Ti."
+    },
+    {
+      "time": 49.2,
+      "silence_duration": 4.3,
+      "text": "Ah yes, because that's exactly what we needed right now.",
+      "max_duration": 4.0,
+      "style": "condescending",
+      "priority": 8,
+      "context": "transition"
+    },
+    {
+      "time": 0.0,
+      "silence_duration": 3.0,
+      "text": "Mind = blown.",
+      "max_duration": 2.7,
+      "style": "sarcastic",
+      "priority": 5,
+      "context": "transition"
+    }
+  ],
+  "silence_coverage": {
+    "total_silence_time": 40.9,
+    "used_silence_time": 36.49999999999999,
+    "percentage_used": 75.0
+  }
+}

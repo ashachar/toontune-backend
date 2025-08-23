@@ -1,0 +1,44 @@
+{
+  "total_snarks": 6,
+  "placements": [
+    {
+      "text": "Oh good, another musical...",
+      "time": 3.1,
+      "type": "silent",
+      "moved_from": 3.8
+    },
+    {
+      "text": "Yes, because ABC...",
+      "time": 16.8,
+      "type": "ducked",
+      "moved_from": 16.8
+    },
+    {
+      "text": "We get it...",
+      "time": 25.5,
+      "type": "ducked",
+      "moved_from": 25.5
+    },
+    {
+      "text": "Easier?...",
+      "time": 37.3,
+      "type": "silent",
+      "moved_from": 41.8
+    },
+    {
+      "text": "Revolutionary...",
+      "time": 48.0,
+      "type": "ducked",
+      "moved_from": 48.0
+    },
+    {
+      "text": "Mi, the narcissism...",
+      "time": 52.5,
+      "type": "ducked",
+      "moved_from": 52.5
+    }
+  ],
+  "silent_placements": 2,
+  "quiet_placements": 0,
+  "ducked_placements": 4
+}

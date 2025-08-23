@@ -1,0 +1,32 @@
+{
+  "demo_stats": {
+    "snarks_generated": 6,
+    "total_characters": 234,
+    "avg_chars_per_snark": 39.0,
+    "character_breakdown": [
+      46,
+      43,
+      42,
+      38,
+      35,
+      30
+    ]
+  },
+  "cost_analysis": {
+    "pay_as_you_go": 0.0702,
+    "per_snark": 0.0117,
+    "per_1000_chars": 0.3,
+    "currency": "USD"
+  },
+  "projections": {
+    "10_min_video": 0.7,
+    "30_min_video": 2.11,
+    "60_min_video": 4.21
+  },
+  "comparison": {
+    "voice_actor_hourly": "$50-200",
+    "manual_editing_hours": "2-4",
+    "auto_snark_time": "< 1 minute",
+    "cost_reduction": "99.9%"
+  }
+}

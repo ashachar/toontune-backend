@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+"""
+FINAL 3D text animation with NO GROWTH after reaching destination.
+Text only shrinks, never grows.
+"""
+
+import os
+from dataclasses import dataclass
+from typing import Optional, Tuple, Union
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+
+@dataclass
+class Text3DBehindSegment:
+    """
+    3D text animation that only shrinks, never grows.
+    """
+
+    # Core animation parameters
+    duration: float = 2.0
+    fps: int = 30
+    resolution: Tuple[int, int] = (1920, 1080)
+
+    # Text properties
+    text: str = "HELLO WORLD"
+    segment_mask: Optional[Union[str, np.ndarray]] = None
+    font_size: int = 120
+    text_color: Tuple[int, int, int] = (255, 220, 0)
+    depth_color: Tuple[int, int, int] = (200, 170, 0)
+    depth_layers: int = 10
+    depth_offset: int = 4
+
+    # Animation timing (backwards only)
+    shrink_duration: float = 1.5
+    settle_duration: float = 0.5  # Changed from wiggle to settle
+
+    # Start/end states
+    start_scale: float = 2.0
+    end_scale: float = 0.8
+    final_scale: float = 0.75  # Even smaller final size
+    center_position: Optional[Tuple[int, int]] = None
+
+    # Visual effects
+    shadow_offset: int = 8
+    outline_width: int = 3
+    perspective_angle: float = 25
+    supersample_factor: int = 2
+
+    # Control flags
+    debug: bool = False
+
+    def __post_init__(self):
+        # Font candidates
+        self._font_candidates = [
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ]
+
+        # Validate durations
+        self.shrink_duration = min(self.shrink_duration, self.duration * 0.9)
+        self.settle_duration = self.duration - self.shrink_duration
+
+        # Frame calculations
+        self.total_frames = int(self.duration * self.fps)
+        self.shrink_frames = int(self.shrink_duration * self.fps)
+        self.settle_frames = self.total_frames - self.shrink_frames
+
+        # Load or create mask
+        self.segment_mask = self._load_or_make_mask(self.segment_mask)
+
+        # Default center position
+        if self.center_position is None:
+            self.center_position = (self.resolution[0] // 2, self.resolution[1] // 2)
+
+        # Initialize mask cache
+        self._frame_mask_cache = {}
+        
+        # Calculate transition scale (scale at which text goes behind)
+        self.transition_scale = self.start_scale - 0.6 * (self.start_scale - self.end_scale)
+
+        if self.debug:
+            self._log(f"Init: No-grow version")
+            self._log(f"Transition scale: {self.transition_scale:.3f}")
+            self._log(f"Final scale: {self.final_scale:.3f}")
+
+    def generate_frame(
+        self,
+        frame_number: int,
+        background: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """Generate a single frame with no growth."""
+        
+        if background is None:
+            frame = np.zeros((self.resolution[1], self.resolution[0], 4), dtype=np.uint8)
+            frame[:, :, 3] = 255
+        else:
+            if background.shape[2] == 3:
+                frame = np.zeros((background.shape[0], background.shape[1], 4), dtype=np.uint8)
+                frame[:, :, :3] = background
+                frame[:, :, 3] = 255
+            else:
+                frame = background.copy()
+
+        # Animation phases
+        if frame_number < self.shrink_frames:
+            phase = "shrink"
+            t = frame_number / max(self.shrink_frames - 1, 1)
+        else:
+            phase = "settle"  # Changed from wiggle to settle
+            t = (frame_number - self.shrink_frames) / max(self.settle_frames - 1, 1)
+
+        # Apply easing
+        smooth_t = self._smoothstep(t)
+
+        # Calculate parameters
+        if phase == "shrink":
+            scale = self.start_scale - smooth_t * (self.start_scale - self.end_scale)
+            
+            # Proper fade timing
+            if t < 0.4:
+                alpha = 1.0
+                is_behind = False
+            elif t < 0.6:
+                fade_t = (t - 0.4) / 0.2
+                alpha = 1.0 - fade_t * 0.4
+                is_behind = False
+            else:
+                fade_t = (t - 0.6) / 0.4
+                k = 3.0
+                alpha = 0.6 - 0.4 * (1 - np.exp(-k * fade_t)) / (1 - np.exp(-k))
+                is_behind = True
+        else:  # settle phase - ONLY SHRINK, NO GROWTH
+            # Gradually shrink from end_scale to final_scale
+            scale = self.end_scale - smooth_t * (self.end_scale - self.final_scale)
+            alpha = 0.2
+            is_behind = True
+
+        # Use fixed scale for depth when behind
+        if is_behind:
+            depth_scale = self.transition_scale
+        else:
+            depth_scale = scale
+
+        # Render 3D text
+        text_pil, (anchor_x, anchor_y) = self._render_3d_text(
+            self.text, scale, alpha, False, depth_scale
+        )
+
+        # Calculate position
+        cx, cy = self.center_position
+        
+        if phase == "shrink":
+            start_y = cy - self.resolution[1] * 0.15
+            end_y = cy
+            pos_x = int(cx - anchor_x)
+            pos_y = int(start_y + smooth_t * (end_y - start_y) - anchor_y)
+        else:  # settle
+            pos_x = int(cx - anchor_x)
+            pos_y = int(cy - anchor_y)
+
+        # Place text on frame
+        text_np = np.array(text_pil)
+        tw, th = text_pil.size
+
+        y1 = max(0, pos_y)
+        y2 = min(frame.shape[0], pos_y + th)
+        x1 = max(0, pos_x)
+        x2 = min(frame.shape[1], pos_x + tw)
+
+        ty1 = max(0, -pos_y)
+        ty2 = ty1 + (y2 - y1)
+        tx1 = max(0, -pos_x)
+        tx2 = tx1 + (x2 - x1)
+
+        # Build text layer
+        text_layer = np.zeros_like(frame)
+        text_layer[y1:y2, x1:x2] = text_np[ty1:ty2, tx1:tx2]
+
+        # Apply minimal masking when behind
+        if is_behind:
+            if background is not None and background.shape[2] >= 3:
+                if frame_number not in self._frame_mask_cache:
+                    from utils.segmentation.segment_extractor import extract_foreground_mask
+                    
+                    if background.shape[2] == 4:
+                        current_rgb = background[:, :, :3]
+                    else:
+                        current_rgb = background
+                    
+                    current_mask = extract_foreground_mask(current_rgb)
+                    
+                    if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                        current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+                    
+                    # Minimal processing
+                    current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
+                    kernel = np.ones((3, 3), np.uint8)
+                    current_mask = cv2.dilate(current_mask, kernel, iterations=1)
+                    current_mask = (current_mask > 128).astype(np.uint8) * 255
+                    
+                    self._frame_mask_cache[frame_number] = current_mask
+                else:
+                    current_mask = self._frame_mask_cache[frame_number]
+            else:
+                current_mask = self.segment_mask
+            
+            # Apply mask
+            mask_region = current_mask[y1:y2, x1:x2]
+            text_alpha = text_layer[y1:y2, x1:x2, 3].astype(np.float32)
+            mask_factor = mask_region.astype(np.float32) / 255.0
+            text_alpha *= (1.0 - mask_factor)
+            text_layer[y1:y2, x1:x2, 3] = text_alpha.astype(np.uint8)
+
+        # Composite
+        frame_pil = Image.fromarray(frame)
+        text_pil = Image.fromarray(text_layer)
+        out = Image.alpha_composite(frame_pil, text_pil)
+        result = np.array(out)
+
+        if self.debug and frame_number % 5 == 0:
+            self._log(f"Frame {frame_number}: phase={phase}, scale={scale:.3f}, depth_scale={depth_scale:.3f}, behind={is_behind}")
+
+        return result[:, :, :3] if result.shape[2] == 4 else result
+
+    def _render_3d_text(
+        self,
+        text: str,
+        scale: float,
+        alpha: float,
+        apply_perspective: bool,
+        depth_scale: float = None,
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        """Render 3D text with separate depth scale."""
+        
+        if depth_scale is None:
+            depth_scale = scale
+            
+        ss = self.supersample_factor
+        
+        # Font size uses regular scale
+        font_px = max(2, int(round(self.font_size * scale * ss)))
+        font = self._get_font(font_px)
+
+        # Measure text
+        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        bbox = d.textbbox((0, 0), text, font=font)
+        face_w = max(1, bbox[2] - bbox[0])
+        face_h = max(1, bbox[3] - bbox[1])
+
+        # Canvas
+        depth_off = int(round(self.depth_offset * depth_scale * ss))
+        pad = max(depth_off * self.depth_layers * 2, ss * 8)
+        canvas_w = face_w + pad * 2 + depth_off * self.depth_layers
+        canvas_h = face_h + pad * 2 + depth_off * self.depth_layers
+
+        img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Center front face
+        front_x = (canvas_w - face_w) // 2
+        front_y = (canvas_h - face_h) // 2
+
+        # Depth layers with 80% reduction
+        reduced_depth_off = int(round(depth_off * 0.2))
+        extra_layers = self.depth_layers * 2
+        
+        for i in range(extra_layers, 0, -1):
+            ox = front_x + i * reduced_depth_off
+            oy = front_y - i * reduced_depth_off
+            t = (extra_layers - i) / max(extra_layers - 1, 1)
+            t = t * t * t * (3.0 - 2.0 * t - 0.5 * t)
+
+            r = int(self.depth_color[0] * (1 - t) + self.text_color[0] * t * 0.75)
+            g = int(self.depth_color[1] * (1 - t) + self.text_color[1] * t * 0.75)
+            b = int(self.depth_color[2] * (1 - t) + self.text_color[2] * t * 0.75)
+
+            draw.text((ox, oy), text, font=font, fill=(r, g, b, int(255 * alpha)))
+
+        # Outline
+        outline_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        outline_draw = ImageDraw.Draw(outline_img)
+        outline_w = max(1, int(self.outline_width * ss))
+        
+        for radius in range(outline_w, 0, -1):
+            fade = 1.0 - (radius - 1) / max(outline_w, 1) * 0.5
+            for ang in range(0, 360, 30):
+                ox = int(round(radius * np.cos(np.radians(ang))))
+                oy = int(round(radius * np.sin(np.radians(ang))))
+                outline_draw.text(
+                    (front_x + ox, front_y + oy),
+                    text,
+                    font=font,
+                    fill=(0, 0, 0, int(110 * alpha * fade)),
+                )
+        
+        outline_img = outline_img.filter(ImageFilter.GaussianBlur(radius=max(1, ss // 2)))
+        img = Image.alpha_composite(img, outline_img)
+
+        # Front face
+        face_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(face_img).text(
+            (front_x, front_y),
+            text,
+            font=font,
+            fill=(*self.text_color, int(255 * alpha)),
+        )
+        img = Image.alpha_composite(img, face_img)
+
+        # Anchor
+        anchor_x_ss = front_x + face_w / 2.0
+        anchor_y_ss = front_y + face_h / 2.0
+
+        # Shadow
+        shadow = np.array(img)
+        shadow[:, :, :3] = 0
+        shadow[:, :, 3] = (shadow[:, :, 3].astype(np.float32) * 0.4).astype(np.uint8)
+        shadow = Image.fromarray(shadow).filter(ImageFilter.GaussianBlur(radius=max(2, ss)))
+        final = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        shadow_off = int(round(self.shadow_offset * depth_scale * ss * 0.3))
+        final.paste(shadow, (shadow_off, shadow_off), shadow)
+        final = Image.alpha_composite(final, img)
+
+        # Downsample
+        final = final.filter(ImageFilter.GaussianBlur(radius=max(0.0, ss / 6.0)))
+        target_w = max(1, final.width // ss)
+        target_h = max(1, final.height // ss)
+        final = final.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+        anchor_x = anchor_x_ss / ss
+        anchor_y = anchor_y_ss / ss
+
+        return final, (anchor_x, anchor_y)
+
+    def _load_or_make_mask(self, segment_mask) -> np.ndarray:
+        w, h = self.resolution
+        if segment_mask is None:
+            mask = np.zeros((self.resolution[1], self.resolution[0]), dtype=np.uint8)
+        elif isinstance(segment_mask, str):
+            mask_img = Image.open(segment_mask).convert("L")
+            mask_img = mask_img.resize(self.resolution, Image.Resampling.LANCZOS)
+            mask = np.array(mask_img, dtype=np.uint8)
+        else:
+            mask = segment_mask
+            if mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                mask = cv2.resize(mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+        mask = (mask > 128).astype(np.uint8) * 255
+        return mask
+
+    def _smoothstep(self, t: float) -> float:
+        t = max(0.0, min(1.0, t))
+        return t * t * (3.0 - 2.0 * t)
+
+    def _log(self, msg: str) -> None:
+        if self.debug:
+            print(f"[3D_NO_GROW] {msg}")
+
+    def _get_font(self, px: int) -> ImageFont.FreeTypeFont:
+        for path in self._font_candidates:
+            if os.path.exists(path):
+                try:
+                    return ImageFont.truetype(path, px)
+                except:
+                    continue
+        return ImageFont.load_default()

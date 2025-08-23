@@ -1,0 +1,56 @@
+{
+  "total_snarks": 6,
+  "placements": [
+    {
+      "text": "Oh good, another musical...",
+      "time": 3.1,
+      "type": "silent",
+      "moved_from": 3.8,
+      "fade_duration": "0.5s"
+    },
+    {
+      "text": "Yes, because ABC...",
+      "time": 16.8,
+      "type": "smooth_duck",
+      "moved_from": 16.8,
+      "fade_duration": "0.5s"
+    },
+    {
+      "text": "We get it...",
+      "time": 25.5,
+      "type": "smooth_duck",
+      "moved_from": 25.5,
+      "fade_duration": "0.5s"
+    },
+    {
+      "text": "Easier?...",
+      "time": 37.3,
+      "type": "silent",
+      "moved_from": 41.8,
+      "fade_duration": "0.5s"
+    },
+    {
+      "text": "Revolutionary...",
+      "time": 48.0,
+      "type": "smooth_duck",
+      "moved_from": 48.0,
+      "fade_duration": "0.5s"
+    },
+    {
+      "text": "Mi, the narcissism...",
+      "time": 52.5,
+      "type": "smooth_duck",
+      "moved_from": 52.5,
+      "fade_duration": "0.5s"
+    }
+  ],
+  "silent_placements": 2,
+  "quiet_placements": 0,
+  "smooth_duck_placements": 4,
+  "audio_settings": {
+    "duck_level": "25% (-12dB)",
+    "fade_duration": "500ms",
+    "fade_type": "linear",
+    "mixing": "gradual"
+  }
+}
