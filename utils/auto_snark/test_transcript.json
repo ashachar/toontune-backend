@@ -1,0 +1,16 @@
+{
+  "segments": [
+    {"start": 0.10, "end": 2.60, "text": "Welcome back everyone to today's tutorial."},
+    {"start": 2.80, "end": 7.90, "text": "Today we are testing a bold new idea. Actually, it's a bit experimental."},
+    {"start": 9.20, "end": 13.10, "text": "But if it works, it could save hours of editing every week."},
+    {"start": 15.50, "end": 19.00, "text": "Anyway, let's jump into the setup and look at the key steps."},
+    {"start": 21.20, "end": 25.20, "text": "Okay, first we'll import the assets and configure the project."},
+    {"start": 25.50, "end": 29.30, "text": "This part is crucial so pay attention."},
+    {"start": 31.80, "end": 35.60, "text": "Wait, I forgot to mention the prerequisites."},
+    {"start": 37.20, "end": 41.50, "text": "Seriously, you need to have the latest version installed."},
+    {"start": 43.00, "end": 47.80, "text": "Look, I know this seems complicated but trust the process."},
+    {"start": 49.50, "end": 53.20, "text": "Moving on to the main implementation."},
+    {"start": 54.80, "end": 58.90, "text": "Right, so here's where things get interesting."},
+    {"start": 61.20, "end": 65.30, "text": "Honestly, this took me weeks to figure out."}
+  ]
+}

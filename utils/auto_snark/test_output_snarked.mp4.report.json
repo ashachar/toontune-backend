@@ -1,0 +1,20 @@
+{
+  "video": "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/utils/auto_snark/test_video.mp4",
+  "out": "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/utils/auto_snark/test_output_snarked.mp4",
+  "style": "wry",
+  "max_snarks": 5,
+  "min_gap_s": 10.0,
+  "pause_threshold_s": 1.0,
+  "duck_db": -12,
+  "use_vision": true,
+  "seed": 1337,
+  "inserts": [],
+  "counts": {
+    "candidates": 18,
+    "selected": 0
+  },
+  "estimates": {
+    "tts_total_chars": 222,
+    "approx_cost_usd": 0.00666
+  }
+}

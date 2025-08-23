@@ -162,27 +162,45 @@ class Text3DBehindSegment:
             frame = np.zeros((*self.resolution[::-1], 4), dtype=np.uint8)
             frame[:, :, 3] = 255
 
-        # Phase selection + scalars
+        # Phase selection + scalars (FIXED: fade timing and no slant)
         if frame_number < self.phase1_frames:
             phase = "shrink"
             t = self._smoothstep(frame_number / max(self.phase1_frames - 1, 1))
             scale = self.start_scale + (self.end_scale - self.start_scale) * t
-            alpha = 1.0
-            is_behind = False
-            apply_persp = self.perspective_during_shrink and (self.perspective_angle > 0)
+            
+            # FIX 1: Start fading at 50% through shrink phase
+            if t < 0.5:
+                # First half of shrink - fully opaque (in foreground)
+                alpha = 1.0
+                is_behind = False
+            else:
+                # Second half of shrink - start exponential fade
+                fade_t = (t - 0.5) * 2.0  # Normalize 0.5-1.0 to 0.0-1.0
+                # Exponential fade: rapidly fade to 50% opacity
+                k = 4.0  # Exponential factor for sharp fade
+                alpha = 1.0 - 0.5 * (1 - np.exp(-k * fade_t)) / (1 - np.exp(-k))
+                is_behind = True  # Start masking as it passes behind
+            
+            # FIX 2: NO perspective during shrink (prevents early slant)
+            apply_persp = False
+            
         elif frame_number < self.phase1_frames + self.phase2_frames:
             phase = "transition"
             t = (frame_number - self.phase1_frames) / max(self.phase2_frames - 1, 1)
             scale = self.end_scale
-            alpha = 1.0 - 0.5 * (1 - np.exp(-3.0 * t)) / (1 - np.exp(-3.0))
-            is_behind = t > 0.5
-            apply_persp = self.perspective_angle > 0
+            # Continue fading to final 50% opacity
+            alpha = 0.75 - 0.25 * (1 - np.exp(-3.0 * t)) / (1 - np.exp(-3.0))
+            is_behind = True
+            # FIX 2: NO perspective in transition (prevents slant)
+            apply_persp = False
+            
         else:
             phase = "stable"
             scale = self.end_scale
             alpha = 0.5
             is_behind = True
-            apply_persp = self.perspective_angle > 0
+            # FIX 2: NO perspective when stable (prevents final slant)
+            apply_persp = False
 
         # Render text + get anchor (front-face center after perspective)
         text_img, face_anchor = self._render_3d_text_with_anchor(self.text, scale, alpha, apply_persp)

@@ -1,0 +1,42 @@
+{
+  "video": "input.mp4",
+  "output": "output_snarked.mp4",
+  "style": "wry",
+  "inserts": [
+    {
+      "time_s": 2.7,
+      "text": "Bold choice. Not judging. Okay, maybe a little.",
+      "duration_ms": 2350,
+      "reasons": [
+        "pause",
+        "marker"
+      ]
+    },
+    {
+      "time_s": 13.3,
+      "text": "Plot twist no one asked for.",
+      "duration_ms": 1400,
+      "reasons": [
+        "pause",
+        "marker"
+      ]
+    },
+    {
+      "time_s": 19.1,
+      "text": "Ah yes, the professional approach.",
+      "duration_ms": 1700,
+      "reasons": [
+        "pause",
+        "marker"
+      ]
+    }
+  ],
+  "counts": {
+    "candidates": 7,
+    "selected": 3
+  },
+  "estimates": {
+    "tts_total_chars": 109,
+    "approx_cost_usd": 0.00327
+  }
+}
