@@ -1,0 +1,21 @@
+{
+  "api": "ElevenLabs v3",
+  "model": "eleven_turbo_v2_5",
+  "voice": "Rachel",
+  "snarks_generated": 6,
+  "files": [
+    "v3_snark_1_sarcastic.mp3",
+    "v3_snark_2_condescending.mp3",
+    "v3_snark_3_mocking.mp3",
+    "v3_snark_4_skeptical.mp3",
+    "v3_snark_5_deadpan.mp3",
+    "v3_snark_6_sarcastic.mp3"
+  ],
+  "styles": [
+    "sarcastic",
+    "deadpan",
+    "condescending",
+    "mocking",
+    "skeptical"
+  ]
+}
