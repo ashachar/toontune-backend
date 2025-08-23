@@ -125,6 +125,9 @@ class Text3DBehindSegment:
         self._log(f"Init: res={self.resolution}, fps={self.fps}, total_frames={self.total_frames}")
         self._log(f"Supersample={self.supersample_factor}, perspective_angle={self.perspective_angle}, perspective_during_shrink={self.perspective_during_shrink}")
         self._log(f"Center target (lock point)={self.center_position}")
+        
+        # Cache for frame masks to avoid redundant calculations
+        self._frame_mask_cache = {}
 
     # ----------------------
     # Public API (compatible)
@@ -150,6 +153,7 @@ class Text3DBehindSegment:
           • SSAA anti-aliasing
           • *Front face* anchor kept locked to `center_position`
           • Optional perspective (disabled during shrink by default)
+          • DYNAMIC mask recalculation every frame when behind
         """
         # Base frame RGBA
         if background is not None:
@@ -228,9 +232,46 @@ class Text3DBehindSegment:
         text_layer = np.zeros_like(frame)
         text_layer[y1:y2, x1:x2] = text_np[ty1:ty2, tx1:tx2]
 
-        # If behind, cut by mask
+        # If behind, cut by mask - RECALCULATE mask from current frame!
         if is_behind:
-            mask_region = self.segment_mask[y1:y2, x1:x2]
+            # CRITICAL FIX: Recalculate mask from CURRENT frame, not stored mask
+            if background is not None and background.shape[2] >= 3:
+                # Check cache first
+                if frame_number not in self._frame_mask_cache:
+                    # Extract foreground mask from current frame
+                    from utils.segmentation.segment_extractor import extract_foreground_mask
+                    
+                    # Convert current background to RGB if needed
+                    if background.shape[2] == 4:
+                        current_rgb = background[:, :, :3]
+                    else:
+                        current_rgb = background
+                    
+                    # Get fresh mask for THIS frame
+                    if self.debug:
+                        self._log(f"[MASK_FIX] Calculating mask for frame {frame_number}")
+                    
+                    current_mask = extract_foreground_mask(current_rgb)
+                    
+                    # Ensure mask is right size
+                    if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                        current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+                    
+                    # Binarize with threshold
+                    current_mask = (current_mask > 128).astype(np.uint8) * 255
+                    
+                    # Cache it
+                    self._frame_mask_cache[frame_number] = current_mask
+                else:
+                    current_mask = self._frame_mask_cache[frame_number]
+                    if self.debug and frame_number % 30 == 0:
+                        self._log(f"[MASK_FIX] Using cached mask for frame {frame_number}")
+            else:
+                # Fallback to stored mask if no background
+                current_mask = self.segment_mask
+            
+            # Apply the CURRENT mask to occlude text
+            mask_region = current_mask[y1:y2, x1:x2]
             text_alpha = text_layer[y1:y2, x1:x2, 3].astype(np.float32)
             text_alpha *= (1.0 - (mask_region.astype(np.float32) / 255.0))
             text_layer[y1:y2, x1:x2, 3] = text_alpha.astype(np.uint8)

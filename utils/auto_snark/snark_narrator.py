@@ -39,8 +39,8 @@ DEFAULT_DUCK_DB = -12               # attenuation during overlay
 DEFAULT_USE_VISION = True           # shot-change detection via OpenCV
 DEFAULT_SEED = 1337
 
-ELEVEN_MODEL_ID = "eleven_multilingual_v2"
-ELEVEN_VOICE_ID_DEFAULT = "21m00Tcm4TlvDq8ikWAM"  # public example ("Rachel")
+ELEVEN_MODEL_ID = "eleven_v3"  # Updated to v3 for expression controls
+ELEVEN_VOICE_ID_DEFAULT = "21m00Tcm4TlvDq8ikWAM"  # Rachel - good for sarcasm
 
 # Beat scoring weights
 W_PAUSE = 1.0
@@ -256,6 +256,15 @@ def choose_template(style: str) -> str:
 def generate_snark_text(style: str, segments: List[Segment], t: float) -> str:
     base = choose_template(style)
     kws = extract_keywords_near(segments, t, k=2)
+    
+    # Add emotion tags for ElevenLabs v3
+    if style == "spicy":
+        base = f'<emotion="sarcastic">{base}</emotion>'
+    elif style == "gentle":
+        base = f'<emotion="friendly">{base}</emotion>'
+    else:  # wry
+        base = f'<emotion="deadpan">{base}</emotion>'
+    
     if kws:
         base = f"{base} ({', '.join(kws).lower()})"
     return safe_text(base)
@@ -271,15 +280,30 @@ def tts_elevenlabs(text: str, out_path: str, api_key: str,
         "content-type": "application/json",
         "xi-api-key": api_key
     }
+    # Adjust settings based on emotion tags (v3 features)
+    voice_settings = {
+        "stability": 0.45,
+        "similarity_boost": 0.85,
+        "style": 0.25,
+        "use_speaker_boost": True
+    }
+    
+    # Enhanced settings for v3 expression
+    if "<emotion=" in text:
+        if "sarcastic" in text:
+            voice_settings["stability"] = 0.2
+            voice_settings["style"] = 0.9
+        elif "deadpan" in text:
+            voice_settings["stability"] = 0.9
+            voice_settings["style"] = 0.1
+        elif "friendly" in text:
+            voice_settings["stability"] = 0.5
+            voice_settings["style"] = 0.6
+    
     payload = {
         "text": text,
         "model_id": model_id,
-        "voice_settings": {
-            "stability": 0.45,
-            "similarity_boost": 0.85,
-            "style": 0.25,
-            "use_speaker_boost": True
-        }
+        "voice_settings": voice_settings
     }
     for attempt in range(1, retries+1):
         try:

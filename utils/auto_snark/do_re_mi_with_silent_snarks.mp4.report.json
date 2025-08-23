@@ -1,0 +1,51 @@
+{
+  "video": "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/videos/do_re_mi/scenes/downsampled/scene_001.mp4",
+  "out": "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/utils/auto_snark/do_re_mi_with_silent_snarks.mp4",
+  "style": "spicy",
+  "inserts": [
+    {
+      "time_s": 3.8,
+      "text": "Choices were made. Regrets loading. (start, beginning)",
+      "duration_ms": 2700,
+      "reasons": [
+        "shot_change"
+      ],
+      "audio_type": "silent_placeholder"
+    },
+    {
+      "time_s": 16.8,
+      "text": "Speedrun to confusion\u2014any percent. (when, read)",
+      "duration_ms": 2350,
+      "reasons": [
+        "shot_change"
+      ],
+      "audio_type": "silent_placeholder"
+    },
+    {
+      "time_s": 41.799,
+      "text": "Choices were made. Regrets loading. (make, easier)",
+      "duration_ms": 2500,
+      "reasons": [
+        "pause:3.38s"
+      ],
+      "audio_type": "silent_placeholder"
+    },
+    {
+      "time_s": 51.6,
+      "text": "Certified side-quest energy. (drop, golden)",
+      "duration_ms": 2150,
+      "reasons": [
+        "shot_change"
+      ],
+      "audio_type": "silent_placeholder"
+    }
+  ],
+  "counts": {
+    "candidates": 12,
+    "selected": 4
+  },
+  "estimates": {
+    "tts_total_chars": 194,
+    "approx_cost_usd": 0.00582
+  }
+}
