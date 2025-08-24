@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 from utils.animations.text_3d_motion import Text3DMotion
 from utils.animations.letter_3d_dissolve import Letter3DDissolve
+from utils.text_placement.optimal_position_finder import OptimalTextPositionFinder, estimate_text_size
 
 
 def parse_position(position_str, width, height):
@@ -83,6 +84,7 @@ def apply_animation_to_video(
     preset="slow",
     tune=None,               # e.g., "animation" or None
     keep_frames=False,
+    auto_position=False,    # NEW: automatically find optimal position
     debug=False
 ):
     """
@@ -108,7 +110,38 @@ def apply_animation_to_video(
     if font_path:
         print(f"[TEXT_QUALITY] Font path requested: {font_path}")
 
-    text_position = parse_position(position, width, height)
+    # Determine text position
+    if auto_position:
+        print(f"[TEXT_PLACEMENT] Finding optimal position for text placement...")
+        
+        # Estimate text size for analysis
+        text_width, text_height = estimate_text_size(text, font_size, final_scale)
+        motion_frames = int(round(motion_duration * fps))
+        
+        # Find optimal position
+        position_finder = OptimalTextPositionFinder(
+            text_width=text_width,
+            text_height=text_height,
+            motion_frames=motion_frames,
+            sample_rate=3,
+            grid_divisions=6,  # 6x6 grid for faster processing
+            debug=debug
+        )
+        
+        try:
+            text_position = position_finder.find_optimal_position(
+                video_path,
+                prefer_center=True,
+                center_weight=0.15  # Slight preference for center
+            )
+            print(f"[TEXT_PLACEMENT] Optimal position found: {text_position}")
+        except Exception as e:
+            print(f"[TEXT_PLACEMENT] Failed to find optimal position: {e}")
+            print(f"[TEXT_PLACEMENT] Falling back to center position")
+            text_position = (width // 2, height // 2)
+    else:
+        text_position = parse_position(position, width, height)
+    
     print(f"[JUMP_CUT] Text position: {text_position}")
 
     motion_frames = int(round(motion_duration * fps))
@@ -292,6 +325,8 @@ Examples:
     # Position
     parser.add_argument('--position', '-p', default='center',
                         help='Text position: center, top, bottom, left, right, or x,y (default: center)')
+    parser.add_argument('--auto-position', action='store_true',
+                        help='Automatically find optimal position for maximum visibility')
 
     # Appearance
     parser.add_argument('--size', type=int, default=140, help='Font size (default: 140)')
@@ -348,6 +383,7 @@ Examples:
             preset=args.preset,
             tune=args.tune,
             keep_frames=args.keep_frames,
+            auto_position=args.auto_position,
             debug=args.debug
         )
         print(f"\n✅ Success! Output saved to: {output}")
