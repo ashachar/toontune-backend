@@ -23,6 +23,7 @@ class MotionState:
     position: Tuple[int, int]           # Top-left position used during final composite (debug)
     text_size: Tuple[int, int]          # Rendered sprite size (debug)
     center_position: Tuple[int, int]    # Intended front-face center (what dissolve should use)
+    is_behind: bool                      # Whether text is behind subject at end of motion
 
 
 class Text3DMotion:
@@ -56,6 +57,7 @@ class Text3DMotion:
         end_position: Optional[Tuple[int, int]] = None,    # FRONT-FACE CENTER
         shrink_duration: float = 0.8,
         settle_duration: float = 0.2,
+        final_alpha: float = 0.3,  # Final opacity when behind subject (0.0-1.0)
         shadow_offset: int = 5,
         outline_width: int = 2,
         perspective_angle: float = 0,
@@ -85,6 +87,7 @@ class Text3DMotion:
 
         self.shrink_duration = shrink_duration
         self.settle_duration = settle_duration
+        self.final_alpha = final_alpha
         self.shadow_offset = shadow_offset
         self.outline_width = outline_width
         self.perspective_angle = perspective_angle
@@ -201,14 +204,15 @@ class Text3DMotion:
             scale = self.start_scale - local_t * (self.start_scale - self.end_scale)
             depth_scale = 1.0
             is_behind = local_t > 0.5
-            base_alpha = 1.0 if local_t <= 0.5 else max(0.2, 1.0 - (local_t - 0.5) * 3.6)
+            # Fade from full opacity to final_alpha during shrink
+            base_alpha = 1.0 if local_t <= 0.5 else max(self.final_alpha, 1.0 - (local_t - 0.5) * (2.0 * (1.0 - self.final_alpha)))
         else:
-            # Settle phase
+            # Settle phase - maintain final_alpha
             local_t = (smooth_t_global - shrink_progress) / (1.0 - shrink_progress)
             scale = self.end_scale - local_t * (self.end_scale - self.final_scale)
             depth_scale = 1.0
             is_behind = True
-            base_alpha = 0.2
+            base_alpha = self.final_alpha
 
         # Render text (get front-face anchor + size)
         text_pil, (anchor_x, anchor_y), (front_w, front_h) = self._render_3d_text(
@@ -230,11 +234,12 @@ class Text3DMotion:
                 position=(pos_x, pos_y),
                 text_size=(text_pil.width, text_pil.height),
                 center_position=(int(round(cx)), int(round(cy))),
+                is_behind=is_behind,
             )
             self._log(
                 f"Motion final snapshot -> center=({cx:.1f},{cy:.1f}), "
                 f"front_size=({front_w},{front_h}), anchor=({anchor_x},{anchor_y}), "
-                f"paste_topleft=({pos_x},{pos_y}), scale={scale:.3f}"
+                f"paste_topleft=({pos_x},{pos_y}), scale={scale:.3f}, is_behind={is_behind}"
             )
 
         # Composite onto frame
