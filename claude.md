@@ -16,6 +16,24 @@
 - If you need to test different approaches, use temporary test files that get deleted after use
 - Avoid cluttering the codebase with multiple versions of the same functionality
 
+## Animation Code Duplication Policy
+**CRITICAL: NEVER duplicate animation code - always check for existing implementations first**
+- Before implementing ANY animation, MUST search for existing animation classes using:
+  - Grep for class names and keywords
+  - Check utils/animations/ directory
+  - Look for similar functionality in existing files
+- If an animation seems needed but not found:
+  - MUST verify with user: "I couldn't find an existing [animation type] animation. Should I create a new one?"
+  - Wait for confirmation before implementing
+- Animation classes should be:
+  - **Modular**: One animation effect per class
+  - **Composable**: Can be combined with other animations
+  - **Reusable**: No hardcoded values specific to one use case
+- When multiple animations are needed together:
+  - Create separate classes for each effect
+  - Compose them in the test/usage file
+  - NEVER merge multiple effects into one monolithic class
+
 ## File Creation Notifications
 When creating any file during inference, always mention it as the last output of your response.
 Also mention which files were created in the current inference session.

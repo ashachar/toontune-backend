@@ -61,4 +61,15 @@ Claude should:
 3. Decide on appropriate issue prefix based on the problem domain
 4. Run: `python create_issue_xml.py --issue "FULL USER INPUT HERE" --prefix "ISSUE_PREFIX" --files file1 file2 file3...`
 
-**DO NOT include**: test scripts, lambda functions, pipeline files, or other peripheral code unless directly mentioned in the issue.
+## File Selection Guidelines
+**BE EXTREMELY SELECTIVE:**
+- **For test files**: Only include THE SPECIFIC test file that reproduces the issue (check which was actually run)
+- **Avoid duplicates**: If multiple similar files exist (e.g., test_3d_motion.py, test_3d_composed.py), include ONLY the one actively being used
+- **Core code only**: Include the minimal set of production code files directly involved in the issue
+- **No peripheral files**: Exclude helper scripts, alternative implementations, or unused variants
+
+**DO NOT include**: 
+- Multiple test files for the same functionality
+- Lambda functions, pipeline files, or deployment code unless specifically mentioned
+- Alternative or backup implementations (_v2, _old, _backup files)
+- Debug/verification scripts unless they contain the actual bug

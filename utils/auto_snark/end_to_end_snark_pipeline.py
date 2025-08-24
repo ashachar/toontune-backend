@@ -47,11 +47,11 @@ class EndToEndSnarkPipeline:
         self.video_path = Path(video_path)
         self.video_name = self.video_path.stem
         
-        # Create workspace
-        self.workspace = Path("snark_workspace") / self.video_name
-        self.workspace.mkdir(parents=True, exist_ok=True)
+        # Create output folder next to the video
+        self.output_folder = self.video_path.parent / self.video_name
+        self.output_folder.mkdir(parents=True, exist_ok=True)
         
-        # Storage for generated snarks
+        # Storage for generated snarks (global library)
         self.snark_storage = Path("/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/sounds/snark_remarks")
         self.snark_storage.mkdir(parents=True, exist_ok=True)
         
@@ -60,13 +60,47 @@ class EndToEndSnarkPipeline:
         self.elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
         self.elevenlabs_model = os.getenv("ELEVENLABS_MODEL", "eleven_v3")
         
+        # Load existing snark library
+        self.existing_snarks = self._load_existing_snarks()
+        
         print(f"🎬 Pipeline initialized for: {self.video_name}")
-        print(f"📁 Workspace: {self.workspace}")
+        print(f"📁 Output folder: {self.output_folder}")
+        print(f"📚 Existing snark library: {len(self.existing_snarks)} available")
+    
+    def _load_existing_snarks(self) -> Dict[str, Dict]:
+        """Load all existing snarks from storage"""
+        existing = {}
+        
+        if not self.snark_storage.exists():
+            return existing
+        
+        # Scan all MP3 files in snark storage
+        for mp3_file in self.snark_storage.glob("*.mp3"):
+            # Convert filename back to text
+            text = mp3_file.stem.replace("_", " ")
+            
+            # Try to determine emotion from filename or default
+            emotion = "sarcastic"  # Default
+            
+            # Store with metadata
+            existing[text.lower()] = {
+                "text": text,
+                "file": str(mp3_file),
+                "emotion": emotion,
+                "duration": self._estimate_duration(text)
+            }
+        
+        return existing
+    
+    def _estimate_duration(self, text: str) -> float:
+        """Estimate speaking duration for text"""
+        words = len(text.split())
+        return words / 2.5 + 0.3  # ~2.5 words/sec + padding
     
     def extract_transcript(self) -> Dict:
         """Step 1: Extract transcript from video"""
         
-        transcript_file = self.workspace / "transcript.json"
+        transcript_file = self.output_folder / "transcript.json"
         
         # Check if already exists
         if transcript_file.exists():
@@ -77,7 +111,7 @@ class EndToEndSnarkPipeline:
         print("🎤 Extracting transcript with Whisper...")
         
         # Extract audio first
-        audio_path = self.workspace / "audio.wav"
+        audio_path = self.output_folder / "audio.wav"
         subprocess.run([
             "ffmpeg", "-y", "-i", str(self.video_path),
             "-vn", "-acodec", "pcm_s16le", "-ar", "16000",
@@ -122,42 +156,66 @@ class EndToEndSnarkPipeline:
         return transcript
     
     def analyze_silence_gaps(self) -> List[SilenceGap]:
-        """Step 2: Find silence gaps in audio"""
+        """Step 2: Find gaps between spoken segments in transcript"""
         
-        print("🔍 Analyzing silence gaps...")
+        print("🔍 Analyzing gaps between spoken segments...")
         
-        # Extract audio if needed
-        audio_path = self.workspace / "audio.wav"
-        if not audio_path.exists():
-            subprocess.run([
-                "ffmpeg", "-y", "-i", str(self.video_path),
-                "-vn", "-acodec", "pcm_s16le", "-ar", "22050",
-                str(audio_path)
-            ], capture_output=True)
+        # Get transcript
+        transcript_file = self.output_folder / "transcript.json"
+        if not transcript_file.exists():
+            print("⚠️ No transcript found, extracting first...")
+            self.extract_transcript()
         
-        # Analyze with pydub
-        audio = AudioSegment.from_file(audio_path)
+        with open(transcript_file) as f:
+            transcript = json.load(f)
         
-        # Detect silence
-        silent_ranges = detect_silence(
-            audio,
-            min_silence_len=800,  # 0.8 seconds minimum
-            silence_thresh=-38,
-            seek_step=100
-        )
+        segments = transcript.get("segments", [])
+        if not segments:
+            print("❌ No segments in transcript")
+            return []
         
-        # Convert to SilenceGap objects
+        # Get video duration
+        result = subprocess.run([
+            "ffprobe", "-v", "error", "-show_entries",
+            "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
+            str(self.video_path)
+        ], capture_output=True, text=True)
+        video_duration = float(result.stdout.strip())
+        
         gaps = []
-        for start_ms, end_ms in silent_ranges:
-            duration = (end_ms - start_ms) / 1000
-            if duration >= 0.8:  # Only gaps long enough for snarks
+        
+        # Check gap at the beginning
+        if segments[0]["start"] > 0.6:  # At least 0.6s gap at start
+            gaps.append(SilenceGap(
+                start=0.0,
+                end=segments[0]["start"],
+                duration=segments[0]["start"]
+            ))
+        
+        # Find gaps between segments
+        for i in range(len(segments) - 1):
+            gap_start = segments[i]["end"]
+            gap_end = segments[i + 1]["start"]
+            gap_duration = gap_end - gap_start
+            
+            # Only include gaps that are long enough for a snark
+            if gap_duration >= 0.6:  # 0.6 seconds minimum for short snarks
                 gaps.append(SilenceGap(
-                    start=start_ms / 1000,
-                    end=end_ms / 1000,
-                    duration=duration
+                    start=gap_start,
+                    end=gap_end,
+                    duration=gap_duration
                 ))
         
-        print(f"✅ Found {len(gaps)} usable silence gaps")
+        # Check gap at the end
+        last_segment_end = segments[-1]["end"]
+        if video_duration - last_segment_end > 0.6:
+            gaps.append(SilenceGap(
+                start=last_segment_end,
+                end=video_duration,
+                duration=video_duration - last_segment_end
+            ))
+        
+        print(f"✅ Found {len(gaps)} usable gaps between spoken segments")
         return gaps
     
     def generate_contextual_snarks(self, transcript: Dict, gaps: List[SilenceGap]) -> List[Snark]:
@@ -165,13 +223,10 @@ class EndToEndSnarkPipeline:
         
         print("🤖 Generating contextual snarks...")
         
-        if not self.gemini_key:
-            print("⚠️ No Gemini API key, using fallback snarks")
-            return self._generate_fallback_snarks(gaps)
-        
         snarks = []
+        reused_count = 0
         
-        for gap in gaps[:6]:  # Limit to 6 snarks
+        for gap in gaps[:10]:  # Limit to 10 snarks
             # Find context: what was said before this gap
             context = ""
             for seg in transcript["segments"]:
@@ -179,19 +234,82 @@ class EndToEndSnarkPipeline:
                     context = seg["text"]
                     break
             
-            # Generate snark with Gemini
-            snark = self._generate_snark_with_ai(context, gap.duration)
-            if snark:
+            # FIRST: Check if we have a perfect existing snark for this context
+            existing_snark = self._find_existing_snark_for_context(context, gap.duration)
+            
+            if existing_snark:
+                # Reuse existing snark!
                 snarks.append(Snark(
-                    text=snark["text"],
-                    time=gap.start + 0.2,  # Small offset into gap
-                    emotion=snark["emotion"],
+                    text=existing_snark["text"],
+                    time=gap.start + 0.2,
+                    emotion=existing_snark["emotion"],
                     context=context,
                     gap_duration=gap.duration
                 ))
+                reused_count += 1
+                print(f"  ♻️ Reusing: \"{existing_snark['text']}\"")
+            else:
+                # Generate new snark with AI
+                if self.gemini_key:
+                    snark = self._generate_snark_with_ai(context, gap.duration)
+                else:
+                    snark = self._get_fallback_snark(gap.duration)
+                
+                if snark:
+                    snarks.append(Snark(
+                        text=snark["text"],
+                        time=gap.start + 0.2,
+                        emotion=snark["emotion"],
+                        context=context,
+                        gap_duration=gap.duration
+                    ))
+                    print(f"  ✨ New: \"{snark['text']}\"")
         
-        print(f"✅ Generated {len(snarks)} contextual snarks")
+        print(f"✅ Total snarks: {len(snarks)} ({reused_count} reused, {len(snarks)-reused_count} new)")
         return snarks
+    
+    def _find_existing_snark_for_context(self, context: str, max_duration: float) -> Optional[Dict]:
+        """Find a suitable existing snark for this context"""
+        
+        context_lower = context.lower()
+        
+        # Smart matching based on context keywords
+        suitable_snarks = []
+        
+        for text, snark_data in self.existing_snarks.items():
+            # Check if snark fits in the gap
+            if snark_data["duration"] > max_duration:
+                continue
+            
+            # Score relevance based on context
+            score = 0
+            
+            # Perfect matches for common situations
+            if "again" in context_lower or "repeat" in context_lower:
+                if "original" in text or "again" in text:
+                    score += 10
+            
+            if "sing" in context_lower or "song" in context_lower:
+                if "musical" in text or "performance" in text:
+                    score += 8
+            
+            if any(word in context_lower for word in ["do", "re", "mi", "fa", "sol"]):
+                if "music" in text or "note" in text:
+                    score += 7
+            
+            # Generic snarks that work anywhere
+            if text in ["riveting", "fascinating", "how original", "stunning", "sure"]:
+                score += 5
+            
+            if score > 0:
+                suitable_snarks.append((score, snark_data))
+        
+        # Return best match if found
+        if suitable_snarks:
+            suitable_snarks.sort(key=lambda x: x[0], reverse=True)
+            return suitable_snarks[0][1]
+        
+        return None
     
     def _generate_snark_with_ai(self, context: str, max_duration: float) -> Optional[Dict]:
         """Generate a single snark using Gemini"""
@@ -199,17 +317,25 @@ class EndToEndSnarkPipeline:
         # Determine word limit based on duration
         max_words = int(max_duration * 2.5)  # ~2.5 words per second
         
+        # Get list of existing snarks to inform AI
+        existing_texts = list(self.existing_snarks.keys())[:20]  # Top 20
+        
         prompt = f"""
         You are a sarcastic narrator commenting on a video.
         
         Context (what was just said): "{context}"
         
+        We already have these snarks in our library (use one if it fits perfectly):
+        {', '.join(f'"{t}"' for t in existing_texts)}
+        
         Generate ONE brief sarcastic comment (max {max_words} words).
+        If an existing snark fits perfectly, use it. Otherwise create new.
         
         Return JSON:
         {{
             "text": "your sarcastic comment",
-            "emotion": "choose: sarcastic/deadpan/mocking/bored/unimpressed"
+            "emotion": "choose: sarcastic/deadpan/mocking/bored/unimpressed",
+            "is_existing": true/false
         }}
         
         Examples:
@@ -255,6 +381,25 @@ class EndToEndSnarkPipeline:
             "emotion": "sarcastic"
         }
     
+    def _get_fallback_snark(self, max_duration: float) -> Dict:
+        """Get a fallback snark when AI is not available"""
+        
+        # First check existing library
+        for text, snark_data in self.existing_snarks.items():
+            if snark_data["duration"] <= max_duration:
+                return {
+                    "text": snark_data["text"],
+                    "emotion": snark_data["emotion"]
+                }
+        
+        # Hardcoded fallbacks
+        if max_duration < 1.5:
+            return {"text": "Wow.", "emotion": "deadpan"}
+        elif max_duration < 2.5:
+            return {"text": "Fascinating.", "emotion": "sarcastic"}
+        else:
+            return {"text": "How original.", "emotion": "deadpan"}
+    
     def _generate_fallback_snarks(self, gaps: List[SilenceGap]) -> List[Snark]:
         """Fallback snarks when AI is not available"""
         
@@ -283,14 +428,29 @@ class EndToEndSnarkPipeline:
     def generate_speech_with_elevenlabs(self, snark: Snark) -> Optional[str]:
         """Step 4: Convert snark text to speech"""
         
+        # First check if we already have this exact text
+        text_lower = snark.text.lower()
+        if text_lower in self.existing_snarks:
+            existing_file = self.existing_snarks[text_lower]["file"]
+            if os.path.exists(existing_file):
+                print(f"  ♻️ Found in library: {Path(existing_file).name}")
+                return existing_file
+        
         # Create filename from text
         filename = re.sub(r'[^\w\s]', '', snark.text.lower())
         filename = re.sub(r'\s+', '_', filename)[:50] + ".mp3"
         audio_path = self.snark_storage / filename
         
-        # Check if already exists
+        # Check if file exists (might have been created in another session)
         if audio_path.exists():
-            print(f"  ♻️ Reusing: {filename}")
+            print(f"  ♻️ Reusing existing file: {filename}")
+            # Add to library for future reference
+            self.existing_snarks[text_lower] = {
+                "text": snark.text,
+                "file": str(audio_path),
+                "emotion": snark.emotion,
+                "duration": self._estimate_duration(snark.text)
+            }
             return str(audio_path)
         
         if not self.elevenlabs_key:
@@ -338,10 +498,33 @@ class EndToEndSnarkPipeline:
         
         print("🎬 Creating final video with snarks...")
         
-        # Generate speech for all snarks
-        for snark in snarks:
+        # Save remarks JSON
+        remarks_file = self.output_folder / "remarks.json"
+        remarks_data = []
+        
+        # Generate speech for all snarks and save remark files
+        for i, snark in enumerate(snarks):
             audio_path = self.generate_speech_with_elevenlabs(snark)
             snark.audio_path = audio_path
+            
+            # Copy audio file to output folder
+            if audio_path:
+                local_audio = self.output_folder / f"remark_{i+1}.mp3"
+                subprocess.run(["cp", audio_path, str(local_audio)], capture_output=True)
+                
+            remarks_data.append({
+                "time": snark.time,
+                "text": snark.text,
+                "emotion": snark.emotion,
+                "context": snark.context[:50] if snark.context else "",
+                "audio_file": f"remark_{i+1}.mp3",
+                "library_file": Path(audio_path).name if audio_path else None
+            })
+        
+        # Save remarks JSON
+        with open(remarks_file, "w") as f:
+            json.dump(remarks_data, f, indent=2)
+        print(f"  📝 Saved remarks: {remarks_file}")
         
         # Filter out snarks without audio
         valid_snarks = [s for s in snarks if hasattr(s, 'audio_path') and s.audio_path]
@@ -351,7 +534,7 @@ class EndToEndSnarkPipeline:
             return str(self.video_path)
         
         # Extract original audio
-        audio_path = self.workspace / "original_audio.wav"
+        audio_path = self.output_folder / "original_audio.wav"
         subprocess.run([
             "ffmpeg", "-y", "-i", str(self.video_path),
             "-vn", "-acodec", "pcm_s16le",
@@ -407,11 +590,11 @@ class EndToEndSnarkPipeline:
             print(f"  ✅ Added at {snark.time:.1f}s: \"{snark.text}\"")
         
         # Export mixed audio
-        mixed_path = self.workspace / "mixed_audio.wav"
+        mixed_path = self.output_folder / "mixed_audio.wav"
         mixed.export(mixed_path, format="wav")
         
-        # Create final video
-        output_path = self.video_path.parent / f"{self.video_name}_snarked.mp4"
+        # Create final video in output folder
+        output_path = self.output_folder / f"{self.video_name}_final.mp4"
         
         subprocess.run([
             "ffmpeg", "-y",
@@ -470,7 +653,7 @@ class EndToEndSnarkPipeline:
             "output": output
         }
         
-        report_path = self.workspace / "pipeline_report.json"
+        report_path = self.output_folder / "pipeline_report.json"
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
         
@@ -484,6 +667,13 @@ class EndToEndSnarkPipeline:
         total_chars = sum(len(s.text) for s in snarks)
         cost = total_chars * 0.0003
         print(f"💰 Estimated cost: ${cost:.3f}")
+        
+        # Auto-open the final video
+        print("\n🎯 Opening final video...")
+        try:
+            subprocess.run(["open", output], check=True)
+        except Exception as e:
+            print(f"  ⚠️ Could not auto-open video: {e}")
         
         return output
 

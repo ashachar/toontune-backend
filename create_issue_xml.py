@@ -129,19 +129,23 @@ def create_xml_from_files(issue: str, file_paths: list, project_root: str = ".",
     root = ET.Element("context")
     root.set("issue", issue_with_suffix)
     
-    # Add files section
-    files_elem = ET.SubElement(root, "files")
-    files_elem.set("count", str(len(file_paths)))
-    
+    # Add files section (only existing files)
+    existing_files = []
     for file_path in file_paths:
+        full_path = os.path.join(project_root, file_path)
+        if os.path.exists(full_path):
+            existing_files.append(file_path)
+        else:
+            print(f"⚠️  Skipping non-existent file: {file_path}")
+    
+    files_elem = ET.SubElement(root, "files")
+    files_elem.set("count", str(len(existing_files)))
+    
+    for file_path in existing_files:
         file_elem = ET.SubElement(files_elem, "file")
         file_elem.set("path", file_path)
         
         full_path = os.path.join(project_root, file_path)
-        
-        if not os.path.exists(full_path):
-            file_elem.text = "[File not found]"
-            continue
         
         try:
             with open(full_path, 'r', encoding='utf-8') as f:
@@ -176,11 +180,11 @@ def create_xml_from_files(issue: str, file_paths: list, project_root: str = ".",
     
     # Add project tree (showing only relevant files)
     tree_elem = ET.SubElement(root, "project_tree")
-    tree_elem.text = get_project_tree(project_root, file_paths)
+    tree_elem.text = get_project_tree(project_root, existing_files)
     
     # Add summary
     summary_elem = ET.SubElement(root, "summary")
-    summary_elem.set("total_files", str(len(file_paths)))
+    summary_elem.set("total_files", str(len(existing_files)))
     summary_elem.set("issue", issue)  # Use original issue without suffix for summary
     
     # Add debugging instructions
@@ -205,7 +209,7 @@ This will help track the fix progress and identify any remaining issues."""
     # Convert to pretty XML string
     rough_string = ET.tostring(root, encoding='unicode')
     reparsed = minidom.parseString(rough_string)
-    return reparsed.toprettyxml(indent="  ")
+    return reparsed.toprettyxml(indent="  "), len(existing_files)
 
 
 def create_filename_from_issue(issue: str) -> str:
@@ -235,7 +239,7 @@ def main():
     print(f"Processing {len(args.files)} files...")
     
     # Create XML
-    xml_content = create_xml_from_files(args.issue, args.files, debug_prefix=args.prefix)
+    xml_content, actual_file_count = create_xml_from_files(args.issue, args.files, debug_prefix=args.prefix)
     
     # Determine output filename
     if args.output:
@@ -278,7 +282,9 @@ def main():
     
     # Print summary
     print(f"\nSummary:")
-    print(f"  Files included: {len(args.files)}")
+    print(f"  Files included: {actual_file_count}")
+    if actual_file_count < len(args.files):
+        print(f"  Files skipped: {len(args.files) - actual_file_count}")
     print(f"  Output size: {len(xml_content) / 1024:.1f} KB")
 
 
