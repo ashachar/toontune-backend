@@ -7,8 +7,11 @@ Fixes applied:
 - Correct centering by front-face center (not canvas top-left).
 - Consistent anchor computation with depth margins.
 - [POS_HANDOFF] debug logs to verify handoff to dissolve.
+- [TEXT_QUALITY] Robust TTF/OTF font discovery + optional --font path.
+- [TEXT_QUALITY] Logs to verify font and supersampling.
 """
 
+import os
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -63,6 +66,7 @@ class Text3DMotion:
         perspective_angle: float = 0,
         supersample_factor: int = 2,
         glow_effect: bool = True,
+        font_path: Optional[str] = None,   # NEW: explicit font path
         debug: bool = False,
     ):
         self.duration = duration
@@ -93,6 +97,7 @@ class Text3DMotion:
         self.perspective_angle = perspective_angle
         self.supersample_factor = supersample_factor
         self.glow_effect = glow_effect
+        self.font_path = font_path
         self.debug = debug
 
         # Cache for dynamic masks
@@ -100,6 +105,9 @@ class Text3DMotion:
 
         # Final state for handoff
         self._final_state: Optional[MotionState] = None
+        
+        if self.debug:
+            print(f"[TEXT_QUALITY] Supersample factor: {self.supersample_factor}")
 
     def _log(self, message: str):
         """Debug logging (required format)."""
@@ -107,11 +115,40 @@ class Text3DMotion:
             print(f"[POS_HANDOFF] {message}")
 
     def _get_font(self, size: int) -> ImageFont.FreeTypeFont:
-        """Get font at specified size."""
-        try:
-            return ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
-        except:
-            return ImageFont.load_default()
+        """Get font at specified size - prioritize vector fonts."""
+        candidates = []
+        if self.font_path:
+            candidates.append(self.font_path)
+        
+        # Environment overrides
+        for key in ("T3D_FONT", "TEXT_FONT", "FONT_PATH"):
+            p = os.environ.get(key)
+            if p:
+                candidates.append(p)
+        
+        # Common cross-OS paths
+        candidates += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ]
+        
+        for p in candidates:
+            try:
+                if p and os.path.isfile(p):
+                    if self.debug:
+                        print(f"[TEXT_QUALITY] Using TTF font: {p}")
+                    return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+        
+        if self.debug:
+            print("[TEXT_QUALITY] WARNING: Falling back to PIL bitmap font (edges may look jagged). "
+                  "Install a TTF/OTF and pass font_path parameter.")
+        return ImageFont.load_default()
 
     def _smoothstep(self, t: float) -> float:
         """Smooth interpolation function."""
@@ -133,6 +170,8 @@ class Text3DMotion:
             anchor (ax, ay): FRONT-FACE top-left *inside* canvas coordinates (post downsample)
             front_size (fw, fh): FRONT-FACE bbox size (post downsample)
         """
+        from PIL import ImageFilter
+        
         # Work at supersampled resolution for quality
         font_px = int(self.font_size * scale * self.supersample_factor)
         font = self._get_font(font_px)
@@ -166,10 +205,33 @@ class Text3DMotion:
             # Draw with symmetric margin + per-layer offset (only +x,+y)
             x = -bbox[0] + margin + offset
             y = -bbox[1] + margin + offset
-            draw.text((x, y), text, font=font, fill=color)
+            
+            # Add stroke for front layer to improve antialiasing
+            if i == 0 and self.supersample_factor >= 4:
+                stroke_width = max(1, self.supersample_factor // 8)
+                draw.text((x, y), text, font=font, fill=color, stroke_width=stroke_width, stroke_fill=color)
+            else:
+                draw.text((x, y), text, font=font, fill=color)
 
-        # Downsample if needed
-        if self.supersample_factor > 1:
+        # Apply Gaussian blur for antialiasing before downsampling
+        if self.supersample_factor >= 4:
+            blur_radius = self.supersample_factor / 5.0
+            canvas = canvas.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        # Progressive downsampling for better quality
+        if self.supersample_factor >= 8:
+            # Two-step downsampling for very high supersample factors
+            intermediate_size = (width // (self.supersample_factor // 2), height // (self.supersample_factor // 2))
+            canvas = canvas.resize(intermediate_size, Image.Resampling.LANCZOS)
+            
+            new_size = (intermediate_size[0] // 2, intermediate_size[1] // 2)
+            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
+            # Convert supersampled coordinates to final coordinates
+            ax = int(round((-bbox[0] + margin) / self.supersample_factor))
+            ay = int(round((-bbox[1] + margin) / self.supersample_factor))
+            fw = int(round(bbox_w / self.supersample_factor))
+            fh = int(round(bbox_h / self.supersample_factor))
+        elif self.supersample_factor > 1:
             new_size = (width // self.supersample_factor, height // self.supersample_factor)
             canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
             # Convert supersampled coordinates to final coordinates

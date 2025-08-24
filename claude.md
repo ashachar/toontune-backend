@@ -1,5 +1,13 @@
 # Claude Assistant Instructions
 
+## Python File Length Rule - CRITICAL
+**ALL Python files MUST be 200 lines or less!**
+- This is a hard requirement - no exceptions
+- If a file exceeds 200 lines, refactor it into smaller modules
+- Each module should have a single, focused responsibility
+- Use imports to connect modules together
+- This improves code maintainability, readability, and testing
+
 ## /summarize Command - CRITICAL RULE
 **The Python script for /summarize must NEVER decide which files are relevant!**
 - Claude MUST use Grep/Glob tools to find relevant files

@@ -11,10 +11,13 @@ FRAME-ACCURATE FIXES:
 DEBUG:
 - [JUMP_CUT] logs print the full schedule and per-frame transitions.
 - [POS_HANDOFF] logs from motion remain supported.
+- [TEXT_QUALITY] Robust TTF/OTF font discovery + optional --font path.
+- [TEXT_QUALITY] Logs to verify font and supersampling.
 
 Original authorship retained; this refactor targets the jump-cut described in the issue.
 """
 
+import os
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -88,6 +91,7 @@ class Letter3DDissolve:
         post_fade_seconds: float = 0.10,              # tail after dissolve (sec); min 2 frames
         pre_dissolve_hold_frames: int = 1,            # hold N frames at stable_alpha at start
         ensure_no_gap: bool = True,                   # extend previous fade to next start
+        font_path: Optional[str] = None,              # NEW: explicit font path
         debug: bool = False,
     ):
         self.duration = duration
@@ -117,6 +121,7 @@ class Letter3DDissolve:
         self.post_fade_seconds = max(0.0, post_fade_seconds)
         self.pre_dissolve_hold_frames = max(0, int(pre_dissolve_hold_frames))
         self.ensure_no_gap = ensure_no_gap
+        self.font_path = font_path
         self.debug = debug
 
         # Runtime
@@ -132,6 +137,9 @@ class Letter3DDissolve:
         self._prepare_letter_sprites()
         self._init_dissolve_order()
         self._build_frame_timeline()
+        
+        if self.debug:
+            print(f"[TEXT_QUALITY] Supersample factor: {self.supersample_factor}")
 
     # -----------------------------
     # Utilities / logging
@@ -145,10 +153,40 @@ class Letter3DDissolve:
             print(f"[JUMP_CUT] {message}")
 
     def _get_font(self, size: int) -> ImageFont.FreeTypeFont:
-        try:
-            return ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
-        except Exception:
-            return ImageFont.load_default()
+        """Get font at specified size - prioritize vector fonts."""
+        candidates = []
+        if self.font_path:
+            candidates.append(self.font_path)
+        
+        # Environment overrides
+        for key in ("T3D_FONT", "TEXT_FONT", "FONT_PATH"):
+            p = os.environ.get(key)
+            if p:
+                candidates.append(p)
+        
+        # Common cross-OS paths
+        candidates += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ]
+        
+        for p in candidates:
+            try:
+                if p and os.path.isfile(p):
+                    if self.debug:
+                        print(f"[TEXT_QUALITY] Using TTF font: {p}")
+                    return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+        
+        if self.debug:
+            print("[TEXT_QUALITY] WARNING: Falling back to PIL bitmap font (edges may look jagged). "
+                  "Install a TTF/OTF and pass font_path parameter.")
+        return ImageFont.load_default()
 
     @staticmethod
     def _smoothstep(t: float) -> float:
@@ -161,6 +199,8 @@ class Letter3DDissolve:
     def _render_3d_letter(
         self, letter: str, scale: float, alpha: float, depth_scale: float
     ) -> Tuple[Image.Image, Tuple[int, int]]:
+        from PIL import ImageFilter
+        
         font_px = int(self.font_size * scale * self.supersample_factor)
         font = self._get_font(font_px)
 
@@ -189,9 +229,31 @@ class Letter3DDissolve:
 
             x = -bbox[0] + margin + offset
             y = -bbox[1] + margin + offset
-            draw.text((x, y), letter, font=font, fill=color)
+            
+            # Add stroke for front layer to improve antialiasing
+            if i == 0 and self.supersample_factor >= 4:
+                stroke_width = max(1, self.supersample_factor // 8)
+                draw.text((x, y), letter, font=font, fill=color, stroke_width=stroke_width, stroke_fill=color)
+            else:
+                draw.text((x, y), letter, font=font, fill=color)
 
-        if self.supersample_factor > 1:
+        # Apply Gaussian blur for antialiasing before downsampling
+        if self.supersample_factor >= 4:
+            blur_radius = self.supersample_factor / 5.0
+            canvas = canvas.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        # Progressive downsampling for better quality
+        if self.supersample_factor >= 8:
+            # Two-step downsampling for very high supersample factors
+            intermediate_size = (width // (self.supersample_factor // 2), height // (self.supersample_factor // 2))
+            canvas = canvas.resize(intermediate_size, Image.Resampling.LANCZOS)
+            
+            final_size = (intermediate_size[0] // 2, intermediate_size[1] // 2)
+            canvas = canvas.resize(final_size, Image.Resampling.LANCZOS)
+            
+            ax = int(round((-bbox[0] + margin) / self.supersample_factor))
+            ay = int(round((-bbox[1] + margin) / self.supersample_factor))
+        elif self.supersample_factor > 1:
             new_size = (width // self.supersample_factor, height // self.supersample_factor)
             canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
             ax = int(round((-bbox[0] + margin) / self.supersample_factor))
