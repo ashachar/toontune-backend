@@ -4,7 +4,7 @@
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
-from utils.animations.text_3d_motion_dissolve_fixed import Text3DMotionDissolve
+from utils.animations.text_3d_motion_dissolve import Text3DMotionDissolve
 import matplotlib.pyplot as plt
 
 print("="*80)

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Test the fixed 3D text animation with per-letter position tracking."""
+"""Test the 3D text animation with per-letter position tracking."""
 
 import cv2
 import numpy as np
-from utils.animations.text_3d_motion_dissolve_fixed import Text3DMotionDissolveFixed
+from utils.animations.text_3d_motion_dissolve import Text3DMotionDissolve
 
 print("="*80)
-print("TESTING FIXED 3D TEXT ANIMATION")
+print("TESTING 3D TEXT ANIMATION")
 print("="*80)
 
 # Load test video
@@ -30,8 +30,8 @@ print(f"Resolution: {W}x{H}")
 print(f"FPS: {fps}")
 
 # Create animation with debug enabled
-print("\nCreating fixed animation...")
-anim = Text3DMotionDissolveFixed(
+print("\nCreating animation...")
+anim = Text3DMotionDissolve(
     duration=2.25,
     fps=fps,
     resolution=(W, H),
@@ -64,14 +64,14 @@ anim = Text3DMotionDissolveFixed(
     debug=True,
 )
 
-# Generate video with the fixed animation
+# Generate video with the animation
 print("\nGenerating video...")
-output_path = "text_3d_motion_dissolve_FIXED.mp4"
+output_path = "text_3d_motion_dissolve.mp4"
 anim.generate_video(output_path, frames)
 
 # Convert to H.264
 print("\nConverting to H.264...")
-h264_path = "text_3d_motion_dissolve_FIXED_h264.mp4"
+h264_path = "text_3d_motion_dissolve_h264.mp4"
 import subprocess
 subprocess.run([
     'ffmpeg', '-i', output_path,
@@ -80,7 +80,7 @@ subprocess.run([
     h264_path, '-y'
 ], check=True)
 
-print(f"\n✅ Fixed animation saved to: {h264_path}")
+print(f"\n✅ Animation saved to: {h264_path}")
 
 # Generate frame comparison at transition
 print("\n" + "="*80)
@@ -124,8 +124,8 @@ draw.line([(W + center_x, 0), (W + center_x, H)], fill=(0, 255, 0), width=1)
 
 # Save comparison
 comparison_array = np.array(img)
-cv2.imwrite('transition_comparison_FIXED.png', cv2.cvtColor(comparison_array, cv2.COLOR_RGB2BGR))
-print("Saved: transition_comparison_FIXED.png")
+cv2.imwrite('transition_comparison.png', cv2.cvtColor(comparison_array, cv2.COLOR_RGB2BGR))
+print("Saved: transition_comparison.png")
 
 # Calculate difference
 diff = cv2.absdiff(last_motion, first_dissolve)
@@ -151,4 +151,4 @@ else:
 
 print("\n✅ TEST COMPLETE")
 print(f"\nCheck the video: {h264_path}")
-print(f"Check the comparison: transition_comparison_FIXED.png")
+print(f"Check the comparison: transition_comparison.png")

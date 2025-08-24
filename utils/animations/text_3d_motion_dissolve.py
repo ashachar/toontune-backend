@@ -1,352 +1,370 @@
 #!/usr/bin/env python3
 """
-Combined 3D text animation: smooth motion + dissolve effect.
-Text shrinks smoothly behind subject, then dissolves letter by letter.
+3D text animation that combines motion and dissolve effects.
+Each individual letter maintains exact position at transition.
 """
-
-import os
-from dataclasses import dataclass
-from typing import Optional, Tuple, Union, List
-import random
-import math
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
+from PIL import Image, ImageDraw, ImageFont
+from typing import Optional, Tuple, List
+import random
+from dataclasses import dataclass
 
 @dataclass
+class LetterState:
+    """State of an individual letter for precise tracking."""
+    char: str
+    sprite_3d: Optional[Image.Image]
+    position: Tuple[int, int]  # Exact pixel position from motion phase
+    width: int
+    height: int
+
 class Text3DMotionDissolve:
-    """
-    Combined animation: 3D text motion followed by dissolve.
-    """
-
-    # Core animation parameters
-    duration: float = 3.0
-    fps: int = 30
-    resolution: Tuple[int, int] = (1920, 1080)
-
-    # Text properties
-    text: str = "HELLO WORLD"
-    segment_mask: Optional[Union[str, np.ndarray]] = None
-    font_size: int = 120
-    text_color: Tuple[int, int, int] = (255, 220, 0)
-    depth_color: Tuple[int, int, int] = (200, 170, 0)
-    depth_layers: int = 10
-    depth_offset: int = 4
-
-    # Motion phase timing
-    motion_duration: float = 0.75
-    shrink_duration: float = 0.6
-    settle_duration: float = 0.15
+    """3D text animation with precise per-letter position tracking."""
     
-    # Dissolve phase timing
-    dissolve_stable_duration: float = 0.17
-    dissolve_duration: float = 0.67
-    dissolve_stagger: float = 0.33
-
-    # Start/end states for motion
-    start_scale: float = 2.0
-    end_scale: float = 0.8
-    final_scale: float = 0.75
-    center_position: Optional[Tuple[int, int]] = None
-
-    # Dissolve parameters
-    float_distance: int = 30
-    max_dissolve_scale: float = 1.2
-    randomize_order: bool = True
-    maintain_kerning: bool = True
-
-    # Visual effects
-    shadow_offset: int = 8
-    outline_width: int = 3
-    perspective_angle: float = 25
-    supersample_factor: int = 2
-    glow_effect: bool = True
-
-    # Control flags
-    debug: bool = False
-
-    def __post_init__(self):
-        # Font candidates
-        self._font_candidates = [
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        ]
-
-        # Calculate total duration
-        num_letters = len(self.text)
-        self.dissolve_total_duration = (
-            self.dissolve_stable_duration + 
-            max(0, num_letters - 1) * self.dissolve_stagger + 
-            self.dissolve_duration
-        )
+    def __init__(
+        self,
+        duration: float = 3.0,
+        fps: int = 30,
+        resolution: Tuple[int, int] = (1920, 1080),
+        text: str = "HELLO",
+        segment_mask: Optional[np.ndarray] = None,
+        font_size: int = 120,
+        text_color: Tuple[int, int, int] = (255, 220, 0),
+        depth_color: Tuple[int, int, int] = (200, 170, 0),
+        depth_layers: int = 8,
+        depth_offset: int = 3,
+        motion_duration: float = 1.0,
+        start_scale: float = 2.0,
+        end_scale: float = 1.0,
+        final_scale: float = 0.9,
+        shrink_duration: float = 0.8,
+        settle_duration: float = 0.2,
+        dissolve_stable_duration: float = 0.2,
+        dissolve_duration: float = 0.8,
+        dissolve_stagger: float = 0.15,
+        float_distance: float = 50,
+        max_dissolve_scale: float = 1.5,
+        randomize_order: bool = False,
+        maintain_kerning: bool = True,
+        center_position: Optional[Tuple[int, int]] = None,
+        shadow_offset: int = 5,
+        outline_width: int = 2,
+        perspective_angle: float = 0,
+        supersample_factor: int = 2,
+        glow_effect: bool = True,
+        debug: bool = False,
+    ):
+        self.duration = duration
+        self.fps = fps
+        self.total_frames = int(duration * fps)
+        self.resolution = resolution
+        self.text = text
+        self.segment_mask = segment_mask
+        self.font_size = font_size
+        self.text_color = text_color
+        self.depth_color = depth_color
+        self.depth_layers = depth_layers
+        self.depth_offset = depth_offset
+        self.motion_duration = motion_duration
+        self.start_scale = start_scale
+        self.end_scale = end_scale
+        self.final_scale = final_scale
+        self.shrink_duration = shrink_duration
+        self.settle_duration = settle_duration
+        self.dissolve_stable_duration = dissolve_stable_duration
+        self.dissolve_duration = dissolve_duration
+        self.dissolve_stagger = dissolve_stagger
+        self.float_distance = float_distance
+        self.max_dissolve_scale = max_dissolve_scale
+        self.randomize_order = randomize_order
+        self.maintain_kerning = maintain_kerning
+        self.center_position = center_position or (resolution[0] // 2, resolution[1] // 2)
+        self.shadow_offset = shadow_offset
+        self.outline_width = outline_width
+        self.perspective_angle = perspective_angle
+        self.supersample_factor = supersample_factor
+        self.glow_effect = glow_effect
+        self.debug = debug
         
-        # Update total duration to include both phases
-        self.duration = self.motion_duration + self.dissolve_total_duration
-
-        # Validate motion durations
-        self.shrink_duration = min(self.shrink_duration, self.motion_duration * 0.9)
-        self.settle_duration = self.motion_duration - self.shrink_duration
-
-        # Frame calculations
-        self.total_frames = int(self.duration * self.fps)
-        self.motion_frames = int(self.motion_duration * self.fps)
-        self.shrink_frames = int(self.shrink_duration * self.fps)
-        self.settle_frames = self.motion_frames - self.shrink_frames
-        self.dissolve_frames = self.total_frames - self.motion_frames
-
-        # Load or create mask
-        self.segment_mask = self._load_or_make_mask(self.segment_mask)
-
-        # Default center position
-        if self.center_position is None:
-            self.center_position = (self.resolution[0] // 2, self.resolution[1] // 2)
-
-        # Initialize mask cache
+        # Calculate phase frames
+        self.motion_frames = int(motion_duration * fps)
+        self.dissolve_total_duration = dissolve_stable_duration + dissolve_duration + dissolve_stagger * (len(text) - 1)
+        self.dissolve_frames = int(self.dissolve_total_duration * fps)
+        
+        # Cache for dynamic masks
         self._frame_mask_cache = {}
         
-        # Calculate transition scale (scale at which text goes behind)
-        self.transition_scale = self.start_scale - 0.6 * (self.start_scale - self.end_scale)
-        
-        # Initialize dissolve state
-        self._init_dissolve_state()
-
-        if self.debug:
-            self._log(f"Init: Motion + Dissolve animation")
-            self._log(f"Motion frames: 0-{self.motion_frames-1}")
-            self._log(f"Dissolve frames: {self.motion_frames}-{self.total_frames-1}")
-
-    def _init_dissolve_state(self):
-        """Initialize dissolve animation state."""
-        self.letter_sprites = {}
-        self.letter_positions = []
-        self.letter_kill_masks = {}
+        # Letter states for precise tracking
+        self.letter_states: List[LetterState] = []
         self.dissolve_order = []
+        self.letter_kill_masks = {}
         
-        # Pre-render letter sprites at final scale
-        self._prepare_letter_sprites()
+        # Transition values that will be captured from motion phase
+        self.transition_scale = None
+        self.transition_text_bbox = None  # Exact bounding box at transition
         
-        # Determine dissolve order
+        # Initialize dissolve order
+        self._init_dissolve_order()
+        
+    def _init_dissolve_order(self):
+        """Initialize the order in which letters dissolve."""
         if self.randomize_order:
             indices = list(range(len(self.text)))
             random.shuffle(indices)
             self.dissolve_order = indices
         else:
             self.dissolve_order = list(range(len(self.text)))
-
-    def _prepare_letter_sprites(self):
-        """Pre-render individual letter sprites for dissolve."""
-        font_px = int(self.font_size * self.final_scale)
+    
+    def _log(self, message: str):
+        """Debug logging."""
+        if self.debug:
+            print(f"[Text3DMotionDissolve] {message}")
+    
+    def _get_font(self, size: int) -> ImageFont.FreeTypeFont:
+        """Get font at specified size."""
+        try:
+            return ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
+        except:
+            return ImageFont.load_default()
+    
+    def _smoothstep(self, t: float) -> float:
+        """Smooth interpolation function."""
+        t = max(0, min(1, t))
+        return t * t * (3 - 2 * t)
+    
+    def _render_3d_letter(
+        self, 
+        letter: str, 
+        scale: float, 
+        alpha: float,
+        depth_scale: float
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        """Render a single 3D letter with depth layers."""
+        font_px = int(self.font_size * scale * self.supersample_factor)
         font = self._get_font(font_px)
         
-        # Measure full text for positioning
+        # Measure letter
         tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
         d = ImageDraw.Draw(tmp)
-        full_bbox = d.textbbox((0, 0), self.text, font=font)
+        bbox = d.textbbox((0, 0), letter, font=font)
+        width = bbox[2] - bbox[0] + self.depth_offset * self.depth_layers * 2
+        height = bbox[3] - bbox[1] + self.depth_offset * self.depth_layers * 2
         
-        # Calculate starting position for centered text
-        text_width = full_bbox[2] - full_bbox[0]
-        text_height = full_bbox[3] - full_bbox[1]
+        # Create canvas
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
         
-        cx, cy = self.center_position
-        start_x = cx - text_width // 2
-        start_y = cy - text_height // 2
+        # Render depth layers
+        for i in range(self.depth_layers - 1, -1, -1):
+            depth_alpha = int(alpha * 255 * (0.3 + 0.7 * (1 - i / self.depth_layers)))
+            offset = int(i * self.depth_offset * depth_scale * self.supersample_factor)
+            
+            if i == 0:
+                # Front layer
+                color = (*self.text_color, depth_alpha)
+            else:
+                # Depth layers
+                factor = 0.7 - (i / self.depth_layers) * 0.4
+                color = tuple(int(c * factor) for c in self.depth_color) + (depth_alpha,)
+            
+            x = -bbox[0] + offset
+            y = -bbox[1] + offset
+            draw.text((x, y), letter, font=font, fill=color)
         
-        current_x = start_x
+        # Downsample if supersampling
+        if self.supersample_factor > 1:
+            new_size = (width // self.supersample_factor, height // self.supersample_factor)
+            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
         
-        # Render each letter
+        # Calculate anchor
+        anchor_x = -bbox[0] // self.supersample_factor
+        anchor_y = -bbox[1] // self.supersample_factor
+        
+        return canvas, (anchor_x, anchor_y)
+    
+    def _render_3d_text(
+        self,
+        text: str,
+        scale: float,
+        alpha: float,
+        is_behind: bool,
+        depth_scale: float
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        """Render full 3D text string."""
+        font_px = int(self.font_size * scale * self.supersample_factor)
+        font = self._get_font(font_px)
+        
+        # Measure text
+        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        bbox = d.textbbox((0, 0), text, font=font)
+        width = bbox[2] - bbox[0] + self.depth_offset * self.depth_layers * 2
+        height = bbox[3] - bbox[1] + self.depth_offset * self.depth_layers * 2
+        
+        # Create canvas
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        
+        # Render depth layers
+        for i in range(self.depth_layers - 1, -1, -1):
+            depth_alpha = int(alpha * 255 * (0.3 + 0.7 * (1 - i / self.depth_layers)))
+            offset = int(i * self.depth_offset * depth_scale * self.supersample_factor)
+            
+            if i == 0:
+                color = (*self.text_color, depth_alpha)
+            else:
+                factor = 0.7 - (i / self.depth_layers) * 0.4
+                color = tuple(int(c * factor) for c in self.depth_color) + (depth_alpha,)
+            
+            x = -bbox[0] + offset
+            y = -bbox[1] + offset
+            draw.text((x, y), text, font=font, fill=color)
+        
+        # Downsample
+        if self.supersample_factor > 1:
+            new_size = (width // self.supersample_factor, height // self.supersample_factor)
+            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
+        
+        anchor_x = -bbox[0] // self.supersample_factor
+        anchor_y = -bbox[1] // self.supersample_factor
+        
+        return canvas, (anchor_x, anchor_y)
+    
+    def _capture_motion_final_state(self, frame_number: int, text_pil: Image.Image, pos_x: int, pos_y: int, scale: float):
+        """Capture the exact final state from motion phase for letter positioning."""
+        self.transition_scale = scale
+        self.transition_text_bbox = (pos_x, pos_y, text_pil.width, text_pil.height)
+        
+        # Now prepare individual letter states with exact positions
+        font_px = int(self.font_size * scale)
+        font = self._get_font(font_px)
+        
+        # Clear previous states
+        self.letter_states = []
+        
+        # Track current position within the text
+        current_x_offset = 0
+        
+        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        
         for i, letter in enumerate(self.text):
             if letter == ' ':
                 # Handle space
                 space_width = font_px // 3
-                self.letter_positions.append((current_x, start_y))
-                self.letter_sprites[i] = None
-                current_x += space_width
-                continue
-            
-            # Measure letter
-            letter_bbox = d.textbbox((0, 0), letter, font=font)
-            letter_w = letter_bbox[2] - letter_bbox[0]
-            letter_h = letter_bbox[3] - letter_bbox[1]
-            
-            # Add padding
-            pad = int(max(letter_w, letter_h) * 0.25)
-            sprite_w = letter_w + pad * 2
-            sprite_h = letter_h + pad * 2
-            
-            # Create sprite
-            sprite = Image.new("RGBA", (sprite_w, sprite_h), (0, 0, 0, 0))
-            sprite_draw = ImageDraw.Draw(sprite)
-            
-            # Draw letter with effects
-            # Shadow
-            shadow_color = (0, 0, 0, 100)
-            sprite_draw.text(
-                (pad + self.shadow_offset, pad + self.shadow_offset),
-                letter, font=font, fill=shadow_color
-            )
-            
-            # Outline
-            for ox in range(-self.outline_width, self.outline_width + 1):
-                for oy in range(-self.outline_width, self.outline_width + 1):
-                    if ox != 0 or oy != 0:
-                        sprite_draw.text(
-                            (pad + ox, pad + oy),
-                            letter, font=font, fill=(0, 0, 0, 200)
-                        )
-            
-            # Main letter
-            sprite_draw.text(
-                (pad, pad),
-                letter, font=font, fill=(*self.text_color, 255)
-            )
-            
-            # Apply glow if enabled
-            if self.glow_effect:
-                glow = sprite.filter(ImageFilter.GaussianBlur(radius=2))
-                sprite = Image.alpha_composite(glow, sprite)
-            
-            self.letter_sprites[i] = sprite
-            self.letter_positions.append((current_x - pad, start_y - pad))
-            
-            # Initialize kill mask
-            self.letter_kill_masks[i] = np.zeros((sprite_h, sprite_w), dtype=np.uint8)
-            
-            # Advance position with kerning
-            if self.maintain_kerning and i < len(self.text) - 1:
-                # Simplified kerning
-                current_x += int(letter_w * 0.9)
+                state = LetterState(
+                    char=letter,
+                    sprite_3d=None,
+                    position=(pos_x + current_x_offset, pos_y),
+                    width=space_width,
+                    height=0
+                )
+                self.letter_states.append(state)
+                current_x_offset += space_width
             else:
-                current_x += letter_w
-
-    def generate_frame(
-        self,
-        frame_number: int,
-        background: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
-        """Generate a single frame of the combined animation."""
+                # Measure this letter
+                letter_bbox = d.textbbox((0, 0), letter, font=font)
+                letter_width = letter_bbox[2] - letter_bbox[0]
+                letter_height = letter_bbox[3] - letter_bbox[1]
+                
+                # Render 3D sprite for this letter
+                sprite_3d, (anchor_x, anchor_y) = self._render_3d_letter(
+                    letter, scale, 1.0, 1.0
+                )
+                
+                # Calculate exact position for this letter
+                # This matches how text is naturally rendered
+                letter_x = pos_x + current_x_offset
+                letter_y = pos_y
+                
+                state = LetterState(
+                    char=letter,
+                    sprite_3d=sprite_3d,
+                    position=(letter_x, letter_y),
+                    width=sprite_3d.width,
+                    height=sprite_3d.height
+                )
+                self.letter_states.append(state)
+                
+                # Move to next letter position
+                current_x_offset += letter_width
         
-        if background is None:
-            frame = np.zeros((self.resolution[1], self.resolution[0], 4), dtype=np.uint8)
-            frame[:, :, 3] = 255
-        else:
-            if background.shape[2] == 3:
-                frame = np.zeros((background.shape[0], background.shape[1], 4), dtype=np.uint8)
-                frame[:, :, :3] = background
-                frame[:, :, 3] = 255
-            else:
-                frame = background.copy()
-
-        # Determine animation phase
-        if frame_number < self.motion_frames:
-            # Motion phase
-            return self._generate_motion_frame(frame_number, frame, background)
-        else:
-            # Dissolve phase
-            dissolve_frame = frame_number - self.motion_frames
-            return self._generate_dissolve_frame(dissolve_frame, frame, background)
-
+        if self.debug:
+            self._log(f"Captured motion final state at frame {frame_number}:")
+            self._log(f"  Text position: ({pos_x}, {pos_y})")
+            self._log(f"  Text size: {text_pil.width}x{text_pil.height}")
+            self._log(f"  Scale: {scale:.3f}")
+            self._log(f"  Letter count: {len(self.letter_states)}")
+    
     def _generate_motion_frame(self, frame_number: int, frame: np.ndarray, background: Optional[np.ndarray]) -> np.ndarray:
         """Generate a frame during the motion phase."""
-        
-        # CONTINUOUS t across entire motion animation
         t_global = frame_number / max(self.motion_frames - 1, 1)
-        
-        # Apply single smoothstep to entire animation
         smooth_t_global = self._smoothstep(t_global)
         
-        # Determine phase for other calculations
-        if frame_number < self.shrink_frames:
-            phase = "shrink"
-            t_local = frame_number / max(self.shrink_frames - 1, 1)
-        else:
-            phase = "settle"
-            t_local = (frame_number - self.shrink_frames) / max(self.settle_frames - 1, 1)
-
-        # CONTINUOUS scale interpolation
+        # Calculate scale
         shrink_progress = self.shrink_duration / self.motion_duration
-        
         if smooth_t_global <= shrink_progress:
             local_t = smooth_t_global / shrink_progress
             scale = self.start_scale - local_t * (self.start_scale - self.end_scale)
+            depth_scale = 1.0
+            is_behind = local_t > 0.5
+            base_alpha = 1.0 if local_t <= 0.5 else max(0.2, 1.0 - (local_t - 0.5) * 3.6)
         else:
             local_t = (smooth_t_global - shrink_progress) / (1.0 - shrink_progress)
             scale = self.end_scale - local_t * (self.end_scale - self.final_scale)
-        
-        # Alpha calculation
-        if phase == "shrink":
-            if t_local < 0.4:
-                alpha = 1.0
-                is_behind = False
-            elif t_local < 0.6:
-                fade_t = (t_local - 0.4) / 0.2
-                alpha = 1.0 - fade_t * 0.4
-                is_behind = False
-            else:
-                fade_t = (t_local - 0.6) / 0.4
-                k = 3.0
-                alpha = 0.6 - 0.4 * (1 - np.exp(-k * fade_t)) / (1 - np.exp(-k))
-                is_behind = True
-        else:  # settle
-            alpha = 0.2
+            depth_scale = 1.0
             is_behind = True
-
-        # Use fixed scale for depth when behind
-        if is_behind:
-            depth_scale = self.transition_scale
-        else:
-            depth_scale = scale
-
-        # Render 3D text
+            base_alpha = 0.2
+        
+        # Render text
         text_pil, (anchor_x, anchor_y) = self._render_3d_text(
-            self.text, scale, alpha, False, depth_scale
+            self.text, scale, base_alpha, is_behind, depth_scale
         )
-
-        # Calculate position with CONTINUOUS interpolation
+        
+        # Calculate position
         cx, cy = self.center_position
         start_y = cy - self.resolution[1] * 0.15
         end_y = cy
         
         pos_x = int(cx - anchor_x)
         pos_y = int(start_y + smooth_t_global * (end_y - start_y) - anchor_y)
-
+        
+        # Capture final state if at last motion frame
+        if frame_number == self.motion_frames - 1:
+            self._capture_motion_final_state(frame_number, text_pil, pos_x, pos_y, scale)
+        
         # Place text on frame
         text_np = np.array(text_pil)
         tw, th = text_pil.size
-
+        
         y1 = max(0, pos_y)
         y2 = min(frame.shape[0], pos_y + th)
         x1 = max(0, pos_x)
         x2 = min(frame.shape[1], pos_x + tw)
-
+        
         ty1 = max(0, -pos_y)
         ty2 = ty1 + (y2 - y1)
         tx1 = max(0, -pos_x)
         tx2 = tx1 + (x2 - x1)
-
+        
         # Build text layer
         text_layer = np.zeros_like(frame)
         text_layer[y1:y2, x1:x2] = text_np[ty1:ty2, tx1:tx2]
-
+        
         # Apply masking when behind
-        if is_behind:
-            if background is not None and background.shape[2] >= 3:
+        if is_behind and self.segment_mask is not None:
+            # Use dynamic mask if available
+            if background is not None:
                 if frame_number not in self._frame_mask_cache:
                     from utils.segmentation.segment_extractor import extract_foreground_mask
-                    
-                    if background.shape[2] == 4:
-                        current_rgb = background[:, :, :3]
-                    else:
-                        current_rgb = background
-                    
+                    current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
                     current_mask = extract_foreground_mask(current_rgb)
                     
                     if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
                         current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
                     
-                    # Minimal processing
                     current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
                     kernel = np.ones((3, 3), np.uint8)
                     current_mask = cv2.dilate(current_mask, kernel, iterations=1)
@@ -364,20 +382,45 @@ class Text3DMotionDissolve:
             mask_factor = mask_region.astype(np.float32) / 255.0
             text_alpha *= (1.0 - mask_factor)
             text_layer[y1:y2, x1:x2, 3] = text_alpha.astype(np.uint8)
-
+        
         # Composite
         frame_pil = Image.fromarray(frame)
         text_pil = Image.fromarray(text_layer)
         out = Image.alpha_composite(frame_pil, text_pil)
         result = np.array(out)
-
-        if self.debug and frame_number % 10 == 0:
-            self._log(f"Motion frame {frame_number}: scale={scale:.3f}, pos_y={pos_y}")
-
+        
         return result[:, :, :3] if result.shape[2] == 4 else result
-
-    def _generate_dissolve_frame(self, dissolve_frame: int, frame: np.ndarray, background: Optional[np.ndarray]) -> np.ndarray:
-        """Generate a frame during the dissolve phase."""
+    
+    def _add_3d_dissolve_holes(self, letter_idx: int, progress: float):
+        """Add dissolve holes to a letter's kill mask."""
+        if letter_idx >= len(self.letter_states):
+            return
+        
+        state = self.letter_states[letter_idx]
+        if state.sprite_3d is None:
+            return
+        
+        # Initialize kill mask if needed
+        if letter_idx not in self.letter_kill_masks:
+            self.letter_kill_masks[letter_idx] = np.zeros(
+                (state.sprite_3d.height, state.sprite_3d.width), dtype=np.uint8
+            )
+        
+        # Add random holes based on progress
+        num_holes = int(progress * 20)
+        for _ in range(num_holes):
+            x = np.random.randint(0, state.sprite_3d.width)
+            y = np.random.randint(0, state.sprite_3d.height)
+            radius = np.random.randint(2, 8)
+            cv2.circle(self.letter_kill_masks[letter_idx], (x, y), radius, 1, -1)
+    
+    def _generate_3d_dissolve_frame(self, dissolve_frame: int, frame: np.ndarray, background: Optional[np.ndarray]) -> np.ndarray:
+        """Generate a frame during the 3D dissolve phase using exact captured positions."""
+        
+        # Ensure we have captured the motion final state
+        if not self.letter_states:
+            self._log("WARNING: No letter states captured from motion phase!")
+            return frame
         
         # Calculate timing within dissolve phase
         t = dissolve_frame / max(self.dissolve_frames - 1, 1)
@@ -385,248 +428,123 @@ class Text3DMotionDissolve:
         # Create canvas for dissolve effect
         canvas = Image.fromarray(frame)
         
-        # Process each letter
-        for idx, letter_idx in enumerate(self.dissolve_order):
-            if self.letter_sprites[letter_idx] is None:
+        # Process each letter with its exact position
+        for idx in self.dissolve_order:
+            if idx >= len(self.letter_states):
+                continue
+            
+            state = self.letter_states[idx]
+            if state.sprite_3d is None:
                 continue  # Skip spaces
             
             # Calculate letter-specific timing
-            letter_start = idx * self.dissolve_stagger / self.dissolve_total_duration
+            letter_start = (idx if not self.randomize_order else self.dissolve_order.index(idx)) * self.dissolve_stagger / self.dissolve_total_duration
             letter_end = letter_start + self.dissolve_duration / self.dissolve_total_duration
             
             if t < letter_start:
                 # Letter hasn't started dissolving yet
-                alpha = 0.2  # Match the end alpha from motion phase
+                alpha_mult = 0.2
                 scale = 1.0
                 float_y = 0
+                add_holes = False
             elif t > letter_end:
                 # Letter has fully dissolved
                 continue
             else:
                 # Letter is dissolving
                 letter_t = (t - letter_start) / (letter_end - letter_start)
-                
-                # Smooth interpolation
                 smooth_t = self._smoothstep(letter_t)
                 
-                # Alpha fade out
-                alpha = 0.2 * (1.0 - smooth_t)
-                
-                # Scale effect
+                # Effects
+                alpha_mult = 0.2 * (1.0 - smooth_t)
                 scale = 1.0 + smooth_t * (self.max_dissolve_scale - 1.0)
-                
-                # Float upward
                 float_y = -smooth_t * self.float_distance
+                add_holes = letter_t > 0.3
                 
-                # Add dissolve holes
-                if letter_t > 0.3:
-                    self._add_dissolve_holes(letter_idx, letter_t)
+                if add_holes:
+                    self._add_3d_dissolve_holes(idx, letter_t)
             
-            # Render letter with current state
-            sprite = self.letter_sprites[letter_idx]
-            pos_x, pos_y = self.letter_positions[letter_idx]
+            # Get the sprite
+            sprite = state.sprite_3d.copy()
             
-            # Apply transformations
+            # Use EXACT position from motion phase
+            pos_x, pos_y = state.position
+            
+            # Apply scale transformation
             if scale != 1.0:
                 new_size = (int(sprite.width * scale), int(sprite.height * scale))
                 sprite = sprite.resize(new_size, Image.Resampling.LANCZOS)
                 # Adjust position to keep centered
-                pos_x -= (new_size[0] - self.letter_sprites[letter_idx].width) // 2
-                pos_y -= (new_size[1] - self.letter_sprites[letter_idx].height) // 2
+                pos_x -= (new_size[0] - state.sprite_3d.width) // 2
+                pos_y -= (new_size[1] - state.sprite_3d.height) // 2
             
             # Apply float
             pos_y += int(float_y)
             
             # Apply alpha and kill mask
             sprite_array = np.array(sprite)
-            if letter_idx in self.letter_kill_masks and np.any(self.letter_kill_masks[letter_idx]):
-                # Resize kill mask if needed
-                kill_mask = self.letter_kill_masks[letter_idx]
+            
+            if idx in self.letter_kill_masks and np.any(self.letter_kill_masks[idx]):
+                kill_mask = self.letter_kill_masks[idx]
                 if scale != 1.0:
                     kill_mask = cv2.resize(kill_mask, (sprite.width, sprite.height))
                 
                 # Apply kill mask
-                sprite_array[:, :, 3] = (sprite_array[:, :, 3] * (1 - kill_mask / 255.0) * alpha).astype(np.uint8)
-            else:
-                sprite_array[:, :, 3] = (sprite_array[:, :, 3] * alpha).astype(np.uint8)
+                sprite_array[:, :, 3] = sprite_array[:, :, 3] * (1 - kill_mask)
             
-            # Composite onto canvas
-            sprite_img = Image.fromarray(sprite_array)
-            canvas.paste(sprite_img, (pos_x, pos_y), sprite_img)
+            # Apply overall alpha
+            sprite_array[:, :, 3] = (sprite_array[:, :, 3] * alpha_mult).astype(np.uint8)
+            
+            # Convert back to PIL and composite
+            sprite = Image.fromarray(sprite_array)
+            
+            # Paste at exact position
+            canvas.paste(sprite, (int(pos_x), int(pos_y)), sprite)
         
         result = np.array(canvas)
-        
-        if self.debug and dissolve_frame % 10 == 0:
-            self._log(f"Dissolve frame {dissolve_frame}: t={t:.3f}")
-        
         return result[:, :, :3] if result.shape[2] == 4 else result
-
-    def _add_dissolve_holes(self, letter_idx: int, letter_t: float):
-        """Add dissolve holes to a letter's kill mask."""
-        if letter_idx not in self.letter_kill_masks:
-            return
+    
+    def generate_frame(self, frame_number: int, background: np.ndarray) -> np.ndarray:
+        """Generate a single frame of the animation."""
+        frame = background.copy()
         
-        kill_mask = self.letter_kill_masks[letter_idx]
-        h, w = kill_mask.shape
+        # Ensure RGBA
+        if frame.shape[2] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
         
-        # Number of holes based on progress
-        num_holes = int(letter_t * 10)
-        
-        for _ in range(num_holes):
-            # Random hole position
-            cx = random.randint(0, w - 1)
-            cy = random.randint(0, h - 1)
-            
-            # Random hole size
-            radius = random.randint(2, 5)
-            
-            # Create circular hole
-            for y in range(max(0, cy - radius), min(h, cy + radius + 1)):
-                for x in range(max(0, cx - radius), min(w, cx + radius + 1)):
-                    dist = math.sqrt((x - cx)**2 + (y - cy)**2)
-                    if dist <= radius:
-                        # Feathered edge
-                        opacity = min(255, int(255 * (1 - dist / radius)))
-                        kill_mask[y, x] = min(255, kill_mask[y, x] + opacity)
-
-    def _render_3d_text(
-        self,
-        text: str,
-        scale: float,
-        alpha: float,
-        apply_perspective: bool,
-        depth_scale: float = None,
-    ) -> Tuple[Image.Image, Tuple[int, int]]:
-        """Render 3D text with separate depth scale."""
-        
-        if depth_scale is None:
-            depth_scale = scale
-            
-        ss = self.supersample_factor
-        
-        # Font size uses regular scale
-        font_px = max(2, int(round(self.font_size * scale * ss)))
-        font = self._get_font(font_px)
-
-        # Measure text
-        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
-        d = ImageDraw.Draw(tmp)
-        bbox = d.textbbox((0, 0), text, font=font)
-        face_w = max(1, bbox[2] - bbox[0])
-        face_h = max(1, bbox[3] - bbox[1])
-
-        # Canvas
-        depth_off = int(round(self.depth_offset * depth_scale * ss))
-        pad = max(depth_off * self.depth_layers * 2, ss * 8)
-        canvas_w = face_w + pad * 2 + depth_off * self.depth_layers
-        canvas_h = face_h + pad * 2 + depth_off * self.depth_layers
-
-        img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        # Center front face
-        front_x = (canvas_w - face_w) // 2
-        front_y = (canvas_h - face_h) // 2
-
-        # Depth layers with 80% reduction
-        reduced_depth_off = int(round(depth_off * 0.2))
-        extra_layers = self.depth_layers * 2
-        
-        for i in range(extra_layers, 0, -1):
-            ox = front_x + i * reduced_depth_off
-            oy = front_y - i * reduced_depth_off
-            t = (extra_layers - i) / max(extra_layers - 1, 1)
-            t = t * t * t * (3.0 - 2.0 * t - 0.5 * t)
-
-            r = int(self.depth_color[0] * (1 - t) + self.text_color[0] * t * 0.75)
-            g = int(self.depth_color[1] * (1 - t) + self.text_color[1] * t * 0.75)
-            b = int(self.depth_color[2] * (1 - t) + self.text_color[2] * t * 0.75)
-
-            draw.text((ox, oy), text, font=font, fill=(r, g, b, int(255 * alpha)))
-
-        # Outline
-        outline_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        outline_draw = ImageDraw.Draw(outline_img)
-        outline_w = max(1, int(self.outline_width * ss))
-        
-        for radius in range(outline_w, 0, -1):
-            fade = 1.0 - (radius - 1) / max(outline_w, 1) * 0.5
-            for ang in range(0, 360, 30):
-                ox = int(round(radius * np.cos(np.radians(ang))))
-                oy = int(round(radius * np.sin(np.radians(ang))))
-                outline_draw.text(
-                    (front_x + ox, front_y + oy),
-                    text,
-                    font=font,
-                    fill=(0, 0, 0, int(110 * alpha * fade)),
-                )
-        
-        outline_img = outline_img.filter(ImageFilter.GaussianBlur(radius=max(1, ss // 2)))
-        img = Image.alpha_composite(img, outline_img)
-
-        # Front face
-        face_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        ImageDraw.Draw(face_img).text(
-            (front_x, front_y),
-            text,
-            font=font,
-            fill=(*self.text_color, int(255 * alpha)),
-        )
-        img = Image.alpha_composite(img, face_img)
-
-        # Anchor
-        anchor_x_ss = front_x + face_w / 2.0
-        anchor_y_ss = front_y + face_h / 2.0
-
-        # Shadow
-        shadow = np.array(img)
-        shadow[:, :, :3] = 0
-        shadow[:, :, 3] = (shadow[:, :, 3].astype(np.float32) * 0.4).astype(np.uint8)
-        shadow = Image.fromarray(shadow).filter(ImageFilter.GaussianBlur(radius=max(2, ss)))
-        final = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        shadow_off = int(round(self.shadow_offset * depth_scale * ss * 0.3))
-        final.paste(shadow, (shadow_off, shadow_off), shadow)
-        final = Image.alpha_composite(final, img)
-
-        # Downsample
-        final = final.filter(ImageFilter.GaussianBlur(radius=max(0.0, ss / 6.0)))
-        target_w = max(1, final.width // ss)
-        target_h = max(1, final.height // ss)
-        final = final.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-        anchor_x = anchor_x_ss / ss
-        anchor_y = anchor_y_ss / ss
-
-        return final, (anchor_x, anchor_y)
-
-    def _load_or_make_mask(self, segment_mask) -> np.ndarray:
-        w, h = self.resolution
-        if segment_mask is None:
-            mask = np.zeros((self.resolution[1], self.resolution[0]), dtype=np.uint8)
-        elif isinstance(segment_mask, str):
-            mask_img = Image.open(segment_mask).convert("L")
-            mask_img = mask_img.resize(self.resolution, Image.Resampling.LANCZOS)
-            mask = np.array(mask_img, dtype=np.uint8)
+        # Determine which phase we're in
+        if frame_number < self.motion_frames:
+            # Motion phase
+            return self._generate_motion_frame(frame_number, frame, background)
         else:
-            mask = segment_mask
-            if mask.shape[:2] != (self.resolution[1], self.resolution[0]):
-                mask = cv2.resize(mask, self.resolution, interpolation=cv2.INTER_LINEAR)
-        mask = (mask > 128).astype(np.uint8) * 255
-        return mask
-
-    def _smoothstep(self, t: float) -> float:
-        t = max(0.0, min(1.0, t))
-        return t * t * (3.0 - 2.0 * t)
-
-    def _log(self, msg: str) -> None:
-        if self.debug:
-            print(f"[3D_MOTION_DISSOLVE] {msg}")
-
-    def _get_font(self, px: int) -> ImageFont.FreeTypeFont:
-        for path in self._font_candidates:
-            if os.path.exists(path):
-                try:
-                    return ImageFont.truetype(path, px)
-                except:
-                    continue
-        return ImageFont.load_default()
+            # Dissolve phase
+            dissolve_frame = frame_number - self.motion_frames
+            if dissolve_frame < self.dissolve_frames:
+                return self._generate_3d_dissolve_frame(dissolve_frame, frame, background)
+            else:
+                # Animation complete
+                return background[:, :, :3] if background.shape[2] == 4 else background
+    
+    def generate_video(self, output_path: str, background_frames: List[np.ndarray]):
+        """Generate complete video with the animation."""
+        height, width = background_frames[0].shape[:2]
+        
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, self.fps, (width, height))
+        
+        total_frames_needed = self.total_frames
+        
+        for i in range(total_frames_needed):
+            bg_idx = i % len(background_frames)
+            background = background_frames[bg_idx]
+            
+            frame = self.generate_frame(i, background)
+            
+            if frame.shape[2] == 4:
+                frame = frame[:, :, :3]
+            
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            out.write(frame_bgr)
+        
+        out.release()
+        print(f"Video saved to {output_path}")

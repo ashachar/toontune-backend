@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Verify that the FIXED animation maintains exact letter positions."""
+"""Verify that the animation maintains exact letter positions."""
 
 import cv2
 import numpy as np
-from utils.animations.text_3d_motion_dissolve_fixed import Text3DMotionDissolveFixed
+from utils.animations.text_3d_motion_dissolve import Text3DMotionDissolve
 
 print("="*80)
-print("VERIFYING FIXED LETTER POSITIONS")
+print("VERIFYING LETTER POSITIONS")
 print("="*80)
 
 # Load video
@@ -26,7 +26,7 @@ for i in range(50):
 cap.release()
 
 # Create animation with debug
-anim = Text3DMotionDissolveFixed(
+anim = Text3DMotionDissolve(
     duration=2.25,
     fps=fps,
     resolution=(W, H),
@@ -124,11 +124,11 @@ def detect_individual_letters(frame_rgb, debug_save=None):
     return letter_data
 
 print("\nDetecting letters in last motion frame...")
-motion_letters = detect_individual_letters(last_motion, 'fixed_motion_letters.png')
+motion_letters = detect_individual_letters(last_motion, 'motion_letters.png')
 print(f"Found {len(motion_letters)} components")
 
 print("\nDetecting letters in first dissolve frame...")
-dissolve_letters = detect_individual_letters(first_dissolve, 'fixed_dissolve_letters.png')
+dissolve_letters = detect_individual_letters(first_dissolve, 'dissolve_letters.png')
 print(f"Found {len(dissolve_letters)} components")
 
 # Compare positions
@@ -164,7 +164,7 @@ if len(motion_letters) > 0 and len(dissolve_letters) > 0:
             max_shifts_x.append(abs(shift_x))
             max_shifts_y.append(abs(shift_y))
             
-            # Much stricter threshold for FIXED version
+            # Strict threshold for position verification
             status = "✅ PERFECT" if abs(shift_x) < 2 and abs(shift_y) < 2 else "⚠️ MOVED"
             
             print(f"  {i:5d} | ({m_letter['center_x']:6.1f}, {m_letter['center_y']:6.1f}) | "
@@ -183,10 +183,10 @@ if len(motion_letters) > 0 and len(dissolve_letters) > 0:
         
         if max(max_shifts_x) < 2 and max(max_shifts_y) < 2:
             print("\n🎉 PERFECT! Every single letter maintains exact position!")
-            print("   The position jump issue is COMPLETELY FIXED!")
+            print("   No position jump detected!")
         elif max(max_shifts_x) < 5 and max(max_shifts_y) < 5:
             print("\n✅ EXCELLENT! Individual letters maintain position!")
-            print("   The position jump issue is FIXED!")
+            print("   Minimal position change detected!")
         else:
             print(f"\n⚠️ Some letters still shifting")
 
@@ -212,4 +212,4 @@ if anim.letter_states:
         print(f"  Expected center: {W//2}")
         print(f"  Difference from center: {abs(avg_x - W//2):.1f} pixels")
 
-print("\n✅ FIXED VERIFICATION COMPLETE")
+print("\n✅ VERIFICATION COMPLETE")

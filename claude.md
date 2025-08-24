@@ -7,6 +7,15 @@
 - The Python script (`create_issue_xml.py`) is 100% deterministic - it only formats what Claude provides
 - NEVER modify the script to search for files automatically
 
+## File Naming and Versioning Policy
+**CRITICAL: NEVER add prefixes or suffixes like _fixed, _correct, _proper, _final, etc. to file names**
+- Always work on the SAME file instead of creating multiple versions
+- Use version control (git) for tracking changes, not file name variations
+- Only create a new version of a file if the user EXPLICITLY requests it
+- When fixing bugs or improving code, modify the existing file directly
+- If you need to test different approaches, use temporary test files that get deleted after use
+- Avoid cluttering the codebase with multiple versions of the same functionality
+
 ## File Creation Notifications
 When creating any file during inference, always mention it as the last output of your response.
 Also mention which files were created in the current inference session.
