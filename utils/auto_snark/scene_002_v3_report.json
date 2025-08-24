@@ -1,0 +1,50 @@
+{
+  "scene": "scene_002",
+  "tts_engine": "ElevenLabs v3 (eleven_turbo_v2_5)",
+  "voice": "Rachel (21m00Tcm4TlvDq8ikWAM)",
+  "snarks": [
+    {
+      "time": 0.2,
+      "text": "Act two begins.",
+      "emotion": "deadpan",
+      "verified_silence": true
+    },
+    {
+      "time": 3.3,
+      "text": "Still running apparently.",
+      "emotion": "sarcastic",
+      "verified_silence": true
+    },
+    {
+      "time": 7.6,
+      "text": "Profound metaphor.",
+      "emotion": "mocking",
+      "verified_silence": true
+    },
+    {
+      "time": 11.2,
+      "text": "The suspense builds.",
+      "emotion": "sarcastic",
+      "verified_silence": true
+    },
+    {
+      "time": 27.3,
+      "text": "D\u00e9j\u00e0 vu much?",
+      "emotion": "skeptical",
+      "verified_silence": true
+    },
+    {
+      "time": 31.4,
+      "text": "Shocking.",
+      "emotion": "deadpan",
+      "verified_silence": true
+    }
+  ],
+  "audio_processing": {
+    "original_normalization": "-20 dBFS",
+    "snark_boost": "+3 dB",
+    "ducking": "-10 dB with 400ms fade",
+    "final_loudness": "I=-16 LUFS (broadcast standard)"
+  },
+  "estimated_cost": "$0.05"
+}

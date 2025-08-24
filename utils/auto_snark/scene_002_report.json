@@ -1,0 +1,56 @@
+{
+  "scene": "scene_002",
+  "duration": 55.098,
+  "snarks_placed": 6,
+  "audio_normalization": {
+    "target_dBFS": -20,
+    "snark_dBFS": -18,
+    "ducking_level": -10,
+    "fade_duration_ms": 400,
+    "final_loudnorm": "I=-16:LRA=11:TP=-1.5"
+  },
+  "snarks": [
+    {
+      "time": 0.2,
+      "text": "Act two begins.",
+      "style": "deadpan",
+      "gap_duration": 1.159,
+      "fits_in_silence": true
+    },
+    {
+      "time": 3.278,
+      "text": "Still running apparently.",
+      "style": "sarcastic",
+      "gap_duration": 1.6200000000000006,
+      "fits_in_silence": true
+    },
+    {
+      "time": 7.639,
+      "text": "Profound metaphor.",
+      "style": "mocking",
+      "gap_duration": 1.5190000000000001,
+      "fits_in_silence": true
+    },
+    {
+      "time": 11.197999999999999,
+      "text": "The suspense builds.",
+      "style": "sarcastic",
+      "gap_duration": 1.7010000000000005,
+      "fits_in_silence": true
+    },
+    {
+      "time": 27.319,
+      "text": "D\u00e9j\u00e0 vu much?",
+      "style": "deadpan",
+      "gap_duration": 1.3389999999999986,
+      "fits_in_silence": true
+    },
+    {
+      "time": 31.399,
+      "text": "Shocking.",
+      "style": "deadpan",
+      "gap_duration": 0.8199999999999967,
+      "fits_in_silence": true
+    }
+  ]
+}
