@@ -1,44 +1,43 @@
 #!/usr/bin/env python3
 """
-3D text motion animation with shrinking and moving behind subject.
-Extracted from Text3DMotionDissolve to be a standalone, reusable animation.
-
-Fixes applied:
-- Correct centering by front-face center (not canvas top-left).
-- Consistent anchor computation with depth margins.
-- [POS_HANDOFF] debug logs to verify handoff to dissolve.
-- [TEXT_QUALITY] Robust TTF/OTF font discovery + optional --font path.
-- [TEXT_QUALITY] Logs to verify font and supersampling.
+Refactored Text3DMotion that renders letters individually but moves them as a unified group.
+This enables perfect handoff to Letter3DDissolve without position jumps.
 """
 
 import os
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List, Any
 from dataclasses import dataclass
+
+
+@dataclass
+class LetterSprite:
+    """Individual letter sprite with its 3D rendering and position."""
+    char: str
+    sprite_3d: Optional[Image.Image]
+    position: Tuple[int, int]   # paste top-left
+    width: int
+    height: int
+    anchor: Tuple[int, int]     # FRONT-FACE top-left inside sprite
+    base_position: Optional[Tuple[int, int]] = None  # Store original position for handoff
 
 
 @dataclass
 class MotionState:
     """State captured at the end of motion animation for handoff to next animation."""
     scale: float
-    position: Tuple[int, int]           # Top-left position used during final composite (debug)
-    text_size: Tuple[int, int]          # Rendered sprite size (debug)
-    center_position: Tuple[int, int]    # Intended front-face center (what dissolve should use)
+    position: Tuple[int, int]           # Top-left position used during final composite
+    text_size: Tuple[int, int]          # Rendered sprite size
+    center_position: Tuple[int, int]    # Intended front-face center
     is_behind: bool                      # Whether text is behind subject at end of motion
+    letter_sprites: Optional[List[LetterSprite]] = None  # Individual letter sprites for handoff
 
 
 class Text3DMotion:
     """
-    3D text animation that shrinks and moves behind a subject.
-
-    This class handles:
-    - 3D text rendering with depth layers
-    - Smooth shrinking from large to small
-    - Movement from start position to end position (interpreted as FRONT-FACE CENTER)
-    - Occlusion when passing behind subject
-    - Dynamic mask recalculation for moving subjects
+    3D text animation with individual letter rendering but unified group movement.
     """
 
     def __init__(
@@ -56,17 +55,17 @@ class Text3DMotion:
         start_scale: float = 2.0,
         end_scale: float = 1.0,
         final_scale: float = 0.9,
-        start_position: Optional[Tuple[int, int]] = None,  # FRONT-FACE CENTER
-        end_position: Optional[Tuple[int, int]] = None,    # FRONT-FACE CENTER
+        start_position: Optional[Tuple[int, int]] = None,
+        end_position: Optional[Tuple[int, int]] = None,
         shrink_duration: float = 0.8,
         settle_duration: float = 0.2,
-        final_alpha: float = 0.3,  # Final opacity when behind subject (0.0-1.0)
+        final_alpha: float = 0.3,
         shadow_offset: int = 5,
         outline_width: int = 2,
         perspective_angle: float = 0,
-        supersample_factor: int = 2,
+        supersample_factor: int = 8,  # Much higher for smooth edges
         glow_effect: bool = True,
-        font_path: Optional[str] = None,   # NEW: explicit font path
+        font_path: Optional[str] = None,
         debug: bool = False,
     ):
         self.duration = duration
@@ -83,15 +82,13 @@ class Text3DMotion:
         self.start_scale = start_scale
         self.end_scale = end_scale
         self.final_scale = final_scale
-
-        # Positions are interpreted as FRONT-FACE CENTER of the text (not top-left).
-        default_center = (resolution[0] // 2, resolution[1] // 2)
-        self.start_position = start_position or default_center
-        self.end_position = end_position or default_center
-
+        self.start_position = start_position or (resolution[0] // 2, resolution[1] // 2)
+        self.end_position = end_position or (resolution[0] // 2, resolution[1] // 2)
         self.shrink_duration = shrink_duration
         self.settle_duration = settle_duration
-        self.final_alpha = final_alpha
+        self.shrink_frames = int(shrink_duration * fps)
+        self.settle_frames = int(settle_duration * fps)
+        self.final_alpha = max(0.0, min(1.0, final_alpha))
         self.shadow_offset = shadow_offset
         self.outline_width = outline_width
         self.perspective_angle = perspective_angle
@@ -100,19 +97,15 @@ class Text3DMotion:
         self.font_path = font_path
         self.debug = debug
 
+        # Letter sprites - rendered once and reused
+        self.letter_sprites: List[LetterSprite] = []
+        self._prepare_letter_sprites()
+        
         # Cache for dynamic masks
         self._frame_mask_cache: Dict[int, np.ndarray] = {}
-
+        
         # Final state for handoff
         self._final_state: Optional[MotionState] = None
-        
-        if self.debug:
-            print(f"[TEXT_QUALITY] Supersample factor: {self.supersample_factor}")
-
-    def _log(self, message: str):
-        """Debug logging (required format)."""
-        if self.debug:
-            print(f"[POS_HANDOFF] {message}")
 
     def _get_font(self, size: int) -> ImageFont.FreeTypeFont:
         """Get font at specified size - prioritize vector fonts."""
@@ -120,241 +113,299 @@ class Text3DMotion:
         if self.font_path:
             candidates.append(self.font_path)
         
-        # Environment overrides
-        for key in ("T3D_FONT", "TEXT_FONT", "FONT_PATH"):
-            p = os.environ.get(key)
-            if p:
-                candidates.append(p)
-        
-        # Common cross-OS paths
-        candidates += [
+        # Common font paths
+        candidates.extend([
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/Library/Fonts/Arial.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
             "C:\\Windows\\Fonts\\arial.ttf",
-        ]
+        ])
         
         for p in candidates:
             try:
                 if p and os.path.isfile(p):
-                    if self.debug:
-                        print(f"[TEXT_QUALITY] Using TTF font: {p}")
                     return ImageFont.truetype(p, size)
             except Exception:
                 continue
         
-        if self.debug:
-            print("[TEXT_QUALITY] WARNING: Falling back to PIL bitmap font (edges may look jagged). "
-                  "Install a TTF/OTF and pass font_path parameter.")
         return ImageFont.load_default()
 
-    def _smoothstep(self, t: float) -> float:
-        """Smooth interpolation function."""
-        t = max(0, min(1, t))
-        return t * t * (3 - 2 * t)
-
-    def _render_3d_text(
-        self,
-        text: str,
-        scale: float,
-        alpha: float,
-        depth_scale: float
-    ) -> Tuple[Image.Image, Tuple[int, int], Tuple[int, int]]:
-        """
-        Render 3D text with depth layers.
-
-        Returns:
-            canvas (PIL.Image)
-            anchor (ax, ay): FRONT-FACE top-left *inside* canvas coordinates (post downsample)
-            front_size (fw, fh): FRONT-FACE bbox size (post downsample)
-        """
-        from PIL import ImageFilter
-        
-        # Work at supersampled resolution for quality
-        font_px = int(self.font_size * scale * self.supersample_factor)
+    def _render_3d_letter(
+        self, letter: str, scale: float, alpha: float, depth_scale: float
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        """Render a single 3D letter with depth layers and smooth antialiasing."""
+        # Use EXTREMELY high supersampling for perfectly smooth edges
+        actual_supersample = 20  # Force 20x supersampling for maximum smoothness
+        font_px = int(self.font_size * scale * actual_supersample)
         font = self._get_font(font_px)
 
-        # FRONT-FACE bbox (no depth)
+        # Get letter bounds
         tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
         d = ImageDraw.Draw(tmp)
-        bbox = d.textbbox((0, 0), text, font=font)  # (l, t, r, b)
+        bbox = d.textbbox((0, 0), letter, font=font)
         bbox_w = bbox[2] - bbox[0]
         bbox_h = bbox[3] - bbox[1]
 
-        # Margin to accommodate depth layers on both sides (symmetric canvas)
-        margin = int(self.depth_offset * self.depth_layers * self.supersample_factor)
-
+        # Add margin for depth layers
+        margin = int(self.depth_offset * self.depth_layers * actual_supersample)
         width = bbox_w + 2 * margin
         height = bbox_h + 2 * margin
 
+        # Create canvas with antialiasing mode - use L mode for each layer first
         canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(canvas)
-
-        # Render depth layers back-to-front
+        
+        # Draw depth layers (back to front) with individual antialiasing
+        from PIL import ImageFilter
         for i in range(self.depth_layers - 1, -1, -1):
+            # Create a grayscale layer for perfect antialiasing
+            layer = Image.new("L", (width, height), 0)
+            layer_draw = ImageDraw.Draw(layer)
+            
             depth_alpha = int(alpha * 255 * (0.3 + 0.7 * (1 - i / self.depth_layers)))
-            offset = int(i * self.depth_offset * depth_scale * self.supersample_factor)
+            offset = int(i * self.depth_offset * depth_scale * actual_supersample)
+
             if i == 0:
-                color = (*self.text_color, depth_alpha)
+                color_rgb = self.text_color
             else:
                 factor = 0.7 - (i / self.depth_layers) * 0.4
-                color = tuple(int(c * factor) for c in self.depth_color) + (depth_alpha,)
+                color_rgb = tuple(int(c * factor) for c in self.depth_color)
 
-            # Draw with symmetric margin + per-layer offset (only +x,+y)
-            x = -bbox[0] + margin + offset
-            y = -bbox[1] + margin + offset
+            x = margin - bbox[0] + offset
+            y = margin - bbox[1] + offset
             
-            # Add stroke for front layer to improve antialiasing
-            if i == 0 and self.supersample_factor >= 4:
-                stroke_width = max(1, self.supersample_factor // 8)
-                draw.text((x, y), text, font=font, fill=color, stroke_width=stroke_width, stroke_fill=color)
+            # Draw with maximum antialiasing in grayscale
+            layer_draw.text((x, y), letter, font=font, fill=255)
+            
+            # Apply slight blur to the layer for smoother edges
+            layer = layer.filter(ImageFilter.GaussianBlur(radius=0.5))
+            
+            # Convert to RGBA and apply color
+            layer_rgba = Image.new("RGBA", (width, height), (*color_rgb, 0))
+            layer_rgba.putalpha(layer.point(lambda x: int(x * depth_alpha / 255)))
+            
+            # Composite onto main canvas
+            canvas = Image.alpha_composite(canvas, layer_rgba)
+
+        # Apply stronger Gaussian blur for ultra-smooth edges
+        canvas = canvas.filter(ImageFilter.GaussianBlur(radius=actual_supersample/8))
+        
+        # Additional smoothing pass with SMOOTH_MORE filter
+        canvas = canvas.filter(ImageFilter.SMOOTH_MORE)
+        
+        # Downsample with high-quality LANCZOS resampling
+        if actual_supersample > 1:
+            new_size = (width // actual_supersample, height // actual_supersample)
+            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Final smoothing pass at target resolution
+            canvas = canvas.filter(ImageFilter.SMOOTH)
+
+        # Calculate anchor (front-face top-left)
+        anchor_x = margin // actual_supersample
+        anchor_y = margin // actual_supersample
+
+        return canvas, (anchor_x, anchor_y)
+
+    def _prepare_letter_sprites(self):
+        """Pre-render all letter sprites at maximum scale to avoid pixelation."""
+        # Clear existing sprites
+        self.letter_sprites = []
+        
+        # Use MAX scale for initial rendering to ensure no pixelation when scaling up
+        base_scale = max(self.start_scale, self.end_scale, self.final_scale, 2.0)
+        font_px = int(self.font_size * base_scale)
+        font = self._get_font(font_px)
+        
+        # Calculate layout positions
+        current_x = 0
+        for letter in self.text:
+            if letter == ' ':
+                # Space character
+                sprite = LetterSprite(
+                    char=' ',
+                    sprite_3d=None,
+                    position=(current_x, 0),  # Relative position in text block
+                    width=max(1, font_px // 3),
+                    height=1,
+                    anchor=(0, 0)
+                )
+                self.letter_sprites.append(sprite)
+                current_x += max(1, font_px // 3)
             else:
-                draw.text((x, y), text, font=font, fill=color)
-
-        # Apply Gaussian blur for antialiasing before downsampling
-        if self.supersample_factor >= 4:
-            blur_radius = self.supersample_factor / 5.0
-            canvas = canvas.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-
-        # Progressive downsampling for better quality
-        if self.supersample_factor >= 8:
-            # Two-step downsampling for very high supersample factors
-            intermediate_size = (width // (self.supersample_factor // 2), height // (self.supersample_factor // 2))
-            canvas = canvas.resize(intermediate_size, Image.Resampling.LANCZOS)
-            
-            new_size = (intermediate_size[0] // 2, intermediate_size[1] // 2)
-            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
-            # Convert supersampled coordinates to final coordinates
-            ax = int(round((-bbox[0] + margin) / self.supersample_factor))
-            ay = int(round((-bbox[1] + margin) / self.supersample_factor))
-            fw = int(round(bbox_w / self.supersample_factor))
-            fh = int(round(bbox_h / self.supersample_factor))
-        elif self.supersample_factor > 1:
-            new_size = (width // self.supersample_factor, height // self.supersample_factor)
-            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
-            # Convert supersampled coordinates to final coordinates
-            ax = int(round((-bbox[0] + margin) / self.supersample_factor))
-            ay = int(round((-bbox[1] + margin) / self.supersample_factor))
-            fw = int(round(bbox_w / self.supersample_factor))
-            fh = int(round(bbox_h / self.supersample_factor))
-        else:
-            ax = -bbox[0] + margin
-            ay = -bbox[1] + margin
-            fw = bbox_w
-            fh = bbox_h
-
-        return canvas, (ax, ay), (fw, fh)
+                # Render the letter at maximum scale for best quality
+                sprite_3d, (ax, ay) = self._render_3d_letter(letter, base_scale, 1.0, 1.0)
+                
+                sprite = LetterSprite(
+                    char=letter,
+                    sprite_3d=sprite_3d,
+                    position=(current_x, 0),  # Relative position in text block
+                    width=sprite_3d.width if sprite_3d else 0,
+                    height=sprite_3d.height if sprite_3d else 0,
+                    anchor=(ax, ay)
+                )
+                self.letter_sprites.append(sprite)
+                current_x += sprite_3d.width if sprite_3d else font_px
+        
+        if self.debug:
+            print(f"[Text3DMotion] Prepared {len(self.letter_sprites)} letter sprites")
 
     def generate_frame(self, frame_number: int, background: np.ndarray) -> np.ndarray:
-        """Generate a single frame of the motion animation."""
+        """Generate a single frame with letters moving as a unified group."""
         frame = background.copy()
-
-        # Ensure RGBA
         if frame.shape[2] == 3:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
 
-        # Progress
-        t_global = frame_number / max(self.total_frames - 1, 1)
-        smooth_t_global = self._smoothstep(t_global)
-
-        # Scale phases
-        shrink_progress = self.shrink_duration / self.duration
-        if smooth_t_global <= shrink_progress:
-            local_t = smooth_t_global / shrink_progress
-            scale = self.start_scale - local_t * (self.start_scale - self.end_scale)
-            depth_scale = 1.0
-            is_behind = local_t > 0.5
-            # Fade from full opacity to final_alpha during shrink
-            base_alpha = 1.0 if local_t <= 0.5 else max(self.final_alpha, 1.0 - (local_t - 0.5) * (2.0 * (1.0 - self.final_alpha)))
+        # Calculate animation parameters
+        if frame_number < self.shrink_frames:
+            # Shrinking phase
+            t = frame_number / max(1, self.shrink_frames)
+            t_smooth = t * t * (3 - 2 * t)  # smoothstep
+            scale = self.start_scale + (self.end_scale - self.start_scale) * t_smooth
+            cx = self.start_position[0] + (self.end_position[0] - self.start_position[0]) * t_smooth
+            cy = self.start_position[1] + (self.end_position[1] - self.end_position[1]) * t_smooth
+            is_behind = False
+            alpha = 1.0
         else:
-            # Settle phase - maintain final_alpha
-            local_t = (smooth_t_global - shrink_progress) / (1.0 - shrink_progress)
-            scale = self.end_scale - local_t * (self.end_scale - self.final_scale)
-            depth_scale = 1.0
+            # Settling phase
+            t = (frame_number - self.shrink_frames) / max(1, self.settle_frames)
+            t_smooth = t * t * (3 - 2 * t)
+            scale = self.end_scale + (self.final_scale - self.end_scale) * t_smooth
+            cx = self.end_position[0]
+            cy = self.end_position[1]
             is_behind = True
-            base_alpha = self.final_alpha
+            alpha = 1.0 + (self.final_alpha - 1.0) * t_smooth
+        
+        # Calculate scale ratio from pre-rendered size
+        pre_render_scale = max(self.start_scale, self.end_scale, self.final_scale, 2.0)
+        scale_ratio = scale / pre_render_scale
 
-        # Render text (get front-face anchor + size)
-        text_pil, (anchor_x, anchor_y), (front_w, front_h) = self._render_3d_text(
-            self.text, scale, base_alpha, depth_scale
-        )
+        # Calculate total text width at current scale
+        total_width = 0
+        max_height = 0
+        for sprite in self.letter_sprites:
+            if sprite.sprite_3d:
+                scaled_w = int(sprite.width * scale_ratio)
+                scaled_h = int(sprite.height * scale_ratio)
+                total_width += scaled_w
+                max_height = max(max_height, scaled_h)
+            else:
+                total_width += int(sprite.width * scale_ratio)
 
-        # Interpolate FRONT-FACE CENTER from start to end
-        cx = self.start_position[0] + smooth_t_global * (self.end_position[0] - self.start_position[0])
-        cy = self.start_position[1] + smooth_t_global * (self.end_position[1] - self.start_position[1])
+        # Calculate group starting position (centered)
+        group_start_x = int(cx - total_width // 2)
+        group_start_y = int(cy - max_height // 2)
 
-        # Place such that FRONT-FACE CENTER == (cx, cy)
-        pos_x = int(round(cx - (anchor_x + front_w / 2.0)))
-        pos_y = int(round(cy - (anchor_y + front_h / 2.0)))
+        # Create a canvas for the entire text group
+        canvas = Image.fromarray(frame)
+        
+        # Render each letter at its position within the group
+        current_x = group_start_x
+        rendered_sprites = []
+        
+        for sprite in self.letter_sprites:
+            if sprite.char == ' ':
+                # Space - just advance position
+                current_x += int(sprite.width * scale_ratio)
+                rendered_sprites.append(None)
+            else:
+                # Scale the sprite (DOWN from pre-rendered size for best quality)
+                if sprite.sprite_3d:
+                    scaled_w = int(sprite.width * scale_ratio)
+                    scaled_h = int(sprite.height * scale_ratio)
+                    scaled_sprite = sprite.sprite_3d.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+                    
+                    # Apply alpha
+                    sprite_array = np.array(scaled_sprite)
+                    sprite_array[:, :, 3] = (sprite_array[:, :, 3] * alpha).astype(np.uint8)
+                    scaled_sprite = Image.fromarray(sprite_array)
+                    
+                    # Store position for this frame
+                    letter_pos = (current_x, group_start_y)
+                    
+                    # Apply masking if behind subject
+                    if is_behind:
+                        # Get or create dynamic mask for this frame
+                        current_mask = None
+                        if frame_number not in self._frame_mask_cache:
+                            try:
+                                from utils.segmentation.segment_extractor import extract_foreground_mask
+                                current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
+                                current_mask = extract_foreground_mask(current_rgb)
+                                
+                                if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                                    current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+                                
+                                current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
+                                kernel = np.ones((3, 3), np.uint8)
+                                current_mask = cv2.dilate(current_mask, kernel, iterations=1)
+                                current_mask = (current_mask > 128).astype(np.uint8) * 255
+                                
+                                self._frame_mask_cache[frame_number] = current_mask
+                            except Exception:
+                                # Fallback to static mask if available
+                                current_mask = self.segment_mask
+                        else:
+                            current_mask = self._frame_mask_cache[frame_number]
+                        
+                        # Apply mask if we have one
+                        if current_mask is not None:
+                            sprite_np = np.array(scaled_sprite)
+                            h, w = sprite_np.shape[:2]
+                            
+                            # Get mask region
+                            y1 = max(0, letter_pos[1])
+                            y2 = min(frame.shape[0], letter_pos[1] + h)
+                            x1 = max(0, letter_pos[0])
+                            x2 = min(frame.shape[1], letter_pos[0] + w)
+                            
+                            if y2 > y1 and x2 > x1:
+                                mask_region = current_mask[y1:y2, x1:x2]
+                                sprite_region = sprite_np[
+                                    max(0, -letter_pos[1]):max(0, -letter_pos[1]) + (y2 - y1),
+                                    max(0, -letter_pos[0]):max(0, -letter_pos[0]) + (x2 - x1)
+                                ]
+                                
+                                # Apply mask to alpha channel
+                                if sprite_region.shape[:2] == mask_region.shape:
+                                    sprite_region[:, :, 3] = (
+                                        sprite_region[:, :, 3] * (1 - mask_region / 255.0)
+                                    ).astype(np.uint8)
+                                
+                                scaled_sprite = Image.fromarray(sprite_np)
+                    
+                    # Composite the letter onto canvas
+                    canvas.paste(scaled_sprite, letter_pos, scaled_sprite)
+                    
+                    # Store the rendered sprite with its absolute position
+                    rendered_sprite = LetterSprite(
+                        char=sprite.char,
+                        sprite_3d=scaled_sprite,
+                        position=letter_pos,
+                        width=scaled_w,
+                        height=scaled_h,
+                        anchor=(0, 0)  # Already adjusted during scaling
+                    )
+                    rendered_sprites.append(rendered_sprite)
+                    
+                    current_x += scaled_w
 
-        # Store final state for handoff (last frame)
+        # Store final state on last frame
         if frame_number == self.total_frames - 1:
+            # Filter out None entries (spaces)
+            final_sprites = [s for s in rendered_sprites if s is not None]
+            
             self._final_state = MotionState(
                 scale=scale,
-                position=(pos_x, pos_y),
-                text_size=(text_pil.width, text_pil.height),
-                center_position=(int(round(cx)), int(round(cy))),
+                position=(group_start_x, group_start_y),
+                text_size=(total_width, max_height),
+                center_position=(int(cx), int(cy)),
                 is_behind=is_behind,
+                letter_sprites=final_sprites
             )
-            self._log(
-                f"Motion final snapshot -> center=({cx:.1f},{cy:.1f}), "
-                f"front_size=({front_w},{front_h}), anchor=({anchor_x},{anchor_y}), "
-                f"paste_topleft=({pos_x},{pos_y}), scale={scale:.3f}, is_behind={is_behind}"
-            )
+            
+            if self.debug:
+                print(f"[Text3DMotion] Final state stored with {len(final_sprites)} letter sprites")
 
-        # Composite onto frame
-        text_np = np.array(text_pil)
-        tw, th = text_pil.size
-
-        y1 = max(0, pos_y)
-        y2 = min(frame.shape[0], pos_y + th)
-        x1 = max(0, pos_x)
-        x2 = min(frame.shape[1], pos_x + tw)
-
-        ty1 = max(0, -pos_y)
-        ty2 = ty1 + (y2 - y1)
-        tx1 = max(0, -pos_x)
-        tx2 = tx1 + (x2 - x1)
-
-        # Build text layer
-        text_layer = np.zeros_like(frame)
-        text_layer[y1:y2, x1:x2] = text_np[ty1:ty2, tx1:tx2]
-
-        # Apply masking when behind
-        if is_behind and self.segment_mask is not None:
-            # Use dynamic mask if available
-            if frame_number not in self._frame_mask_cache:
-                from utils.segmentation.segment_extractor import extract_foreground_mask
-                current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
-                current_mask = extract_foreground_mask(current_rgb)
-
-                if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
-                    current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
-
-                current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
-                kernel = np.ones((3, 3), np.uint8)
-                current_mask = cv2.dilate(current_mask, kernel, iterations=1)
-                current_mask = (current_mask > 128).astype(np.uint8) * 255
-
-                self._frame_mask_cache[frame_number] = current_mask
-            else:
-                current_mask = self._frame_mask_cache[frame_number]
-
-            # Apply mask
-            mask_region = current_mask[y1:y2, x1:x2]
-            text_alpha = text_layer[y1:y2, x1:x2, 3].astype(np.float32)
-            mask_factor = mask_region.astype(np.float32) / 255.0
-            text_alpha *= (1.0 - mask_factor)
-            text_layer[y1:y2, x1:x2, 3] = text_alpha.astype(np.uint8)
-
-        # Composite
-        frame_pil = Image.fromarray(frame)
-        text_pil_img = Image.fromarray(text_layer)
-        out = Image.alpha_composite(frame_pil, text_pil_img)
-        result = np.array(out)
-
+        result = np.array(canvas)
         return result[:, :, :3] if result.shape[2] == 4 else result
 
     def get_final_state(self) -> Optional[MotionState]:

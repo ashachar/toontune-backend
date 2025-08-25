@@ -237,7 +237,8 @@ def apply_animation_to_video(
                             position=final_state.center_position,
                             alpha=final_opacity,
                             is_behind=final_state.is_behind,
-                            segment_mask=segment_mask
+                            segment_mask=segment_mask,
+                            letter_sprites=final_state.letter_sprites  # Pass the letter sprites!
                         )
             else:
                 dissolve_frame = anim_frame - motion_frames

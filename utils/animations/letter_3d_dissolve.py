@@ -21,23 +21,12 @@ import os
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Any
 import random
 from dataclasses import dataclass
 
-# -----------------------------
-# Data structures
-# -----------------------------
-
-@dataclass
-class LetterSprite:
-    """Individual letter sprite with its 3D rendering and position."""
-    char: str
-    sprite_3d: Optional[Image.Image]
-    position: Tuple[int, int]   # paste top-left
-    width: int
-    height: int
-    anchor: Tuple[int, int]     # FRONT-FACE top-left inside sprite
+# Import LetterSprite from text_3d_motion to ensure compatibility
+from utils.animations.text_3d_motion import LetterSprite
 
 
 @dataclass
@@ -133,10 +122,8 @@ class Letter3DDissolve:
         self._entered_dissolve_logged: Dict[int, bool] = {}
         self._hold_logged: Dict[int, bool] = {}
 
-        # Build sprites and schedule
-        self._prepare_letter_sprites()
-        self._init_dissolve_order()
-        self._build_frame_timeline()
+        # Don't build sprites in constructor - wait for handoff or explicit preparation
+        # This avoids position mismatches when handoff values differ from constructor values
         
         if self.debug:
             print(f"[TEXT_QUALITY] Supersample factor: {self.supersample_factor}")
@@ -267,6 +254,55 @@ class Letter3DDissolve:
     # -----------------------------
     # Layout & order
     # -----------------------------
+    def _prepare_letter_sprites_at_position(self, text_topleft: Tuple[int, int]):
+        """Prepare letter sprites at exact position from motion animation."""
+        # Use the provided position as the start position for text layout
+        start_x, start_y = text_topleft
+        
+        # Now layout letters from this exact position
+        font_px = int(self.font_size * self.initial_scale * self.supersample_factor)
+        font = self._get_font(font_px)
+        
+        current_x = start_x
+        visible_positions = []
+        
+        for letter in self.text:
+            if letter == ' ':
+                # Space
+                sprite = LetterSprite(
+                    char=' ',
+                    sprite_3d=None,
+                    position=(current_x, start_y),
+                    width=max(1, font_px // 3),
+                    height=1,
+                    anchor=(0, 0)
+                )
+                self.letter_sprites.append(sprite)
+                current_x += max(1, font_px // 3)
+            else:
+                # Render letter
+                sprite_3d, (ax, ay) = self._render_3d_letter(letter, self.initial_scale, 1.0, 1.0)
+                advance = int(sprite_3d.width * 1.1) if sprite_3d else font_px
+                
+                # Position letter at current x
+                paste_x = current_x
+                paste_y = start_y
+                
+                sprite = LetterSprite(
+                    char=letter,
+                    sprite_3d=sprite_3d,
+                    position=(paste_x, paste_y),
+                    width=sprite_3d.width if sprite_3d else 0,
+                    height=sprite_3d.height if sprite_3d else 0,
+                    anchor=(ax, ay)
+                )
+                self.letter_sprites.append(sprite)
+                visible_positions.append((current_x, start_y))
+                current_x += advance
+        
+        self._log_pos(f"Letter sprites created at exact motion position: start=({start_x},{start_y})")
+        self._log_pos(f"Letter positions: {visible_positions}")
+    
     def _prepare_letter_sprites(self):
         """Pre-render letter sprites and compute front-face layout."""
         font_px = int(self.font_size * self.initial_scale)
@@ -326,6 +362,42 @@ class Letter3DDissolve:
         )
         self._log_pos(f"Letter positions frozen at: {visible_positions}")
 
+    def _update_sprites_for_handoff(self):
+        """Update existing sprites for new scale while preserving positions."""
+        if not self.letter_sprites:
+            return
+            
+        # Re-render sprites at new scale but keep positions stable
+        for sprite in self.letter_sprites:
+            if sprite.char != ' ' and sprite.sprite_3d is not None:
+                # Store current visual center before re-rendering
+                old_center_x = sprite.position[0] + sprite.width // 2
+                old_center_y = sprite.position[1] + sprite.height // 2
+                
+                # Re-render at new scale
+                sprite_3d, (ax, ay) = self._render_3d_letter(sprite.char, self.initial_scale, 1.0, 1.0)
+                sprite.sprite_3d = sprite_3d
+                sprite.width = sprite_3d.width if sprite_3d else 0
+                sprite.height = sprite_3d.height if sprite_3d else 0
+                sprite.anchor = (ax, ay)
+                
+                # Adjust position to maintain the same visual center
+                # The visual center should stay exactly where it was
+                new_pos_x = old_center_x - sprite.width // 2
+                new_pos_y = old_center_y - sprite.height // 2
+                sprite.position = (new_pos_x, new_pos_y)
+                
+                if self.debug:
+                    print(f"[LETTER_SHIFT] '{sprite.char}': center preserved at ({old_center_x}, {old_center_y})")
+                    print(f"  New position: {sprite.position}, size: {sprite.width}x{sprite.height}")
+            elif sprite.char == ' ':
+                # Update space width proportionally
+                font_px = int(self.font_size * self.initial_scale)
+                sprite.width = max(1, font_px // 3)
+        
+        if self.debug:
+            print(f"[LETTER_SHIFT] Updated {len(self.letter_sprites)} sprites with preserved visual centers")
+    
     def _init_dissolve_order(self):
         if self.randomize_order:
             indices = [i for i, ch in enumerate(self.text) if ch != ' ']
@@ -404,7 +476,28 @@ class Letter3DDissolve:
     # External handoff
     # -----------------------------
     def set_initial_state(self, scale: float, position: Tuple[int, int], alpha: float = None,
-                          is_behind: bool = None, segment_mask: np.ndarray = None):
+                          is_behind: bool = None, segment_mask: np.ndarray = None,
+                          rendered_text: Image.Image = None, text_topleft: Tuple[int, int] = None,
+                          letter_sprites: List[Any] = None):
+        # Store whether we already have sprites (to preserve positions)
+        has_existing_sprites = bool(self.letter_sprites)
+        
+        # If we have existing sprites, DO NOT re-render them
+        # Just keep using them as-is to avoid position shifts
+        if has_existing_sprites:
+            if self.debug:
+                print(f"[LETTER_SHIFT] Keeping {len(self.letter_sprites)} existing sprites WITHOUT re-rendering")
+                for sprite in self.letter_sprites:
+                    if sprite.char != ' ':
+                        center_x = sprite.position[0] + sprite.width // 2
+                        center_y = sprite.position[1] + sprite.height // 2
+                        print(f"  '{sprite.char}': pos={sprite.position}, size={sprite.width}x{sprite.height}, center=({center_x},{center_y})")
+            # Store base positions if not already stored
+            for sprite in self.letter_sprites:
+                if sprite.base_position is None:
+                    sprite.base_position = sprite.position
+        
+        # Update state with handoff values
         self.initial_scale = scale
         self.initial_position = position
         if alpha is not None:
@@ -413,10 +506,59 @@ class Letter3DDissolve:
             self.is_behind = is_behind
         if segment_mask is not None:
             self.segment_mask = segment_mask
-        self.letter_sprites = []
+        
         self._log_pos(f"Received handoff -> center={position}, scale={scale:.3f}, "
                       f"alpha={self.stable_alpha:.3f}, is_behind={self.is_behind}")
-        self._prepare_letter_sprites()
+        
+        # If we have the exact rendered text position from motion, use it
+        if rendered_text is not None and text_topleft is not None:
+            self._log_pos(f"Using exact text position from motion: {text_topleft}")
+        
+        # If we have letter sprites from motion, use them directly!
+        if letter_sprites is not None and not has_existing_sprites:
+            self._log_pos(f"Using {len(letter_sprites)} letter sprites from motion animation")
+            self.letter_sprites = []
+            
+            # Convert motion sprites to our format, preserving exact positions
+            for motion_sprite in letter_sprites:
+                # Add spaces between words if needed
+                if len(self.letter_sprites) < len(self.text):
+                    expected_char = self.text[len(self.letter_sprites)]
+                    
+                    # Insert spaces as needed
+                    while expected_char == ' ' and len(self.letter_sprites) < len(self.text):
+                        space_sprite = LetterSprite(
+                            char=' ',
+                            sprite_3d=None,
+                            position=(0, 0),  # Position doesn't matter for spaces
+                            width=self.font_size // 3,
+                            height=1,
+                            anchor=(0, 0)
+                        )
+                        self.letter_sprites.append(space_sprite)
+                        if len(self.letter_sprites) < len(self.text):
+                            expected_char = self.text[len(self.letter_sprites)]
+                    
+                    # Now add the actual letter sprite
+                    if motion_sprite.char == expected_char:
+                        # Use the sprite directly with its exact position
+                        dissolve_sprite = LetterSprite(
+                            char=motion_sprite.char,
+                            sprite_3d=motion_sprite.sprite_3d,
+                            position=motion_sprite.position,
+                            width=motion_sprite.width,
+                            height=motion_sprite.height,
+                            anchor=motion_sprite.anchor
+                        )
+                        self.letter_sprites.append(dissolve_sprite)
+            
+            self._init_dissolve_order()
+        elif not has_existing_sprites:
+            # Create sprites if we don't have them yet
+            self.letter_sprites = []
+            self._prepare_letter_sprites()
+            self._init_dissolve_order()
+        
         self._build_frame_timeline()
 
     # -----------------------------
@@ -441,6 +583,12 @@ class Letter3DDissolve:
     # Frame generation
     # -----------------------------
     def generate_frame(self, frame_number: int, background: np.ndarray) -> np.ndarray:
+        # Ensure sprites are created if not already (for standalone usage)
+        if not self.letter_sprites:
+            self._prepare_letter_sprites()
+            self._init_dissolve_order()
+            self._build_frame_timeline()
+        
         frame = background.copy()
         if frame.shape[2] == 3:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
@@ -545,15 +693,52 @@ class Letter3DDissolve:
             # Copy and transform sprite
             sprite_img = sprite.sprite_3d.copy()
             pos_x, pos_y = sprite.position
+            
+            # DEBUGGING: Track position changes
+            original_pos = (pos_x, pos_y)
+            
+            # FIXED: Calculate the visual center BEFORE scaling
+            # The visual center should remain constant during scaling
+            visual_center_x = pos_x + sprite.sprite_3d.width // 2
+            visual_center_y = pos_y + sprite.sprite_3d.height // 2
+            
+            # DEBUGGING: Log position before any transformations
+            if phase == "hold" and not hasattr(sprite, f"_logged_hold_pos_{frame_number}"):
+                print(f"[LETTER_SHIFT] Frame {frame_number}: '{sprite.char}' in HOLD phase")
+                print(f"  Position: {sprite.position}, Visual center: ({visual_center_x}, {visual_center_y})")
+                setattr(sprite, f"_logged_hold_pos_{frame_number}", True)
 
             if scale != 1.0:
                 new_w = int(round(sprite_img.width * scale))
                 new_h = int(round(sprite_img.height * scale))
                 sprite_img = sprite_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                pos_x -= (new_w - sprite.sprite_3d.width) // 2
-                pos_y -= (new_h - sprite.sprite_3d.height) // 2
+                # FIXED: Maintain the visual center after scaling
+                # Position the scaled sprite so its center matches the original center
+                pos_x = visual_center_x - new_w // 2
+                pos_y = visual_center_y - new_h // 2
+                
+                # DEBUGGING: Log scale-based position adjustment
+                if abs(scale - 1.0) < 0.01 and not hasattr(sprite, "_logged_scale_start"):
+                    print(f"[LETTER_SHIFT] Frame {frame_number}: '{sprite.char}' START SCALING")
+                    print(f"  Scale: {scale:.4f}, Original pos: {original_pos}")
+                    print(f"  New dimensions: {new_w}x{new_h}, New pos: ({pos_x}, {pos_y})")
+                    print(f"  Position shift: dx={pos_x-original_pos[0]}, dy={pos_y-original_pos[1]}")
+                    setattr(sprite, "_logged_scale_start", True)
 
-            pos_y += int(round(float_y))
+            # Apply vertical float after scaling (keeps the center-based movement)
+            float_shift = int(round(float_y))
+            pos_y += float_shift
+            
+            # DEBUGGING: Log total position changes
+            if phase == "dissolve" and not hasattr(sprite, f"_logged_dissolve_{frame_number}"):
+                total_dx = pos_x - original_pos[0]
+                total_dy = pos_y - original_pos[1]
+                if abs(total_dx) > 0 or abs(total_dy) > 0:
+                    print(f"[LETTER_SHIFT] Frame {frame_number}: '{sprite.char}' POSITION CHANGED")
+                    print(f"  Phase: {phase}, Scale: {scale:.3f}, Float: {float_y:.1f}")
+                    print(f"  Original: {original_pos} → Final: ({pos_x}, {pos_y})")
+                    print(f"  Total shift: dx={total_dx}, dy={total_dy} (float_shift={float_shift})")
+                    setattr(sprite, f"_logged_dissolve_{frame_number}", True)
             sprite_array = np.array(sprite_img)
 
             # Apply kill mask if any (scaled to current sprite size)

@@ -25,88 +25,85 @@ class AudioProcessor:
     def __init__(self, video_path: Path, output_folder: Path):
         self.video_path = video_path
         self.output_folder = output_folder
-        self.elevenlabs_key = ELEVENLABS_API_KEY
         self.snark_storage = SNARK_STORAGE
         self.snark_storage.mkdir(parents=True, exist_ok=True)
-        self._load_existing_snarks()
-        
-    def _load_existing_snarks(self):
-        """Load existing snark library."""
-        self.existing_snarks = {}
-        if self.snark_storage.exists():
-            for audio_file in self.snark_storage.glob("*.mp3"):
-                text = audio_file.stem.replace("_", " ")
-                self.existing_snarks[text] = {
-                    "text": text,
-                    "file": str(audio_file),
-                    "emotion": "neutral",
-                    "duration": self._estimate_duration(text)
-                }
-        print(f"📚 Existing snark library: {len(self.existing_snarks)} available")
     
-    def generate_speech_with_elevenlabs(self, snark: Snark) -> Optional[str]:
-        """Convert snark text to speech."""
-        estimated_duration = self._estimate_duration(snark.text)
-        if estimated_duration > snark.gap_duration:
-            print(f"  ⚠️ May need pause for: '{snark.text}' "
-                  f"(est. {estimated_duration:.1f}s > gap {snark.gap_duration:.1f}s)")
+    def process_snarks_audio(
+        self, snarks: List[Snark]
+    ) -> List[Dict]:
+        """Process audio for all snarks with pausing decisions."""
+        snarks_with_pausing = []
         
-        # Check existing library
-        text_lower = snark.text.lower()
-        if text_lower in self.existing_snarks:
-            existing_file = self.existing_snarks[text_lower]["file"]
-            if os.path.exists(existing_file):
-                print(f"  ♻️ Found in library: {Path(existing_file).name}")
-                return existing_file
+        for snark in snarks:
+            # Get or generate audio
+            audio_file = self._get_or_generate_audio(snark.text)
+            if not audio_file:
+                continue
+            
+            # Load audio and get duration
+            audio = AudioSegment.from_file(audio_file)
+            duration = len(audio) / 1000.0
+            
+            # Determine if we need to slow down video
+            gap_duration = snark.gap_duration
+            needs_slowdown = duration > gap_duration
+            
+            # Calculate speed factor
+            if needs_slowdown:
+                speed_factor = gap_duration / duration
+            else:
+                speed_factor = 1.0
+            
+            snarks_with_pausing.append({
+                "snark": snark,
+                "audio": audio,
+                "audio_file": str(audio_file),
+                "duration": duration,
+                "gap_duration": gap_duration,
+                "needs_slowdown": needs_slowdown,
+                "speed_factor": speed_factor
+            })
         
-        # Create filename from text
-        filename = re.sub(r'[^\w\s]', '', snark.text.lower())
-        filename = re.sub(r'\s+', '_', filename)[:50] + ".mp3"
+        return snarks_with_pausing
+    
+    def _get_or_generate_audio(self, text: str) -> Optional[Path]:
+        """Get existing or generate new audio."""
+        # Clean filename
+        filename = re.sub(r'[^a-zA-Z0-9_]', '', text.lower().replace(' ', '_'))[:50]
+        filename = f"{filename}.mp3"
         audio_path = self.snark_storage / filename
         
-        # Check if file exists
+        # Check if exists
         if audio_path.exists():
             print(f"  ♻️ Reusing existing file: {filename}")
-            self.existing_snarks[text_lower] = {
-                "text": snark.text,
-                "file": str(audio_path),
-                "emotion": snark.emotion,
-                "duration": self._estimate_duration(snark.text)
-            }
-            return str(audio_path)
+            return audio_path
         
-        if not self.elevenlabs_key:
-            print(f"  ⚠️ No ElevenLabs key, skipping: {snark.text}")
+        # Estimate duration warning (generic since we don't have gap_duration here)
+        estimated_duration = self._estimate_duration(text)
+        if estimated_duration > 0.9:
+            print(f"  ⚠️ May need pause for: '{text}' (est. {estimated_duration:.1f}s > gap 0.9s)")
+        
+        # Generate with ElevenLabs
+        print(f"  🎤 Generating: \"{text}\" → {filename}")
+        
+        if not ELEVENLABS_API_KEY:
+            print(f"    ⚠️ No ElevenLabs API key")
             return None
         
-        print(f"  🎤 Generating: \"{snark.text}\" → {filename}")
-        
-        # ElevenLabs API call
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-        
         headers = {
-            "accept": "audio/mpeg",
-            "content-type": "application/json",
-            "xi-api-key": self.elevenlabs_key
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": ELEVENLABS_API_KEY
         }
-        
-        # Map emotions to friendlier ones
-        friendly_emotions = {
-            "sarcastic": "playful",
-            "deadpan": "cheerful",
-            "mocking": "amused",
-            "bored": "curious",
-            "unimpressed": "interested"
-        }
-        emotion = friendly_emotions.get(snark.emotion, snark.emotion)
-        emotion_text = f'<emotion="{emotion}">{snark.text}</emotion>'
-        
         payload = {
-            "text": emotion_text,
+            "text": text,
             "model_id": ELEVENLABS_MODEL,
             "voice_settings": {
                 "stability": ELEVENLABS_STABILITY,
-                "similarity_boost": ELEVENLABS_SIMILARITY_BOOST
+                "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
+                "style": 0.5,
+                "use_speaker_boost": True
             }
         }
         
@@ -125,7 +122,7 @@ class AudioProcessor:
     def create_audio_with_speed_adjustments(
         self, snarks_with_pausing: List[Dict]
     ) -> Path:
-        """Create audio track for video with speed adjustments."""
+        """Create audio track that matches video with speed adjustments."""
         # Extract original audio
         audio_path = self.output_folder / "original_audio.wav"
         subprocess.run([
@@ -134,7 +131,7 @@ class AudioProcessor:
             str(audio_path)
         ], capture_output=True)
         
-        # Load and normalize
+        # Load original audio
         original = AudioSegment.from_file(audio_path)
         normalized = normalize(original)
         change = TARGET_DBFS - normalized.dBFS
@@ -143,27 +140,67 @@ class AudioProcessor:
         # Sort snarks by time
         snarks_with_pausing.sort(key=lambda x: x["snark"].time)
         
-        # Simply overlay snarks at their positions
-        mixed = normalized
+        # Build new audio track accounting for speed changes
+        mixed = AudioSegment.empty()
+        source_pos = 0  # Position in original audio
+        output_pos = 0  # Position in output audio
+        
         for item in snarks_with_pausing:
             snark = item["snark"]
-            snark_audio = item["audio"].apply_gain(2)
-            position_ms = int(snark.time * 1000)
+            gap_start_ms = int(snark.time * 1000)
+            gap_duration_ms = int(item["gap_duration"] * 1000)
+            speed_factor = item["speed_factor"]
+            remark_audio = item["audio"].apply_gain(2)  # Boost remark volume
             
-            # Overlay snark at its position
-            mixed = mixed.overlay(snark_audio, position=position_ms)
+            # Add audio before the gap (normal speed)
+            if source_pos < gap_start_ms:
+                segment_before = normalized[source_pos:gap_start_ms]
+                mixed += segment_before
+                output_pos += len(segment_before)
             
-            if item["needs_slowdown"]:
-                speed_pct = item["speed_factor"] * 100
-                print(f"  🐢 Slowing video to {speed_pct:.1f}% speed at {snark.time:.1f}s for: \"{snark.text}\"")
-                print(f"     Gap: {item['gap_duration']:.2f}s, Remark: {item['duration']:.2f}s")
+            # Handle the gap
+            if speed_factor < 1.0:
+                # Video is slowed, so we need to stretch this audio segment
+                # OR better: just use silence + remark
+                output_duration_ms = int(gap_duration_ms / speed_factor)
+                
+                # Create silent gap of the stretched duration
+                silence = AudioSegment.silent(duration=output_duration_ms)
+                
+                # Center the remark in the stretched gap
+                remark_offset = (output_duration_ms - len(remark_audio)) // 2
+                if remark_offset < 0:
+                    remark_offset = 0
+                
+                # Overlay remark on silence
+                gap_audio = silence.overlay(remark_audio, position=remark_offset)
+                mixed += gap_audio
+                output_pos += output_duration_ms
             else:
-                print(f"  ✅ Normal speed at {snark.time:.1f}s: \"{snark.text}\"")
+                # Normal speed - just overlay remark on original audio
+                gap_segment = normalized[gap_start_ms:gap_start_ms + gap_duration_ms]
+                
+                # Center the remark in the gap
+                remark_offset = (gap_duration_ms - len(remark_audio)) // 2
+                if remark_offset < 0:
+                    remark_offset = 0
+                    
+                gap_with_remark = gap_segment.overlay(remark_audio, position=remark_offset)
+                mixed += gap_with_remark
+                output_pos += gap_duration_ms
+            
+            # Update source position
+            source_pos = gap_start_ms + gap_duration_ms
+        
+        # Add remaining audio after last gap
+        if source_pos < len(normalized):
+            mixed += normalized[source_pos:]
         
         # Export mixed audio
-        mixed_path = self.output_folder / "mixed_audio.wav"
+        mixed_path = self.output_folder / "mixed_audio_synced.wav"
         mixed.export(mixed_path, format="wav")
         
+        print(f"  🎵 Audio track created with proper sync for speed adjustments")
         return mixed_path
     
     def _estimate_duration(self, text: str) -> float:

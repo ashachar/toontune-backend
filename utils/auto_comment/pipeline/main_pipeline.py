@@ -87,41 +87,12 @@ class EndToEndCommentPipeline:
         # Save remarks JSON
         self._save_remarks(snarks)
         
-        # Generate speech for all snarks
-        snarks_with_audio = []
-        for snark in snarks:
-            audio_path = self.audio_processor.generate_speech_with_elevenlabs(snark)
-            if audio_path:
-                snark.audio_path = audio_path
-                # Copy to output folder
-                local_audio = self.output_folder / f"remark_{len(snarks_with_audio)+1}.mp3"
-                subprocess.run(["cp", audio_path, str(local_audio)], capture_output=True)
+        # Process audio for all snarks (gets audio files and calculates speed factors)
+        snarks_with_pausing = self.audio_processor.process_snarks_audio(snarks)
         
-        # Filter out snarks without audio
-        valid_snarks = [s for s in snarks if s.audio_path]
-        
-        if not valid_snarks:
+        if not snarks_with_pausing:
             print("❌ No valid comments to add")
             return str(self.video_path)
-        
-        # Prepare snarks with speed calculations
-        snarks_with_pausing = []
-        for snark in valid_snarks:
-            snark_audio = AudioSegment.from_mp3(snark.audio_path)
-            snark_duration = len(snark_audio) / 1000.0
-            
-            # Calculate speed adjustment
-            speed_factor = snark.gap_duration / snark_duration if snark_duration > snark.gap_duration else 1.0
-            needs_slowdown = speed_factor < 1.0
-            
-            snarks_with_pausing.append({
-                "snark": snark,
-                "audio": snark_audio,
-                "duration": snark_duration,
-                "needs_slowdown": needs_slowdown,
-                "speed_factor": speed_factor,
-                "gap_duration": snark.gap_duration
-            })
         
         # Check if any remarks need speed adjustment
         has_slowdowns = any(s["needs_slowdown"] for s in snarks_with_pausing)
