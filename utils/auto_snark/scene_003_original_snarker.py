@@ -2,7 +2,7 @@
 """
 Scene_003 Silence-Aware Snarker for ORIGINAL quality video
 Uses ELEVENLABS_MODEL from .env
-Stores all snarks in uploads/assets/sounds/snark_remarks/
+Stores all snarks in uploads/assets/sounds/comments_audio/
 """
 
 import os
@@ -28,7 +28,7 @@ class Scene003Snarker:
         self.video_path = "/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/videos/do_re_mi/scenes/original/scene_003.mp4"
         
         # Storage directory for all snarks
-        self.snark_storage = Path("/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/sounds/snark_remarks")
+        self.snark_storage = Path("/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/sounds/comments_audio")
         self.snark_storage.mkdir(parents=True, exist_ok=True)
         
         # Scene 003 timing: 111.84 to 136.16 seconds (24.32 seconds total)

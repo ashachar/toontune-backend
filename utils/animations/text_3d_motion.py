@@ -32,6 +32,7 @@ class MotionState:
     text_size: Tuple[int, int]          # Rendered sprite size
     center_position: Tuple[int, int]    # Intended front-face center
     is_behind: bool                      # Whether text is behind subject at end of motion
+    alpha: float                         # Current alpha/opacity value at end of motion
     letter_sprites: Optional[List[LetterSprite]] = None  # Individual letter sprites for handoff
 
 
@@ -101,9 +102,6 @@ class Text3DMotion:
         self.letter_sprites: List[LetterSprite] = []
         self._prepare_letter_sprites()
         
-        # Cache for dynamic masks
-        self._frame_mask_cache: Dict[int, np.ndarray] = {}
-        
         # Final state for handoff
         self._final_state: Optional[MotionState] = None
 
@@ -170,7 +168,13 @@ class Text3DMotion:
                 color_rgb = tuple(int(c * factor) for c in self.depth_color)
 
             x = margin - bbox[0] + offset
-            y = margin - bbox[1] + offset
+            # BASELINE ALIGNMENT FIX:
+            # PIL's textbbox returns (left, top, right, bottom) relative to baseline at (0,0)
+            # Most letters have negative top (above baseline) and small positive bottom (descenders)
+            # To align bottoms: we want y_draw + bbox[3] = same for all letters
+            # So: y_draw = desired_bottom - bbox[3]
+            desired_bottom = height - margin  # Put text near bottom of canvas
+            y = desired_bottom - bbox[3] + offset
             
             # Draw with maximum antialiasing in grayscale
             layer_draw.text((x, y), letter, font=font, fill=255)
@@ -215,21 +219,23 @@ class Text3DMotion:
         font_px = int(self.font_size * base_scale)
         font = self._get_font(font_px)
         
-        # Calculate layout positions
+        # Calculate layout positions - all letters at y=0, baseline alignment happens during render
         current_x = 0
         for letter in self.text:
             if letter == ' ':
-                # Space character
+                # Space character - scale it appropriately with letters
+                # Use smaller ratio for spaces to avoid excessive gaps
+                space_width = max(1, int(font_px * 0.2))  # Reduced from /3 to *0.2 for tighter spacing
                 sprite = LetterSprite(
                     char=' ',
                     sprite_3d=None,
                     position=(current_x, 0),  # Relative position in text block
-                    width=max(1, font_px // 3),
+                    width=space_width,
                     height=1,
                     anchor=(0, 0)
                 )
                 self.letter_sprites.append(sprite)
-                current_x += max(1, font_px // 3)
+                current_x += space_width
             else:
                 # Render the letter at maximum scale for best quality
                 sprite_3d, (ax, ay) = self._render_3d_letter(letter, base_scale, 1.0, 1.0)
@@ -237,7 +243,7 @@ class Text3DMotion:
                 sprite = LetterSprite(
                     char=letter,
                     sprite_3d=sprite_3d,
-                    position=(current_x, 0),  # Relative position in text block
+                    position=(current_x, 0),  # All at y=0, baseline alignment in render
                     width=sprite_3d.width if sprite_3d else 0,
                     height=sprite_3d.height if sprite_3d else 0,
                     anchor=(ax, ay)
@@ -261,9 +267,15 @@ class Text3DMotion:
             t_smooth = t * t * (3 - 2 * t)  # smoothstep
             scale = self.start_scale + (self.end_scale - self.start_scale) * t_smooth
             cx = self.start_position[0] + (self.end_position[0] - self.start_position[0]) * t_smooth
-            cy = self.start_position[1] + (self.end_position[1] - self.end_position[1]) * t_smooth
-            is_behind = False
-            alpha = 1.0
+            cy = self.start_position[1] + (self.end_position[1] - self.start_position[1]) * t_smooth
+            # Start going behind immediately when shrinking starts
+            is_behind = t > 0.0  # Changed from 0.5 to 0.0 - goes behind immediately
+            # Gradually reduce opacity as text goes behind (from 1.0 to final_alpha)
+            if is_behind:
+                # Smooth transition from full opacity to final opacity
+                alpha = 1.0 + (self.final_alpha - 1.0) * t_smooth
+            else:
+                alpha = 1.0
         else:
             # Settling phase
             t = (frame_number - self.shrink_frames) / max(1, self.settle_frames)
@@ -272,7 +284,8 @@ class Text3DMotion:
             cx = self.end_position[0]
             cy = self.end_position[1]
             is_behind = True
-            alpha = 1.0 + (self.final_alpha - 1.0) * t_smooth
+            # Alpha should remain constant at final_alpha during settling
+            alpha = self.final_alpha
         
         # Calculate scale ratio from pre-rendered size
         pre_render_scale = max(self.start_scale, self.end_scale, self.final_scale, 2.0)
@@ -318,37 +331,57 @@ class Text3DMotion:
                     sprite_array[:, :, 3] = (sprite_array[:, :, 3] * alpha).astype(np.uint8)
                     scaled_sprite = Image.fromarray(sprite_array)
                     
-                    # Store position for this frame
-                    letter_pos = (current_x, group_start_y)
+                    # Store position for this frame with baseline alignment
+                    # Adjust y position to align baselines of all letters
+                    # Taller letters (like 'l', 'h') need to be positioned higher
+                    # Shorter letters (like 'e', 'o') need to be positioned lower
+                    baseline_adjustment = max_height - scaled_h
+                    letter_pos = (current_x, group_start_y + baseline_adjustment)
+                    
+                    # CRITICAL: Store the original unoccluded sprite for handoff
+                    original_scaled_sprite = scaled_sprite.copy()
                     
                     # Apply masking if behind subject
                     if is_behind:
-                        # Get or create dynamic mask for this frame
+                        # CRITICAL FIX: Create a FRESH COPY of the sprite for occlusion
+                        # Never modify the original or reuse modified sprites
+                        occluded_sprite = scaled_sprite.copy()  # Work with a copy!
+                        
+                        # ALWAYS extract fresh mask for EVERY frame (no caching!)
                         current_mask = None
-                        if frame_number not in self._frame_mask_cache:
-                            try:
-                                from utils.segmentation.segment_extractor import extract_foreground_mask
-                                current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
-                                current_mask = extract_foreground_mask(current_rgb)
-                                
-                                if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
-                                    current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
-                                
-                                current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
-                                kernel = np.ones((3, 3), np.uint8)
-                                current_mask = cv2.dilate(current_mask, kernel, iterations=1)
-                                current_mask = (current_mask > 128).astype(np.uint8) * 255
-                                
-                                self._frame_mask_cache[frame_number] = current_mask
-                            except Exception:
-                                # Fallback to static mask if available
-                                current_mask = self.segment_mask
-                        else:
-                            current_mask = self._frame_mask_cache[frame_number]
+                        try:
+                            import sys
+                            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                            from video.segmentation.segment_extractor import extract_foreground_mask
+                            current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
+                            
+                            # Debug: Log extraction attempt
+                            if self.debug and frame_number % 5 == 0:
+                                print(f"[MASK_EXTRACT] Frame {frame_number}: Extracting fresh mask...")
+                            
+                            current_mask = extract_foreground_mask(current_rgb)
+                            
+                            if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                                current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+                            
+                            current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
+                            kernel = np.ones((3, 3), np.uint8)
+                            current_mask = cv2.dilate(current_mask, kernel, iterations=1)
+                            current_mask = (current_mask > 128).astype(np.uint8) * 255
+                            
+                            if self.debug and frame_number % 5 == 0:
+                                print(f"[Text3DMotion] Frame {frame_number}: Dynamic mask extracted")
+                        except Exception as e:
+                            if self.debug:
+                                print(f"[Text3DMotion] Frame {frame_number}: Failed to extract mask: {e}")
+                            # CRITICAL FIX: Never use stale mask - better no occlusion than wrong occlusion
+                            current_mask = None
+                            print(f"[MASK_FIX] Frame {frame_number}: Skipping occlusion (no stale fallback)")
                         
                         # Apply mask if we have one
                         if current_mask is not None:
-                            sprite_np = np.array(scaled_sprite)
+                            # Work with the copy, not the original!
+                            sprite_np = np.array(occluded_sprite)
                             h, w = sprite_np.shape[:2]
                             
                             # Get mask region
@@ -364,21 +397,26 @@ class Text3DMotion:
                                     max(0, -letter_pos[0]):max(0, -letter_pos[0]) + (x2 - x1)
                                 ]
                                 
-                                # Apply mask to alpha channel
+                                # Apply mask to alpha channel of the COPY
                                 if sprite_region.shape[:2] == mask_region.shape:
                                     sprite_region[:, :, 3] = (
                                         sprite_region[:, :, 3] * (1 - mask_region / 255.0)
                                     ).astype(np.uint8)
                                 
-                                scaled_sprite = Image.fromarray(sprite_np)
+                                # Update the occluded copy, not the original
+                                occluded_sprite = Image.fromarray(sprite_np)
+                        
+                        # Use the occluded copy for rendering
+                        scaled_sprite = occluded_sprite
                     
                     # Composite the letter onto canvas
                     canvas.paste(scaled_sprite, letter_pos, scaled_sprite)
                     
-                    # Store the rendered sprite with its absolute position
+                    # Store the ORIGINAL sprite for handoff (not the occluded one!)
+                    # This ensures dissolve animation starts with clean sprites
                     rendered_sprite = LetterSprite(
                         char=sprite.char,
-                        sprite_3d=scaled_sprite,
+                        sprite_3d=original_scaled_sprite,  # Use the original, not occluded!
                         position=letter_pos,
                         width=scaled_w,
                         height=scaled_h,
@@ -399,6 +437,7 @@ class Text3DMotion:
                 text_size=(total_width, max_height),
                 center_position=(int(cx), int(cy)),
                 is_behind=is_behind,
+                alpha=alpha,
                 letter_sprites=final_sprites
             )
             

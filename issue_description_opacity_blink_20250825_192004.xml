@@ -1,0 +1,2529 @@
+<issue_context>
+<debugging>
+When fixing this issue, add debug log prints to help diagnose if the fix doesn't work.
+All debug prints must follow the structure: [OPACITY_BLINK] message
+Example: [OPACITY_BLINK] Alpha transition: motion_final={motion_alpha:.3f} -> dissolve_initial={dissolve_alpha:.3f}
+</debugging>
+
+<issue_description>
+User reported: 'opacity is still not gradually declining - which causes a blink effect of the letter. can you find where it happens?'
+
+SESSION CONTEXT:
+The 3D text animation system has been undergoing fixes for opacity transitions. The animation pipeline consists of:
+1. Text3DMotion (shrinking phase, 19 frames) -> hands off to -> Letter3DDissolve (dissolve phase, 38 frames)
+
+WHAT WAS ALREADY TRIED:
+- Changed is_behind trigger from t > 0.5 to t > 0.0 so text goes behind immediately
+- Added gradual opacity reduction during shrinking: alpha = 1.0 + (self.final_alpha - 1.0) * t_smooth
+- Added 'alpha' field to MotionState dataclass to preserve opacity through handoff
+- Fixed handoff to use final_state.alpha instead of hardcoded final_opacity
+
+CURRENT ISSUE:
+Despite these fixes, there's still a blink/jump in opacity. Investigation shows:
+- Motion phase ends at frame 18 with alpha=0.630 (gradually reduced)
+- Handoff passes this alpha correctly to dissolve
+- BUT in letter_3d_dissolve.py, when letters enter 'hold' phase, they use stable_alpha directly (line 657)
+- This causes opacity jump if motion's final alpha differs from stable_alpha
+- The dissolve phase calculates: alpha_mult = self.stable_alpha * (1.0 - smooth_t * 0.98)
+
+SPECIFIC PROBLEM AREAS:
+- letter_3d_dissolve.py lines 643-658: Phase determination and alpha_mult assignment
+- Hold phase (line 657): alpha_mult = self.stable_alpha (doesn't consider incoming alpha from motion)
+- Dissolve phase (line 673): Starts from stable_alpha without smooth transition from motion's final alpha
+
+The blink happens at the transition between motion and dissolve animations when the opacity suddenly changes from the gradually reduced value to stable_alpha.
+</issue_description>
+
+<project_structure>
+backend/
+├── ai-docs/
+├── ai-services/
+│   └── routes/
+├── aws_config/
+├── cartoon-head-detection/
+│   ├── checkpoints/
+│   └── sam2/
+│       ├── SAM_2.egg-info/
+│       ├── assets/
+│       ├── checkpoints/
+│       ├── demo/
+│       │   ├── backend/
+│       │   │   └── server/
+│       │   ├── data/
+│       │   │   └── gallery/
+│       │   └── frontend/
+│       │       ├── public/
+│       │       │   └── fonts/
+│       │       ├── schemas/
+│       │       └── src/
+│       │           ├── assets/
+│       │           │   ├── icons/
+│       │           │   ├── scss/
+│       │           │   └── videos/
+│       │           ├── common/
+│       │           │   ├── codecs/
+│       │           │   ├── components/
+│       │           │   ├── error/
+│       │           │   ├── loading/
+│       │           │   ├── logger/
+│       │           │   ├── screen/
+│       │           │   ├── tracker/
+│       │           │   └── utils/
+│       │           ├── debug/
+│       │           │   └── stats/
+│       │           ├── demo/
+│       │           ├── graphql/
+│       │           │   └── errors/
+│       │           ├── jscocotools/
+│       │           ├── layouts/
+│       │           ├── routes/
+│       │           │   └── __generated__/
+│       │           ├── settings/
+│       │           ├── theme/
+│       │           └── types/
+│       │               └── mp4box/
+│       ├── notebooks/
+│       │   ├── images/
+│       │   └── videos/
+│       │       └── bedroom/
+│       ├── sam2/
+│       │   ├── configs/
+│       │   │   ├── sam2/
+│       │   │   ├── sam2.1/
+│       │   │   └── sam2.1_training/
+│       │   ├── csrc/
+│       │   ├── modeling/
+│       │   │   ├── backbones/
+│       │   │   └── sam/
+│       │   └── utils/
+│       ├── sav_dataset/
+│       │   ├── example/
+│       │   └── utils/
+│       ├── tools/
+│       └── training/
+│           ├── assets/
+│           ├── dataset/
+│           ├── model/
+│           ├── scripts/
+│           └── utils/
+├── cartoon-test/
+│   └── checkpoints/
+├── config/
+├── debug_output_ai_math1_precise_comments/
+├── docs/
+├── hooks/
+├── lambda/
+│   ├── functions/
+│   ├── package/
+│   │   ├── functions/
+│   │   ├── node_modules/
+│   │   │   ├── @emnapi/
+│   │   │   ├── @google/
+│   │   │   ├── @img/
+│   │   │   ├── @types/
+│   │   │   ├── abort-controller/
+│   │   │   ├── agentkeepalive/
+│   │   │   ├── asynckit/
+│   │   │   ├── available-typed-arrays/
+│   │   │   ├── aws-sdk/
+│   │   │   ├── base64-js/
+│   │   │   ├── buffer/
+│   │   │   ├── call-bind/
+│   │   │   ├── call-bind-apply-helpers/
+│   │   │   ├── call-bound/
+│   │   │   ├── color/
+│   │   │   ├── color-convert/
+│   │   │   ├── color-name/
+│   │   │   ├── color-string/
+│   │   │   ├── combined-stream/
+│   │   │   ├── define-data-property/
+│   │   │   ├── delayed-stream/
+│   │   │   ├── detect-libc/
+│   │   │   ├── dunder-proto/
+│   │   │   ├── es-define-property/
+│   │   │   ├── es-errors/
+│   │   │   ├── es-object-atoms/
+│   │   │   ├── es-set-tostringtag/
+│   │   │   ├── event-target-shim/
+│   │   │   ├── events/
+│   │   │   ├── for-each/
+│   │   │   ├── form-data/
+│   │   │   ├── form-data-encoder/
+│   │   │   ├── formdata-node/
+│   │   │   ├── function-bind/
+│   │   │   ├── get-intrinsic/
+│   │   │   ├── get-proto/
+│   │   │   ├── gopd/
+│   │   │   ├── has-property-descriptors/
+│   │   │   ├── has-symbols/
+│   │   │   ├── has-tostringtag/
+│   │   │   ├── hasown/
+│   │   │   ├── humanize-ms/
+│   │   │   ├── ieee754/
+│   │   │   ├── inherits/
+│   │   │   ├── is-arguments/
+│   │   │   ├── is-arrayish/
+│   │   │   ├── is-callable/
+│   │   │   ├── is-generator-function/
+│   │   │   ├── is-regex/
+│   │   │   ├── is-typed-array/
+│   │   │   ├── isarray/
+│   │   │   ├── jmespath/
+│   │   │   ├── math-intrinsics/
+│   │   │   ├── mime-db/
+│   │   │   ├── mime-types/
+│   │   │   ├── ms/
+│   │   │   ├── node-domexception/
+│   │   │   ├── node-fetch/
+│   │   │   ├── openai/
+│   │   │   ├── possible-typed-array-names/
+│   │   │   ├── punycode/
+│   │   │   ├── querystring/
+│   │   │   ├── replicate/
+│   │   │   ├── safe-regex-test/
+│   │   │   ├── sax/
+│   │   │   ├── semver/
+│   │   │   ├── set-function-length/
+│   │   │   ├── sharp/
+│   │   │   ├── simple-swizzle/
+│   │   │   ├── tr46/
+│   │   │   ├── undici-types/
+│   │   │   ├── url/
+│   │   │   ├── util/
+│   │   │   ├── uuid/
+│   │   │   ├── web-streams-polyfill/
+│   │   │   ├── webidl-conversions/
+│   │   │   ├── whatwg-url/
+│   │   │   ├── which-typed-array/
+│   │   │   ├── xml2js/
+│   │   │   └── xmlbuilder/
+│   │   └── utils/
+│   │       └── animations/
+│   ├── python/
+│   ├── test/
+│   └── utils/
+│       └── animations/
+├── lambda_function/
+├── layer/
+│   └── python/
+│       ├── PIL/
+│       ├── attr/
+│       ├── attrs/
+│       ├── attrs-25.3.0.dist-info/
+│       │   └── licenses/
+│       ├── bin/
+│       ├── certifi/
+│       ├── certifi-2025.8.3.dist-info/
+│       │   └── licenses/
+│       ├── charset_normalizer/
+│       │   └── cli/
+│       ├── charset_normalizer-3.4.3.dist-info/
+│       │   └── licenses/
+│       ├── coloredlogs/
+│       │   └── converter/
+│       ├── coloredlogs-15.0.1.dist-info/
+│       ├── cv2/
+│       │   ├── Error/
+│       │   ├── aruco/
+│       │   ├── barcode/
+│       │   ├── cuda/
+│       │   ├── data/
+│       │   ├── detail/
+│       │   ├── dnn/
+│       │   ├── fisheye/
+│       │   ├── flann/
+│       │   ├── gapi/
+│       │   │   ├── core/
+│       │   │   ├── ie/
+│       │   │   ├── imgproc/
+│       │   │   ├── oak/
+│       │   │   ├── onnx/
+│       │   │   ├── ot/
+│       │   │   ├── ov/
+│       │   │   ├── own/
+│       │   │   ├── render/
+│       │   │   ├── streaming/
+│       │   │   ├── video/
+│       │   │   └── wip/
+│       │   ├── ipp/
+│       │   ├── mat_wrapper/
+│       │   ├── misc/
+│       │   ├── ml/
+│       │   ├── ocl/
+│       │   ├── ogl/
+│       │   ├── parallel/
+│       │   ├── samples/
+│       │   ├── segmentation/
+│       │   ├── typing/
+│       │   ├── utils/
+│       │   │   ├── fs/
+│       │   │   └── nested/
+│       │   └── videoio_registry/
+│       ├── flatbuffers/
+│       ├── flatbuffers-25.2.10.dist-info/
+│       ├── google/
+│       │   ├── _upb/
+│       │   └── protobuf/
+│       │       ├── compiler/
+│       │       ├── internal/
+│       │       ├── pyext/
+│       │       ├── testdata/
+│       │       └── util/
+│       ├── humanfriendly/
+│       │   └── terminal/
+│       ├── humanfriendly-10.0.dist-info/
+│       ├── idna/
+│       ├── idna-3.10.dist-info/
+│       ├── imageio/
+│       │   ├── config/
+│       │   ├── core/
+│       │   └── plugins/
+│       ├── imageio-2.37.0.dist-info/
+│       ├── imageio_ffmpeg/
+│       │   └── binaries/
+│       ├── imageio_ffmpeg-0.6.0.dist-info/
+│       ├── jsonschema/
+│       │   ├── benchmarks/
+│       │   │   └── issue232/
+│       │   └── tests/
+│       │       └── typing/
+│       ├── jsonschema-4.25.1.dist-info/
+│       │   └── licenses/
+│       ├── jsonschema_specifications/
+│       │   ├── schemas/
+│       │   │   ├── draft201909/
+│       │   │   ├── draft202012/
+│       │   │   ├── draft3/
+│       │   │   ├── draft4/
+│       │   │   ├── draft6/
+│       │   │   └── draft7/
+│       │   └── tests/
+│       ├── jsonschema_specifications-2025.4.1.dist-info/
+│       │   └── licenses/
+│       ├── lazy_loader/
+│       │   └── tests/
+│       │       └── fake_pkg/
+│       ├── lazy_loader-0.4.dist-info/
+│       ├── llvmlite/
+│       │   ├── binding/
+│       │   ├── ir/
+│       │   └── tests/
+│       ├── llvmlite-0.44.0.dist-info/
+│       ├── mpmath/
+│       │   ├── calculus/
+│       │   ├── functions/
+│       │   ├── libmp/
+│       │   ├── matrices/
+│       │   └── tests/
+│       ├── mpmath-1.3.0.dist-info/
+│       ├── networkx/
+│       │   ├── algorithms/
+│       │   │   ├── approximation/
+│       │   │   ├── assortativity/
+│       │   │   ├── bipartite/
+│       │   │   ├── centrality/
+│       │   │   ├── coloring/
+│       │   │   ├── community/
+│       │   │   ├── components/
+│       │   │   ├── connectivity/
+│       │   │   ├── flow/
+│       │   │   ├── isomorphism/
+│       │   │   ├── link_analysis/
+│       │   │   ├── minors/
+│       │   │   ├── operators/
+│       │   │   ├── shortest_paths/
+│       │   │   ├── tests/
+│       │   │   ├── traversal/
+│       │   │   └── tree/
+│       │   ├── classes/
+│       │   │   └── tests/
+│       │   ├── drawing/
+│       │   │   └── tests/
+│       │   ├── generators/
+│       │   │   └── tests/
+│       │   ├── linalg/
+│       │   │   └── tests/
+│       │   ├── readwrite/
+│       │   │   ├── json_graph/
+│       │   │   └── tests/
+│       │   ├── tests/
+│       │   └── utils/
+│       │       └── tests/
+│       ├── networkx-3.5.dist-info/
+│       │   └── licenses/
+│       ├── numba/
+│       │   ├── cext/
+│       │   ├── cloudpickle/
+│       │   ├── core/
+│       │   │   ├── annotations/
+│       │   │   ├── datamodel/
+│       │   │   ├── rewrites/
+│       │   │   ├── runtime/
+│       │   │   ├── typeconv/
+│       │   │   ├── types/
+│       │   │   ├── typing/
+│       │   │   └── unsafe/
+│       │   ├── cpython/
+│       │   │   └── unsafe/
+│       │   ├── cuda/
+│       │   │   ├── cudadrv/
+│       │   │   ├── kernels/
+│       │   │   ├── simulator/
+│       │   │   └── tests/
+│       │   ├── experimental/
+│       │   │   └── jitclass/
+│       │   ├── misc/
+│       │   │   └── help/
+│       │   ├── np/
+│       │   │   ├── math/
+│       │   │   ├── polynomial/
+│       │   │   ├── random/
+│       │   │   ├── ufunc/
+│       │   │   └── unsafe/
+│       │   ├── parfors/
+│       │   ├── pycc/
+│       │   ├── scripts/
+│       │   ├── stencils/
+│       │   ├── testing/
+│       │   ├── tests/
+│       │   │   ├── doc_examples/
+│       │   │   ├── gdb/
+│       │   │   ├── npyufunc/
+│       │   │   └── pycc_distutils_usecase/
+│       │   ├── typed/
+│       │   └── types/
+│       ├── numba-0.61.2.dist-info/
+│       ├── numpy/
+│       │   ├── _core/
+│       │   │   ├── include/
+│       │   │   ├── lib/
+│       │   │   └── tests/
+│       │   ├── _pyinstaller/
+│       │   │   └── tests/
+│       │   ├── _typing/
+│       │   ├── _utils/
+│       │   ├── char/
+│       │   ├── compat/
+│       │   │   └── tests/
+│       │   ├── core/
+│       │   ├── distutils/
+│       │   │   ├── checks/
+│       │   │   ├── command/
+│       │   │   ├── fcompiler/
+│       │   │   ├── mingw/
+│       │   │   └── tests/
+│       │   ├── doc/
+│       │   ├── f2py/
+│       │   │   ├── _backends/
+│       │   │   ├── src/
+│       │   │   └── tests/
+│       │   ├── fft/
+│       │   │   └── tests/
+│       │   ├── lib/
+│       │   │   └── tests/
+│       │   ├── linalg/
+│       │   │   └── tests/
+│       │   ├── ma/
+│       │   │   └── tests/
+│       │   ├── matrixlib/
+│       │   │   └── tests/
+│       │   ├── polynomial/
+│       │   │   └── tests/
+│       │   ├── random/
+│       │   │   ├── _examples/
+│       │   │   ├── lib/
+│       │   │   └── tests/
+│       │   ├── rec/
+│       │   ├── strings/
+│       │   ├── testing/
+│       │   │   ├── _private/
+│       │   │   └── tests/
+│       │   ├── tests/
+│       │   └── typing/
+│       │       └── tests/
+│       │           └── data/
+│       │               ├── fail/
+│       │               ├── misc/
+│       │               ├── pass/
+│       │               └── reveal/
+│       ├── numpy-2.2.6.dist-info/
+│       ├── onnxruntime/
+│       │   ├── backend/
+│       │   ├── capi/
+│       │   ├── datasets/
+│       │   ├── quantization/
+│       │   │   ├── CalTableFlatBuffers/
+│       │   │   ├── execution_providers/
+│       │   │   ├── fusions/
+│       │   │   └── operators/
+│       │   ├── tools/
+│       │   │   ├── mobile_helpers/
+│       │   │   ├── ort_format_model/
+│       │   │   └── qdq_helpers/
+│       │   └── transformers/
+│       │       └── models/
+│       │           ├── bart/
+│       │           ├── bert/
+│       │           ├── gpt2/
+│       │           ├── llama/
+│       │           ├── longformer/
+│       │           ├── phi2/
+│       │           ├── sam2/
+│       │           ├── stable_diffusion/
+│       │           ├── t5/
+│       │           └── whisper/
+│       ├── onnxruntime-1.22.1.dist-info/
+│       ├── opencv_python_headless-4.12.0.88.dist-info/
+│       ├── packaging/
+│       │   └── licenses/
+│       ├── packaging-25.0.dist-info/
+│       │   └── licenses/
+│       ├── pillow-11.3.0.dist-info/
+│       │   └── licenses/
+│       ├── platformdirs/
+│       ├── platformdirs-4.3.8.dist-info/
+│       │   └── licenses/
+│       ├── pooch/
+│       │   └── tests/
+│       │       └── data/
+│       │           └── store/
+│       │               └── subdir/
+│       ├── pooch-1.8.2.dist-info/
+│       ├── protobuf-6.32.0.dist-info/
+│       ├── pymatting/
+│       │   ├── alpha/
+│       │   ├── config/
+│       │   ├── cutout/
+│       │   ├── foreground/
+│       │   ├── laplacian/
+│       │   ├── preconditioner/
+│       │   ├── solver/
+│       │   └── util/
+│       ├── pymatting-1.1.14.dist-info/
+│       │   └── licenses/
+│       ├── referencing/
+│       │   └── tests/
+│       ├── referencing-0.36.2.dist-info/
+│       │   └── licenses/
+│       ├── rembg/
+│       │   ├── commands/
+│       │   └── sessions/
+│       ├── rembg-2.0.67.dist-info/
+│       │   └── licenses/
+│       ├── requests/
+│       ├── requests-2.32.5.dist-info/
+│       │   └── licenses/
+│       ├── rpds/
+│       ├── rpds_py-0.27.0.dist-info/
+│       │   └── licenses/
+│       ├── scikit_image-0.25.2.dist-info/
+│       ├── scipy/
+│       │   ├── _lib/
+│       │   │   ├── _uarray/
+│       │   │   ├── array_api_compat/
+│       │   │   ├── array_api_extra/
+│       │   │   ├── cobyqa/
+│       │   │   ├── pyprima/
+│       │   │   └── tests/
+│       │   ├── cluster/
+│       │   │   └── tests/
+│       │   ├── constants/
+│       │   │   └── tests/
+│       │   ├── datasets/
+│       │   │   └── tests/
+│       │   ├── differentiate/
+│       │   │   └── tests/
+│       │   ├── fft/
+│       │   │   ├── _pocketfft/
+│       │   │   └── tests/
+│       │   ├── fftpack/
+│       │   │   └── tests/
+│       │   ├── integrate/
+│       │   │   ├── _ivp/
+│       │   │   ├── _rules/
+│       │   │   └── tests/
+│       │   ├── interpolate/
+│       │   │   └── tests/
+│       │   ├── io/
+│       │   │   ├── _fast_matrix_market/
+│       │   │   ├── _harwell_boeing/
+│       │   │   ├── arff/
+│       │   │   ├── matlab/
+│       │   │   └── tests/
+│       │   ├── linalg/
+│       │   │   └── tests/
+│       │   ├── misc/
+│       │   ├── ndimage/
+│       │   │   └── tests/
+│       │   ├── odr/
+│       │   │   └── tests/
+│       │   ├── optimize/
+│       │   │   ├── _highspy/
+│       │   │   ├── _lsq/
+│       │   │   ├── _shgo_lib/
+│       │   │   ├── _trlib/
+│       │   │   ├── _trustregion_constr/
+│       │   │   ├── cython_optimize/
+│       │   │   └── tests/
+│       │   ├── signal/
+│       │   │   ├── tests/
+│       │   │   └── windows/
+│       │   ├── sparse/
+│       │   │   ├── csgraph/
+│       │   │   ├── linalg/
+│       │   │   └── tests/
+│       │   ├── spatial/
+│       │   │   ├── tests/
+│       │   │   └── transform/
+│       │   ├── special/
+│       │   │   ├── _precompute/
+│       │   │   └── tests/
+│       │   └── stats/
+│       │       ├── _levy_stable/
+│       │       ├── _rcont/
+│       │       ├── _unuran/
+│       │       └── tests/
+│       │           └── data/
+│       │               ├── levy_stable/
+│       │               ├── nist_anova/
+│       │               └── nist_linregress/
+│       ├── scipy-1.16.1.dist-info/
+│       ├── share/
+│       │   └── man/
+│       │       └── man1/
+│       ├── skimage/
+│       │   ├── _shared/
+│       │   │   └── tests/
+│       │   ├── _vendored/
+│       │   ├── color/
+│       │   │   └── tests/
+│       │   ├── data/
+│       │   │   └── tests/
+│       │   ├── draw/
+│       │   │   └── tests/
+│       │   ├── exposure/
+│       │   │   └── tests/
+│       │   ├── feature/
+│       │   │   └── tests/
+│       │   ├── filters/
+│       │   │   ├── rank/
+│       │   │   └── tests/
+│       │   ├── future/
+│       │   │   └── tests/
+│       │   ├── graph/
+│       │   │   └── tests/
+│       │   ├── io/
+│       │   │   ├── _plugins/
+│       │   │   └── tests/
+│       │   ├── measure/
+│       │   │   └── tests/
+│       │   ├── metrics/
+│       │   │   └── tests/
+│       │   ├── morphology/
+│       │   │   └── tests/
+│       │   ├── registration/
+│       │   │   └── tests/
+│       │   ├── restoration/
+│       │   │   └── tests/
+│       │   ├── segmentation/
+│       │   │   └── tests/
+│       │   ├── transform/
+│       │   │   └── tests/
+│       │   └── util/
+│       │       └── tests/
+│       ├── sympy/
+│       │   ├── algebras/
+│       │   │   └── tests/
+│       │   ├── assumptions/
+│       │   │   ├── handlers/
+│       │   │   ├── predicates/
+│       │   │   ├── relation/
+│       │   │   └── tests/
+│       │   ├── benchmarks/
+│       │   ├── calculus/
+│       │   │   └── tests/
+│       │   ├── categories/
+│       │   │   └── tests/
+│       │   ├── codegen/
+│       │   │   └── tests/
+│       │   ├── combinatorics/
+│       │   │   └── tests/
+│       │   ├── concrete/
+│       │   │   └── tests/
+│       │   ├── core/
+│       │   │   ├── benchmarks/
+│       │   │   └── tests/
+│       │   ├── crypto/
+│       │   │   └── tests/
+│       │   ├── diffgeom/
+│       │   │   └── tests/
+│       │   ├── discrete/
+│       │   │   └── tests/
+│       │   ├── external/
+│       │   │   └── tests/
+│       │   ├── functions/
+│       │   │   ├── combinatorial/
+│       │   │   ├── elementary/
+│       │   │   └── special/
+│       │   ├── geometry/
+│       │   │   └── tests/
+│       │   ├── holonomic/
+│       │   │   └── tests/
+│       │   ├── integrals/
+│       │   │   ├── benchmarks/
+│       │   │   └── tests/
+│       │   ├── interactive/
+│       │   │   └── tests/
+│       │   ├── liealgebras/
+│       │   │   └── tests/
+│       │   ├── logic/
+│       │   │   ├── algorithms/
+│       │   │   ├── tests/
+│       │   │   └── utilities/
+│       │   ├── matrices/
+│       │   │   ├── benchmarks/
+│       │   │   ├── expressions/
+│       │   │   └── tests/
+│       │   ├── multipledispatch/
+│       │   │   └── tests/
+│       │   ├── ntheory/
+│       │   │   └── tests/
+│       │   ├── parsing/
+│       │   │   ├── autolev/
+│       │   │   ├── c/
+│       │   │   ├── fortran/
+│       │   │   ├── latex/
+│       │   │   └── tests/
+│       │   ├── physics/
+│       │   │   ├── biomechanics/
+│       │   │   ├── continuum_mechanics/
+│       │   │   ├── control/
+│       │   │   ├── hep/
+│       │   │   ├── mechanics/
+│       │   │   ├── optics/
+│       │   │   ├── quantum/
+│       │   │   ├── tests/
+│       │   │   ├── units/
+│       │   │   └── vector/
+│       │   ├── plotting/
+│       │   │   ├── backends/
+│       │   │   ├── intervalmath/
+│       │   │   ├── pygletplot/
+│       │   │   └── tests/
+│       │   ├── polys/
+│       │   │   ├── agca/
+│       │   │   ├── benchmarks/
+│       │   │   ├── domains/
+│       │   │   ├── matrices/
+│       │   │   ├── numberfields/
+│       │   │   └── tests/
+│       │   ├── printing/
+│       │   │   ├── pretty/
+│       │   │   └── tests/
+│       │   ├── sandbox/
+│       │   │   └── tests/
+│       │   ├── series/
+│       │   │   ├── benchmarks/
+│       │   │   └── tests/
+│       │   ├── sets/
+│       │   │   ├── handlers/
+│       │   │   └── tests/
+│       │   ├── simplify/
+│       │   │   └── tests/
+│       │   ├── solvers/
+│       │   │   ├── benchmarks/
+│       │   │   ├── diophantine/
+│       │   │   ├── ode/
+│       │   │   └── tests/
+│       │   ├── stats/
+│       │   │   ├── sampling/
+│       │   │   └── tests/
+│       │   ├── strategies/
+│       │   │   ├── branch/
+│       │   │   └── tests/
+│       │   ├── tensor/
+│       │   │   ├── array/
+│       │   │   └── tests/
+│       │   ├── testing/
+│       │   │   └── tests/
+│       │   ├── unify/
+│       │   │   └── tests/
+│       │   ├── utilities/
+│       │   │   ├── _compilation/
+│       │   │   ├── mathml/
+│       │   │   └── tests/
+│       │   └── vector/
+│       │       └── tests/
+│       ├── sympy-1.14.0.dist-info/
+│       │   └── licenses/
+│       ├── tifffile/
+│       ├── tifffile-2025.6.11.dist-info/
+│       │   └── licenses/
+│       ├── tqdm/
+│       │   └── contrib/
+│       ├── tqdm-4.67.1.dist-info/
+│       ├── typing_extensions-4.14.1.dist-info/
+│       │   └── licenses/
+│       ├── urllib3/
+│       │   ├── contrib/
+│       │   │   └── emscripten/
+│       │   ├── http2/
+│       │   └── util/
+│       └── urllib3-2.5.0.dist-info/
+│           └── licenses/
+├── outputs/
+│   ├── improved_prompts/
+│   │   └── prompts/
+│   └── pixel_coord_prompts/
+│       └── prompts/
+├── pipeline/
+│   ├── core/
+│   └── steps/
+├── sound_effects/
+│   ├── cache/
+│   └── downloaded/
+├── test_data/
+├── test_ffmpeg_seeking/
+├── tests/
+│   ├── background_extraction_results/
+│   ├── debug_algorithm/
+│   ├── debug_beginning/
+│   ├── debug_beginning_comprehensive/
+│   ├── debug_mask_region/
+│   ├── debug_timing/
+│   ├── debug_word_placement/
+│   ├── multi_frame_placement/
+│   └── position_verification/
+├── uploads/
+│   ├── assets/
+│   │   ├── batch_images_transparent_bg/
+│   │   ├── batch_images_white_bg/
+│   │   ├── sounds/
+│   │   │   └── snark_remarks/
+│   │   └── videos/
+│   │       ├── ai_math/
+│   │       ├── ai_math1/
+│   │       └── do_re_mi/
+│   │           ├── cartoon_assets/
+│   │           ├── clean_test/
+│   │           ├── debug_frames/
+│   │           ├── debug_timeline/
+│   │           ├── final_check/
+│   │           ├── final_proof_now/
+│   │           ├── final_verification/
+│   │           ├── fixed_pipeline_verification/
+│   │           ├── full_karaoke_verify/
+│   │           ├── inferences/
+│   │           ├── metadata/
+│   │           ├── prompts/
+│   │           ├── scenes/
+│   │           │   ├── downsampled/
+│   │           │   ├── edited/
+│   │           │   ├── original/
+│   │           │   └── test_pipeline/
+│   │           ├── single_pass_verify/
+│   │           ├── transcripts/
+│   │           │   └── audio/
+│   │           ├── ultrathink_debug/
+│   │           └── visual_proof/
+│   └── vectorized/
+│       └── tests/
+│           └── batch/
+└── utils/
+    ├── animations/
+    │   └── __pycache__/
+    ├── auto_comment/
+    │   └── pipeline/
+    ├── auto_snark/
+    ├── aws/
+    ├── bulk_animate_image/
+    │   ├── output/
+    │   │   ├── batch_5x2_test/
+    │   │   ├── batch_transparent_animated/
+    │   │   ├── batch_transparent_final/
+    │   │   ├── bulk_test_9_images_20250815_062053/
+    │   │   ├── bulk_test_9_images_20250815_062140/
+    │   │   ├── test_animated/
+    │   │   ├── test_full_run/
+    │   │   ├── test_full_run_real/
+    │   │   ├── test_kling_animated/
+    │   │   ├── test_kling_final/
+    │   │   ├── test_kling_now/
+    │   │   └── test_kling_working/
+    │   └── uploads/
+    │       └── assets/
+    │           └── new_batch_images/
+    ├── contour_extraction/
+    │   └── anime2sketch-api/
+    ├── draw-euler/
+    ├── end_to_end_drawing/
+    ├── image-cap/
+    ├── image_generation/
+    │   └── openai/
+    ├── sam2_api/
+    ├── scene_management/
+    ├── sound_effects/
+    ├── text_placement/
+    │   └── __pycache__/
+    ├── vectorize/
+    │   ├── _test_input/
+    │   ├── _test_out/
+    │   ├── color/
+    │   └── grayscale/
+    └── video/
+        ├── captions/
+        ├── downsample/
+        ├── editing_tricks/
+        │   ├── do_re_mi_effects/
+        │   │   └── prompts/
+        │   ├── do_re_mi_quick_test/
+        │   │   └── prompts/
+        │   ├── test_output/
+        │   └── tracking_visualization/
+        ├── effects/
+        ├── overlay/
+        │   ├── grid_overlays/
+        │   ├── grid_overlays_feasible/
+        │   │   ├── inferences/
+        │   │   └── prompts/
+        │   ├── grid_overlays_v2/
+        │   │   ├── inferences/
+        │   │   └── prompts/
+        │   ├── grid_test/
+        │   ├── pixel_test/
+        │   └── pixel_test_improved/
+        ├── segmentation/
+        │   └── __pycache__/
+        ├── tracking/
+        ├── validation/
+        └── video_tools/
+            └── simple_test_scenes/
+</project_structure>
+
+<relevant_files>
+
+<file>
+<path>utils/animations/text_3d_motion.py</path>
+<content>
+#!/usr/bin/env python3
+"""
+Refactored Text3DMotion that renders letters individually but moves them as a unified group.
+This enables perfect handoff to Letter3DDissolve without position jumps.
+"""
+
+import os
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from typing import Optional, Tuple, Dict, List, Any
+from dataclasses import dataclass
+
+
+@dataclass
+class LetterSprite:
+    """Individual letter sprite with its 3D rendering and position."""
+    char: str
+    sprite_3d: Optional[Image.Image]
+    position: Tuple[int, int]   # paste top-left
+    width: int
+    height: int
+    anchor: Tuple[int, int]     # FRONT-FACE top-left inside sprite
+    base_position: Optional[Tuple[int, int]] = None  # Store original position for handoff
+
+
+@dataclass
+class MotionState:
+    """State captured at the end of motion animation for handoff to next animation."""
+    scale: float
+    position: Tuple[int, int]           # Top-left position used during final composite
+    text_size: Tuple[int, int]          # Rendered sprite size
+    center_position: Tuple[int, int]    # Intended front-face center
+    is_behind: bool                      # Whether text is behind subject at end of motion
+    alpha: float                         # Current alpha/opacity value at end of motion
+    letter_sprites: Optional[List[LetterSprite]] = None  # Individual letter sprites for handoff
+
+
+class Text3DMotion:
+    """
+    3D text animation with individual letter rendering but unified group movement.
+    """
+
+    def __init__(
+        self,
+        duration: float = 1.0,
+        fps: int = 30,
+        resolution: Tuple[int, int] = (1920, 1080),
+        text: str = "HELLO",
+        segment_mask: Optional[np.ndarray] = None,
+        font_size: int = 120,
+        text_color: Tuple[int, int, int] = (255, 220, 0),
+        depth_color: Tuple[int, int, int] = (200, 170, 0),
+        depth_layers: int = 8,
+        depth_offset: int = 3,
+        start_scale: float = 2.0,
+        end_scale: float = 1.0,
+        final_scale: float = 0.9,
+        start_position: Optional[Tuple[int, int]] = None,
+        end_position: Optional[Tuple[int, int]] = None,
+        shrink_duration: float = 0.8,
+        settle_duration: float = 0.2,
+        final_alpha: float = 0.3,
+        shadow_offset: int = 5,
+        outline_width: int = 2,
+        perspective_angle: float = 0,
+        supersample_factor: int = 8,  # Much higher for smooth edges
+        glow_effect: bool = True,
+        font_path: Optional[str] = None,
+        debug: bool = False,
+    ):
+        self.duration = duration
+        self.fps = fps
+        self.total_frames = int(duration * fps)
+        self.resolution = resolution
+        self.text = text
+        self.segment_mask = segment_mask
+        self.font_size = font_size
+        self.text_color = text_color
+        self.depth_color = depth_color
+        self.depth_layers = depth_layers
+        self.depth_offset = depth_offset
+        self.start_scale = start_scale
+        self.end_scale = end_scale
+        self.final_scale = final_scale
+        self.start_position = start_position or (resolution[0] // 2, resolution[1] // 2)
+        self.end_position = end_position or (resolution[0] // 2, resolution[1] // 2)
+        self.shrink_duration = shrink_duration
+        self.settle_duration = settle_duration
+        self.shrink_frames = int(shrink_duration * fps)
+        self.settle_frames = int(settle_duration * fps)
+        self.final_alpha = max(0.0, min(1.0, final_alpha))
+        self.shadow_offset = shadow_offset
+        self.outline_width = outline_width
+        self.perspective_angle = perspective_angle
+        self.supersample_factor = supersample_factor
+        self.glow_effect = glow_effect
+        self.font_path = font_path
+        self.debug = debug
+
+        # Letter sprites - rendered once and reused
+        self.letter_sprites: List[LetterSprite] = []
+        self._prepare_letter_sprites()
+        
+        # Final state for handoff
+        self._final_state: Optional[MotionState] = None
+
+    def _get_font(self, size: int) -> ImageFont.FreeTypeFont:
+        """Get font at specified size - prioritize vector fonts."""
+        candidates = []
+        if self.font_path:
+            candidates.append(self.font_path)
+        
+        # Common font paths
+        candidates.extend([
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ])
+        
+        for p in candidates:
+            try:
+                if p and os.path.isfile(p):
+                    return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+        
+        return ImageFont.load_default()
+
+    def _render_3d_letter(
+        self, letter: str, scale: float, alpha: float, depth_scale: float
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        """Render a single 3D letter with depth layers and smooth antialiasing."""
+        # Use EXTREMELY high supersampling for perfectly smooth edges
+        actual_supersample = 20  # Force 20x supersampling for maximum smoothness
+        font_px = int(self.font_size * scale * actual_supersample)
+        font = self._get_font(font_px)
+
+        # Get letter bounds
+        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        bbox = d.textbbox((0, 0), letter, font=font)
+        bbox_w = bbox[2] - bbox[0]
+        bbox_h = bbox[3] - bbox[1]
+
+        # Add margin for depth layers
+        margin = int(self.depth_offset * self.depth_layers * actual_supersample)
+        width = bbox_w + 2 * margin
+        height = bbox_h + 2 * margin
+
+        # Create canvas with antialiasing mode - use L mode for each layer first
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        
+        # Draw depth layers (back to front) with individual antialiasing
+        from PIL import ImageFilter
+        for i in range(self.depth_layers - 1, -1, -1):
+            # Create a grayscale layer for perfect antialiasing
+            layer = Image.new("L", (width, height), 0)
+            layer_draw = ImageDraw.Draw(layer)
+            
+            depth_alpha = int(alpha * 255 * (0.3 + 0.7 * (1 - i / self.depth_layers)))
+            offset = int(i * self.depth_offset * depth_scale * actual_supersample)
+
+            if i == 0:
+                color_rgb = self.text_color
+            else:
+                factor = 0.7 - (i / self.depth_layers) * 0.4
+                color_rgb = tuple(int(c * factor) for c in self.depth_color)
+
+            x = margin - bbox[0] + offset
+            y = margin - bbox[1] + offset
+            
+            # Draw with maximum antialiasing in grayscale
+            layer_draw.text((x, y), letter, font=font, fill=255)
+            
+            # Apply slight blur to the layer for smoother edges
+            layer = layer.filter(ImageFilter.GaussianBlur(radius=0.5))
+            
+            # Convert to RGBA and apply color
+            layer_rgba = Image.new("RGBA", (width, height), (*color_rgb, 0))
+            layer_rgba.putalpha(layer.point(lambda x: int(x * depth_alpha / 255)))
+            
+            # Composite onto main canvas
+            canvas = Image.alpha_composite(canvas, layer_rgba)
+
+        # Apply stronger Gaussian blur for ultra-smooth edges
+        canvas = canvas.filter(ImageFilter.GaussianBlur(radius=actual_supersample/8))
+        
+        # Additional smoothing pass with SMOOTH_MORE filter
+        canvas = canvas.filter(ImageFilter.SMOOTH_MORE)
+        
+        # Downsample with high-quality LANCZOS resampling
+        if actual_supersample > 1:
+            new_size = (width // actual_supersample, height // actual_supersample)
+            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Final smoothing pass at target resolution
+            canvas = canvas.filter(ImageFilter.SMOOTH)
+
+        # Calculate anchor (front-face top-left)
+        anchor_x = margin // actual_supersample
+        anchor_y = margin // actual_supersample
+
+        return canvas, (anchor_x, anchor_y)
+
+    def _prepare_letter_sprites(self):
+        """Pre-render all letter sprites at maximum scale to avoid pixelation."""
+        # Clear existing sprites
+        self.letter_sprites = []
+        
+        # Use MAX scale for initial rendering to ensure no pixelation when scaling up
+        base_scale = max(self.start_scale, self.end_scale, self.final_scale, 2.0)
+        font_px = int(self.font_size * base_scale)
+        font = self._get_font(font_px)
+        
+        # Calculate layout positions
+        current_x = 0
+        for letter in self.text:
+            if letter == ' ':
+                # Space character - scale it appropriately with letters
+                # Use smaller ratio for spaces to avoid excessive gaps
+                space_width = max(1, int(font_px * 0.2))  # Reduced from /3 to *0.2 for tighter spacing
+                sprite = LetterSprite(
+                    char=' ',
+                    sprite_3d=None,
+                    position=(current_x, 0),  # Relative position in text block
+                    width=space_width,
+                    height=1,
+                    anchor=(0, 0)
+                )
+                self.letter_sprites.append(sprite)
+                current_x += space_width
+            else:
+                # Render the letter at maximum scale for best quality
+                sprite_3d, (ax, ay) = self._render_3d_letter(letter, base_scale, 1.0, 1.0)
+                
+                sprite = LetterSprite(
+                    char=letter,
+                    sprite_3d=sprite_3d,
+                    position=(current_x, 0),  # Relative position in text block
+                    width=sprite_3d.width if sprite_3d else 0,
+                    height=sprite_3d.height if sprite_3d else 0,
+                    anchor=(ax, ay)
+                )
+                self.letter_sprites.append(sprite)
+                current_x += sprite_3d.width if sprite_3d else font_px
+        
+        if self.debug:
+            print(f"[Text3DMotion] Prepared {len(self.letter_sprites)} letter sprites")
+
+    def generate_frame(self, frame_number: int, background: np.ndarray) -> np.ndarray:
+        """Generate a single frame with letters moving as a unified group."""
+        frame = background.copy()
+        if frame.shape[2] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
+
+        # Calculate animation parameters
+        if frame_number < self.shrink_frames:
+            # Shrinking phase
+            t = frame_number / max(1, self.shrink_frames)
+            t_smooth = t * t * (3 - 2 * t)  # smoothstep
+            scale = self.start_scale + (self.end_scale - self.start_scale) * t_smooth
+            cx = self.start_position[0] + (self.end_position[0] - self.start_position[0]) * t_smooth
+            cy = self.start_position[1] + (self.end_position[1] - self.start_position[1]) * t_smooth
+            # Start going behind immediately when shrinking starts
+            is_behind = t > 0.0  # Changed from 0.5 to 0.0 - goes behind immediately
+            # Gradually reduce opacity as text goes behind (from 1.0 to final_alpha)
+            if is_behind:
+                # Smooth transition from full opacity to final opacity
+                alpha = 1.0 + (self.final_alpha - 1.0) * t_smooth
+            else:
+                alpha = 1.0
+        else:
+            # Settling phase
+            t = (frame_number - self.shrink_frames) / max(1, self.settle_frames)
+            t_smooth = t * t * (3 - 2 * t)
+            scale = self.end_scale + (self.final_scale - self.end_scale) * t_smooth
+            cx = self.end_position[0]
+            cy = self.end_position[1]
+            is_behind = True
+            alpha = 1.0 + (self.final_alpha - 1.0) * t_smooth
+        
+        # Calculate scale ratio from pre-rendered size
+        pre_render_scale = max(self.start_scale, self.end_scale, self.final_scale, 2.0)
+        scale_ratio = scale / pre_render_scale
+
+        # Calculate total text width at current scale
+        total_width = 0
+        max_height = 0
+        for sprite in self.letter_sprites:
+            if sprite.sprite_3d:
+                scaled_w = int(sprite.width * scale_ratio)
+                scaled_h = int(sprite.height * scale_ratio)
+                total_width += scaled_w
+                max_height = max(max_height, scaled_h)
+            else:
+                total_width += int(sprite.width * scale_ratio)
+
+        # Calculate group starting position (centered)
+        group_start_x = int(cx - total_width // 2)
+        group_start_y = int(cy - max_height // 2)
+
+        # Create a canvas for the entire text group
+        canvas = Image.fromarray(frame)
+        
+        # Render each letter at its position within the group
+        current_x = group_start_x
+        rendered_sprites = []
+        
+        for sprite in self.letter_sprites:
+            if sprite.char == ' ':
+                # Space - just advance position
+                current_x += int(sprite.width * scale_ratio)
+                rendered_sprites.append(None)
+            else:
+                # Scale the sprite (DOWN from pre-rendered size for best quality)
+                if sprite.sprite_3d:
+                    scaled_w = int(sprite.width * scale_ratio)
+                    scaled_h = int(sprite.height * scale_ratio)
+                    scaled_sprite = sprite.sprite_3d.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+                    
+                    # Apply alpha
+                    sprite_array = np.array(scaled_sprite)
+                    sprite_array[:, :, 3] = (sprite_array[:, :, 3] * alpha).astype(np.uint8)
+                    scaled_sprite = Image.fromarray(sprite_array)
+                    
+                    # Store position for this frame
+                    letter_pos = (current_x, group_start_y)
+                    
+                    # Apply masking if behind subject
+                    if is_behind:
+                        # ALWAYS extract fresh mask for EVERY frame (no caching!)
+                        current_mask = None
+                        try:
+                            import sys
+                            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                            from video.segmentation.segment_extractor import extract_foreground_mask
+                            current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
+                            current_mask = extract_foreground_mask(current_rgb)
+                            
+                            if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                                current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+                            
+                            current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
+                            kernel = np.ones((3, 3), np.uint8)
+                            current_mask = cv2.dilate(current_mask, kernel, iterations=1)
+                            current_mask = (current_mask > 128).astype(np.uint8) * 255
+                            
+                            if self.debug and frame_number % 5 == 0:
+                                print(f"[Text3DMotion] Frame {frame_number}: Dynamic mask extracted")
+                        except Exception as e:
+                            if self.debug:
+                                print(f"[Text3DMotion] Frame {frame_number}: Failed to extract mask: {e}")
+                            # Fallback to static mask if available
+                            current_mask = self.segment_mask
+                        
+                        # Apply mask if we have one
+                        if current_mask is not None:
+                            sprite_np = np.array(scaled_sprite)
+                            h, w = sprite_np.shape[:2]
+                            
+                            # Get mask region
+                            y1 = max(0, letter_pos[1])
+                            y2 = min(frame.shape[0], letter_pos[1] + h)
+                            x1 = max(0, letter_pos[0])
+                            x2 = min(frame.shape[1], letter_pos[0] + w)
+                            
+                            if y2 > y1 and x2 > x1:
+                                mask_region = current_mask[y1:y2, x1:x2]
+                                sprite_region = sprite_np[
+                                    max(0, -letter_pos[1]):max(0, -letter_pos[1]) + (y2 - y1),
+                                    max(0, -letter_pos[0]):max(0, -letter_pos[0]) + (x2 - x1)
+                                ]
+                                
+                                # Apply mask to alpha channel
+                                if sprite_region.shape[:2] == mask_region.shape:
+                                    sprite_region[:, :, 3] = (
+                                        sprite_region[:, :, 3] * (1 - mask_region / 255.0)
+                                    ).astype(np.uint8)
+                                
+                                scaled_sprite = Image.fromarray(sprite_np)
+                    
+                    # Composite the letter onto canvas
+                    canvas.paste(scaled_sprite, letter_pos, scaled_sprite)
+                    
+                    # Store the rendered sprite with its absolute position
+                    rendered_sprite = LetterSprite(
+                        char=sprite.char,
+                        sprite_3d=scaled_sprite,
+                        position=letter_pos,
+                        width=scaled_w,
+                        height=scaled_h,
+                        anchor=(0, 0)  # Already adjusted during scaling
+                    )
+                    rendered_sprites.append(rendered_sprite)
+                    
+                    current_x += scaled_w
+
+        # Store final state on last frame
+        if frame_number == self.total_frames - 1:
+            # Filter out None entries (spaces)
+            final_sprites = [s for s in rendered_sprites if s is not None]
+            
+            self._final_state = MotionState(
+                scale=scale,
+                position=(group_start_x, group_start_y),
+                text_size=(total_width, max_height),
+                center_position=(int(cx), int(cy)),
+                is_behind=is_behind,
+                alpha=alpha,
+                letter_sprites=final_sprites
+            )
+            
+            if self.debug:
+                print(f"[Text3DMotion] Final state stored with {len(final_sprites)} letter sprites")
+
+        result = np.array(canvas)
+        return result[:, :, :3] if result.shape[2] == 4 else result
+
+    def get_final_state(self) -> Optional[MotionState]:
+        """Get the final state for handoff to next animation."""
+        return self._final_state
+</content>
+</file>
+
+<file>
+<path>utils/animations/letter_3d_dissolve.py</path>
+<content>
+#!/usr/bin/env python3
+"""
+3D letter dissolve animation where each letter dissolves individually.
+
+FRAME-ACCURATE FIXES:
+- Per-letter schedule computed in integer frames (start/end/fade_end).
+- Guaranteed minimum fade frames (prevents skipped fades at low FPS).
+- 1-frame "safety hold" at dissolve start so alpha begins EXACTLY at stable_alpha.
+- Optional overlap guard: previous letter's fade extends at least until next letter's start.
+
+DEBUG:
+- [JUMP_CUT] logs print the full schedule and per-frame transitions.
+- [POS_HANDOFF] logs from motion remain supported.
+- [TEXT_QUALITY] Robust TTF/OTF font discovery + optional --font path.
+- [TEXT_QUALITY] Logs to verify font and supersampling.
+
+Original authorship retained; this refactor targets the jump-cut described in the issue.
+"""
+
+import os
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from typing import Optional, Tuple, List, Dict, Any
+import random
+from dataclasses import dataclass
+
+# Import LetterSprite from text_3d_motion to ensure compatibility
+try:
+    from .text_3d_motion import LetterSprite
+except ImportError:
+    from text_3d_motion import LetterSprite
+
+
+@dataclass
+class _LetterTiming:
+    """Frame-accurate per-letter schedule."""
+    start: int           # first frame letter is DEFINITELY drawn at stable_alpha
+    hold_end: int        # last frame of the "safety hold" at stable_alpha (>= start)
+    end: int             # last frame of the dissolve window (after hold)
+    fade_end: int        # last frame of the fade-out tail
+    order_index: int     # 0..N-1 sequential in dissolve_order
+
+
+class Letter3DDissolve:
+    """
+    3D letter-by-letter dissolve animation with frame-accurate timing.
+
+    Key parameters:
+    - duration: total dissolve clip length (seconds)
+    - dissolve_duration: time a letter spends in the dissolve window (seconds)
+    - dissolve_stagger: delay between starts (seconds)
+    - post_fade_seconds: additional fade after dissolve (seconds) -> converted to frames (min 2)
+    - pre_dissolve_hold_frames: safety frames at stable_alpha before letter starts to change
+    """
+
+    def __init__(
+        self,
+        duration: float = 1.5,
+        fps: int = 30,
+        resolution: Tuple[int, int] = (1920, 1080),
+        text: str = "HELLO",
+        font_size: int = 120,
+        text_color: Tuple[int, int, int] = (255, 220, 0),
+        depth_color: Tuple[int, int, int] = (200, 170, 0),
+        depth_layers: int = 8,
+        depth_offset: int = 3,
+        initial_scale: float = 0.9,                   # handoff scale
+        initial_position: Optional[Tuple[int, int]] = None,  # FRONT-FACE CENTER
+        stable_duration: float = 0.2,                 # pre-letter dissolve lead-in (sec)
+        stable_alpha: float = 0.3,                    # opacity when not dissolving (0..1)
+        dissolve_duration: float = 0.8,               # per-letter dissolve (sec)
+        dissolve_stagger: float = 0.1,                # delay between letter starts (sec)
+        float_distance: float = 50,
+        max_dissolve_scale: float = 1.3,
+        randomize_order: bool = False,
+        segment_mask: Optional[np.ndarray] = None,
+        is_behind: bool = False,
+        shadow_offset: int = 5,
+        outline_width: int = 2,
+        supersample_factor: int = 2,
+        # --- New robustness knobs ---
+        post_fade_seconds: float = 0.10,              # tail after dissolve (sec); min 2 frames
+        pre_dissolve_hold_frames: int = 1,            # hold N frames at stable_alpha at start
+        ensure_no_gap: bool = True,                   # extend previous fade to next start
+        font_path: Optional[str] = None,              # NEW: explicit font path
+        debug: bool = False,
+    ):
+        self.duration = duration
+        self.fps = fps
+        self.total_frames = int(round(duration * fps))
+        self.resolution = resolution
+        self.text = text
+        self.font_size = font_size
+        self.text_color = text_color
+        self.depth_color = depth_color
+        self.depth_layers = depth_layers
+        self.depth_offset = depth_offset
+        self.initial_scale = initial_scale
+        self.initial_position = initial_position or (resolution[0] // 2, resolution[1] // 2)
+        self.stable_duration = stable_duration
+        self.stable_alpha = max(0.0, min(1.0, stable_alpha))
+        self.dissolve_duration = dissolve_duration
+        self.dissolve_stagger = dissolve_stagger
+        self.float_distance = float_distance
+        self.max_dissolve_scale = max(1.0, max_dissolve_scale)
+        self.randomize_order = randomize_order
+        self.segment_mask = segment_mask
+        self.is_behind = is_behind
+        self.shadow_offset = shadow_offset
+        self.outline_width = outline_width
+        self.supersample_factor = supersample_factor
+        self.post_fade_seconds = max(0.0, post_fade_seconds)
+        self.pre_dissolve_hold_frames = max(0, int(pre_dissolve_hold_frames))
+        self.ensure_no_gap = ensure_no_gap
+        self.font_path = font_path
+        self.debug = debug
+
+        # Runtime
+        self.letter_sprites: List[LetterSprite] = []
+        self.dissolve_order: List[int] = []
+        self.letter_kill_masks: Dict[int, np.ndarray] = {}
+        # NO CACHING! Masks must be calculated fresh for EVERY frame
+        self._timeline: Dict[int, _LetterTiming] = {}
+        self._entered_dissolve_logged: Dict[int, bool] = {}
+        self._hold_logged: Dict[int, bool] = {}
+
+        # Don't build sprites in constructor - wait for handoff or explicit preparation
+        # This avoids position mismatches when handoff values differ from constructor values
+        
+        if self.debug:
+            print(f"[TEXT_QUALITY] Supersample factor: {self.supersample_factor}")
+
+    # -----------------------------
+    # Utilities / logging
+    # -----------------------------
+    def _log_pos(self, message: str):
+        if self.debug:
+            print(f"[POS_HANDOFF] {message}")
+
+    def _log_jump(self, message: str):
+        if self.debug:
+            print(f"[JUMP_CUT] {message}")
+
+    def _get_font(self, size: int) -> ImageFont.FreeTypeFont:
+        """Get font at specified size - prioritize vector fonts."""
+        candidates = []
+        if self.font_path:
+            candidates.append(self.font_path)
+        
+        # Environment overrides
+        for key in ("T3D_FONT", "TEXT_FONT", "FONT_PATH"):
+            p = os.environ.get(key)
+            if p:
+                candidates.append(p)
+        
+        # Common cross-OS paths
+        candidates += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ]
+        
+        for p in candidates:
+            try:
+                if p and os.path.isfile(p):
+                    if self.debug:
+                        print(f"[TEXT_QUALITY] Using TTF font: {p}")
+                    return ImageFont.truetype(p, size)
+            except Exception:
+                continue
+        
+        if self.debug:
+            print("[TEXT_QUALITY] WARNING: Falling back to PIL bitmap font (edges may look jagged). "
+                  "Install a TTF/OTF and pass font_path parameter.")
+        return ImageFont.load_default()
+
+    @staticmethod
+    def _smoothstep(t: float) -> float:
+        t = max(0.0, min(1.0, t))
+        return t * t * (3 - 2 * t)
+
+    # -----------------------------
+    # Rendering helpers
+    # -----------------------------
+    def _render_3d_letter(
+        self, letter: str, scale: float, alpha: float, depth_scale: float
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        from PIL import ImageFilter
+        
+        font_px = int(self.font_size * scale * self.supersample_factor)
+        font = self._get_font(font_px)
+
+        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        bbox = d.textbbox((0, 0), letter, font=font)
+        bbox_w = bbox[2] - bbox[0]
+        bbox_h = bbox[3] - bbox[1]
+
+        margin = int(self.depth_offset * self.depth_layers * self.supersample_factor)
+        width = bbox_w + 2 * margin
+        height = bbox_h + 2 * margin
+
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+
+        for i in range(self.depth_layers - 1, -1, -1):
+            depth_alpha = int(alpha * 255 * (0.3 + 0.7 * (1 - i / self.depth_layers)))
+            offset = int(i * self.depth_offset * depth_scale * self.supersample_factor)
+
+            if i == 0:
+                color = (*self.text_color, depth_alpha)
+            else:
+                factor = 0.7 - (i / self.depth_layers) * 0.4
+                color = tuple(int(c * factor) for c in self.depth_color) + (depth_alpha,)
+
+            x = -bbox[0] + margin + offset
+            y = -bbox[1] + margin + offset
+            
+            # Add stroke for front layer to improve antialiasing
+            if i == 0 and self.supersample_factor >= 4:
+                stroke_width = max(1, self.supersample_factor // 8)
+                draw.text((x, y), letter, font=font, fill=color, stroke_width=stroke_width, stroke_fill=color)
+            else:
+                draw.text((x, y), letter, font=font, fill=color)
+
+        # Apply Gaussian blur for antialiasing before downsampling
+        if self.supersample_factor >= 4:
+            blur_radius = self.supersample_factor / 5.0
+            canvas = canvas.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        # Progressive downsampling for better quality
+        if self.supersample_factor >= 8:
+            # Two-step downsampling for very high supersample factors
+            intermediate_size = (width // (self.supersample_factor // 2), height // (self.supersample_factor // 2))
+            canvas = canvas.resize(intermediate_size, Image.Resampling.LANCZOS)
+            
+            final_size = (intermediate_size[0] // 2, intermediate_size[1] // 2)
+            canvas = canvas.resize(final_size, Image.Resampling.LANCZOS)
+            
+            ax = int(round((-bbox[0] + margin) / self.supersample_factor))
+            ay = int(round((-bbox[1] + margin) / self.supersample_factor))
+        elif self.supersample_factor > 1:
+            new_size = (width // self.supersample_factor, height // self.supersample_factor)
+            canvas = canvas.resize(new_size, Image.Resampling.LANCZOS)
+            ax = int(round((-bbox[0] + margin) / self.supersample_factor))
+            ay = int(round((-bbox[1] + margin) / self.supersample_factor))
+        else:
+            ax = -bbox[0] + margin
+            ay = -bbox[1] + margin
+
+        return canvas, (ax, ay)
+
+    # -----------------------------
+    # Layout & order
+    # -----------------------------
+    def _prepare_letter_sprites_at_position(self, text_topleft: Tuple[int, int]):
+        """Prepare letter sprites at exact position from motion animation."""
+        # Use the provided position as the start position for text layout
+        start_x, start_y = text_topleft
+        
+        # Now layout letters from this exact position
+        font_px = int(self.font_size * self.initial_scale * self.supersample_factor)
+        font = self._get_font(font_px)
+        
+        current_x = start_x
+        visible_positions = []
+        
+        for letter in self.text:
+            if letter == ' ':
+                # Space
+                sprite = LetterSprite(
+                    char=' ',
+                    sprite_3d=None,
+                    position=(current_x, start_y),
+                    width=max(1, font_px // 3),
+                    height=1,
+                    anchor=(0, 0)
+                )
+                self.letter_sprites.append(sprite)
+                current_x += max(1, font_px // 3)
+            else:
+                # Render letter
+                sprite_3d, (ax, ay) = self._render_3d_letter(letter, self.initial_scale, 1.0, 1.0)
+                advance = int(sprite_3d.width * 1.1) if sprite_3d else font_px
+                
+                # Position letter at current x
+                paste_x = current_x
+                paste_y = start_y
+                
+                sprite = LetterSprite(
+                    char=letter,
+                    sprite_3d=sprite_3d,
+                    position=(paste_x, paste_y),
+                    width=sprite_3d.width if sprite_3d else 0,
+                    height=sprite_3d.height if sprite_3d else 0,
+                    anchor=(ax, ay)
+                )
+                self.letter_sprites.append(sprite)
+                visible_positions.append((current_x, start_y))
+                current_x += advance
+        
+        self._log_pos(f"Letter sprites created at exact motion position: start=({start_x},{start_y})")
+        self._log_pos(f"Letter positions: {visible_positions}")
+    
+    def _prepare_letter_sprites(self):
+        """Pre-render letter sprites and compute front-face layout."""
+        font_px = int(self.font_size * self.initial_scale)
+        font = self._get_font(font_px)
+
+        tmp = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tmp)
+        full_bbox = d.textbbox((0, 0), self.text, font=font)
+        text_width = full_bbox[2] - full_bbox[0]
+        text_height = full_bbox[3] - full_bbox[1]
+
+        cx, cy = self.initial_position
+        start_x = cx - text_width // 2
+        start_y = cy - text_height // 2
+
+        current_x = start_x
+        visible_positions: List[Tuple[int, int]] = []
+
+        self.letter_sprites = []
+        for letter in self.text:
+            if letter == ' ':
+                space_width = font_px // 3
+                sprite = LetterSprite(
+                    char=letter,
+                    sprite_3d=None,
+                    position=(current_x, start_y),
+                    width=space_width,
+                    height=0,
+                    anchor=(0, 0)
+                )
+                self.letter_sprites.append(sprite)
+                visible_positions.append((current_x, start_y))
+                current_x += space_width
+            else:
+                letter_bbox = d.textbbox((0, 0), letter, font=font)
+                advance = letter_bbox[2] - letter_bbox[0]
+
+                sprite_3d, (ax, ay) = self._render_3d_letter(letter, self.initial_scale, 1.0, 1.0)
+                paste_x = current_x - ax
+                paste_y = start_y - ay
+
+                sprite = LetterSprite(
+                    char=letter,
+                    sprite_3d=sprite_3d,
+                    position=(paste_x, paste_y),
+                    width=sprite_3d.width if sprite_3d else 0,
+                    height=sprite_3d.height if sprite_3d else 0,
+                    anchor=(ax, ay)
+                )
+                self.letter_sprites.append(sprite)
+                visible_positions.append((current_x, start_y))
+                current_x += advance
+
+        self._log_pos(
+            f"Dissolve layout -> center={self.initial_position}, front_text_bbox=({text_width},{text_height}), "
+            f"start_topleft=({start_x},{start_y})"
+        )
+        self._log_pos(f"Letter positions frozen at: {visible_positions}")
+
+    def _update_sprites_for_handoff(self):
+        """Update existing sprites for new scale while preserving positions."""
+        if not self.letter_sprites:
+            return
+            
+        # Re-render sprites at new scale but keep positions stable
+        for sprite in self.letter_sprites:
+            if sprite.char != ' ' and sprite.sprite_3d is not None:
+                # Store current visual center before re-rendering
+                old_center_x = sprite.position[0] + sprite.width // 2
+                old_center_y = sprite.position[1] + sprite.height // 2
+                
+                # Re-render at new scale
+                sprite_3d, (ax, ay) = self._render_3d_letter(sprite.char, self.initial_scale, 1.0, 1.0)
+                sprite.sprite_3d = sprite_3d
+                sprite.width = sprite_3d.width if sprite_3d else 0
+                sprite.height = sprite_3d.height if sprite_3d else 0
+                sprite.anchor = (ax, ay)
+                
+                # Adjust position to maintain the same visual center
+                # The visual center should stay exactly where it was
+                new_pos_x = old_center_x - sprite.width // 2
+                new_pos_y = old_center_y - sprite.height // 2
+                sprite.position = (new_pos_x, new_pos_y)
+                
+                if self.debug:
+                    print(f"[LETTER_SHIFT] '{sprite.char}': center preserved at ({old_center_x}, {old_center_y})")
+                    print(f"  New position: {sprite.position}, size: {sprite.width}x{sprite.height}")
+            elif sprite.char == ' ':
+                # Update space width proportionally
+                font_px = int(self.font_size * self.initial_scale)
+                sprite.width = max(1, font_px // 3)
+        
+        if self.debug:
+            print(f"[LETTER_SHIFT] Updated {len(self.letter_sprites)} sprites with preserved visual centers")
+    
+    def _init_dissolve_order(self):
+        if self.randomize_order:
+            indices = [i for i, ch in enumerate(self.text) if ch != ' ']
+            random.shuffle(indices)
+            self.dissolve_order = indices
+        else:
+            self.dissolve_order = [i for i, ch in enumerate(self.text) if ch != ' ']
+        self._log_pos(f"Dissolve order (excluding spaces): {self.dissolve_order}")
+
+    # -----------------------------
+    # Frame-accurate schedule
+    # -----------------------------
+    def _build_frame_timeline(self):
+        """Compute per-letter schedule in integer frames and log it."""
+        min_fade_frames = max(2, int(round(self.post_fade_seconds * self.fps)))
+        dissolve_frames = max(1, int(round(self.dissolve_duration * self.fps)))
+        self._timeline.clear()
+        self._entered_dissolve_logged.clear()
+        self._hold_logged.clear()
+
+        # 1) initial pass
+        for order_idx, letter_idx in enumerate(self.dissolve_order):
+            start_seconds = self.stable_duration + order_idx * self.dissolve_stagger
+            start_frame = int(round(start_seconds * self.fps))
+            hold_end = start_frame + max(0, self.pre_dissolve_hold_frames - 1)
+            end_frame = hold_end + dissolve_frames  # dissolve begins AFTER hold
+            fade_end = end_frame + min_fade_frames
+
+            # clamp into clip range
+            start_frame = max(0, min(self.total_frames - 1, start_frame))
+            hold_end = max(start_frame, min(self.total_frames - 1, hold_end))
+            end_frame = max(hold_end, min(self.total_frames - 1, end_frame))
+            fade_end = max(end_frame, min(self.total_frames - 1, fade_end))
+
+            self._timeline[letter_idx] = _LetterTiming(
+                start=start_frame,
+                hold_end=hold_end,
+                end=end_frame,
+                fade_end=fade_end,
+                order_index=order_idx
+            )
+
+        # 2) Optional pass to prevent gaps: ensure prev.fade_end >= next.start
+        if self.ensure_no_gap and len(self.dissolve_order) > 1:
+            for i in range(len(self.dissolve_order) - 1):
+                a = self._timeline[self.dissolve_order[i]]
+                b = self._timeline[self.dissolve_order[i + 1]]
+                if a.fade_end < b.start:
+                    # extend a.fade_end up to b.start
+                    new_fade_end = b.start
+                    self._timeline[self.dissolve_order[i]] = _LetterTiming(
+                        start=a.start, hold_end=a.hold_end, end=a.end,
+                        fade_end=new_fade_end, order_index=a.order_index
+                    )
+                    self._log_jump(
+                        f"Extended fade: letter#{i} fade_end {a.fade_end} -> {new_fade_end} to meet next.start {b.start}"
+                    )
+
+        # 3) Log schedule
+        lines = []
+        for i, idx in enumerate(self.dissolve_order):
+            t = self._timeline[idx]
+            ch = self.letter_sprites[idx].char if 0 <= idx < len(self.letter_sprites) else '?'
+            lines.append(
+                f"[JUMP_CUT] schedule[{i}] '{ch}' idx={idx}: start={t.start}, hold_end={t.hold_end}, "
+                f"end={t.end}, fade_end={t.fade_end}"
+            )
+        if self.debug:
+            print("\n".join(lines))
+
+    def debug_print_schedule(self):
+        """Public helper for tests."""
+        self._build_frame_timeline()
+
+    # -----------------------------
+    # External handoff
+    # -----------------------------
+    def set_initial_state(self, scale: float, position: Tuple[int, int], alpha: float = None,
+                          is_behind: bool = None, segment_mask: np.ndarray = None,
+                          rendered_text: Image.Image = None, text_topleft: Tuple[int, int] = None,
+                          letter_sprites: List[Any] = None):
+        # Store whether we already have sprites (to preserve positions)
+        has_existing_sprites = bool(self.letter_sprites)
+        
+        # If we have existing sprites, DO NOT re-render them
+        # Just keep using them as-is to avoid position shifts
+        if has_existing_sprites:
+            if self.debug:
+                print(f"[LETTER_SHIFT] Keeping {len(self.letter_sprites)} existing sprites WITHOUT re-rendering")
+                for sprite in self.letter_sprites:
+                    if sprite.char != ' ':
+                        center_x = sprite.position[0] + sprite.width // 2
+                        center_y = sprite.position[1] + sprite.height // 2
+                        print(f"  '{sprite.char}': pos={sprite.position}, size={sprite.width}x{sprite.height}, center=({center_x},{center_y})")
+            # Store base positions if not already stored
+            for sprite in self.letter_sprites:
+                if sprite.base_position is None:
+                    sprite.base_position = sprite.position
+        
+        # Update state with handoff values
+        self.initial_scale = scale
+        self.initial_position = position
+        if alpha is not None:
+            self.stable_alpha = max(0.0, min(1.0, alpha))
+        if is_behind is not None:
+            self.is_behind = is_behind
+        if segment_mask is not None:
+            self.segment_mask = segment_mask
+        
+        self._log_pos(f"Received handoff -> center={position}, scale={scale:.3f}, "
+                      f"alpha={self.stable_alpha:.3f}, is_behind={self.is_behind}")
+        
+        # If we have the exact rendered text position from motion, use it
+        if rendered_text is not None and text_topleft is not None:
+            self._log_pos(f"Using exact text position from motion: {text_topleft}")
+        
+        # If we have letter sprites from motion, use them directly!
+        if letter_sprites is not None and not has_existing_sprites:
+            self._log_pos(f"Using {len(letter_sprites)} letter sprites from motion animation")
+            self.letter_sprites = []
+            
+            # Convert motion sprites to our format, preserving exact positions
+            for motion_sprite in letter_sprites:
+                # Add spaces between words if needed
+                if len(self.letter_sprites) < len(self.text):
+                    expected_char = self.text[len(self.letter_sprites)]
+                    
+                    # Insert spaces as needed
+                    while expected_char == ' ' and len(self.letter_sprites) < len(self.text):
+                        space_sprite = LetterSprite(
+                            char=' ',
+                            sprite_3d=None,
+                            position=(0, 0),  # Position doesn't matter for spaces
+                            width=self.font_size // 3,
+                            height=1,
+                            anchor=(0, 0)
+                        )
+                        self.letter_sprites.append(space_sprite)
+                        if len(self.letter_sprites) < len(self.text):
+                            expected_char = self.text[len(self.letter_sprites)]
+                    
+                    # Now add the actual letter sprite
+                    if motion_sprite.char == expected_char:
+                        # Use the sprite directly with its exact position
+                        dissolve_sprite = LetterSprite(
+                            char=motion_sprite.char,
+                            sprite_3d=motion_sprite.sprite_3d,
+                            position=motion_sprite.position,
+                            width=motion_sprite.width,
+                            height=motion_sprite.height,
+                            anchor=motion_sprite.anchor
+                        )
+                        self.letter_sprites.append(dissolve_sprite)
+            
+            self._init_dissolve_order()
+        elif not has_existing_sprites:
+            # Create sprites if we don't have them yet
+            self.letter_sprites = []
+            self._prepare_letter_sprites()
+            self._init_dissolve_order()
+        
+        self._build_frame_timeline()
+
+    # -----------------------------
+    # Kill mask helper
+    # -----------------------------
+    def _add_dissolve_holes(self, letter_idx: int, progress_0_1: float):
+        sprite = self.letter_sprites[letter_idx]
+        if sprite.sprite_3d is None:
+            return
+        if letter_idx not in self.letter_kill_masks:
+            self.letter_kill_masks[letter_idx] = np.zeros(
+                (sprite.sprite_3d.height, sprite.sprite_3d.width), dtype=np.uint8
+            )
+        num_holes = int(progress_0_1 * 20)
+        for _ in range(num_holes):
+            x = np.random.randint(0, sprite.sprite_3d.width)
+            y = np.random.randint(0, sprite.sprite_3d.height)
+            radius = np.random.randint(2, 8)
+            cv2.circle(self.letter_kill_masks[letter_idx], (x, y), radius, 1, -1)
+
+    # -----------------------------
+    # Frame generation
+    # -----------------------------
+    def generate_frame(self, frame_number: int, background: np.ndarray) -> np.ndarray:
+        # Ensure sprites are created if not already (for standalone usage)
+        if not self.letter_sprites:
+            self._prepare_letter_sprites()
+            self._init_dissolve_order()
+            self._build_frame_timeline()
+        
+        frame = background.copy()
+        if frame.shape[2] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
+
+        # Optional dynamic mask when behind subject
+        current_mask = None
+        if self.is_behind:
+            # ALWAYS extract fresh mask for EVERY frame - NO CACHING!
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                from video.segmentation.segment_extractor import extract_foreground_mask
+                current_rgb = background[:, :, :3] if background.shape[2] == 4 else background
+                current_mask = extract_foreground_mask(current_rgb)
+                if current_mask.shape[:2] != (self.resolution[1], self.resolution[0]):
+                    current_mask = cv2.resize(current_mask, self.resolution, interpolation=cv2.INTER_LINEAR)
+                current_mask = cv2.GaussianBlur(current_mask, (3, 3), 0)
+                kernel = np.ones((3, 3), np.uint8)
+                current_mask = cv2.dilate(current_mask, kernel, iterations=1)
+                current_mask = (current_mask > 128).astype(np.uint8) * 255
+                if self.debug and frame_number % 10 == 0:
+                    self._log_pos(f"Dynamic mask extracted FRESH for frame {frame_number} - NO CACHE! (is_behind={self.is_behind})")
+            except Exception as e:
+                # Fallback to static mask if available, otherwise no masking
+                current_mask = self.segment_mask
+                if self.debug:
+                    self._log_pos(f"Failed to extract dynamic mask for frame {frame_number}: {e}")
+
+        canvas = Image.fromarray(frame)
+
+        # Helpful first-frame log
+        if self.debug and frame_number == 0 and self.letter_sprites:
+            s0 = self.letter_sprites[self.dissolve_order[0]]
+            self._log_pos(
+                f"Frame0 check -> first letter '{s0.char}' paste_topleft={s0.position}, anchor={s0.anchor}"
+            )
+
+        # Process letters
+        for idx in self.dissolve_order:
+            sprite = self.letter_sprites[idx]
+            if sprite.sprite_3d is None:
+                continue
+
+            timing = self._timeline[idx]
+            f = frame_number
+
+            # Determine phase by frame number (frame-accurate)
+            if f < timing.start:
+                phase = "stable"
+                alpha_mult = self.stable_alpha
+                scale = 1.0
+                float_y = 0
+                add_holes = False
+            elif timing.start <= f <= timing.hold_end:
+                # 1-frame (or more) safety hold at EXACT stable_alpha
+                if not self._hold_logged.get(idx):
+                    self._log_jump(
+                        f"'{sprite.char}' enters HOLD at frame {f} (alpha={self.stable_alpha:.3f})"
+                    )
+                    self._hold_logged[idx] = True
+                phase = "hold"
+                alpha_mult = self.stable_alpha
+                scale = 1.0
+                float_y = 0
+                add_holes = False
+            elif timing.hold_end < f <= timing.end:
+                # Dissolve begins AFTER hold; progress starts at ~0 on first dissolve frame
+                denom = max(1, (timing.end - timing.hold_end))
+                letter_t = (f - timing.hold_end) / denom
+                smooth_t = self._smoothstep(letter_t)
+                if not self._entered_dissolve_logged.get(idx):
+                    self._log_jump(
+                        f"'{sprite.char}' begins DISSOLVE at frame {f} "
+                        f"(t={letter_t:.3f}, alpha≈{self.stable_alpha * (1.0 - 0.98 * 0):.3f})"
+                    )
+                    self._entered_dissolve_logged[idx] = True
+                phase = "dissolve"
+                alpha_mult = self.stable_alpha * (1.0 - smooth_t * 0.98)  # approaches ~0.02*stable_alpha
+                scale = 1.0 + smooth_t * (self.max_dissolve_scale - 1.0)
+                float_y = -smooth_t * self.float_distance
+                add_holes = letter_t > 0.3
+                if add_holes:
+                    self._add_dissolve_holes(idx, letter_t)
+            elif timing.end < f <= timing.fade_end:
+                # Fade tail (guaranteed >= 2 frames)
+                fade_denom = max(1, (timing.fade_end - timing.end))
+                fade_t = (f - timing.end) / fade_denom
+                phase = "fade"
+                alpha_mult = self.stable_alpha * 0.02 * (1.0 - fade_t)
+                scale = self.max_dissolve_scale
+                float_y = -self.float_distance
+                add_holes = True
+                if idx not in self.letter_kill_masks:
+                    # ensure it's "holey" in fade
+                    self.letter_kill_masks[idx] = np.ones(
+                        (sprite.sprite_3d.height, sprite.sprite_3d.width), dtype=np.uint8
+                    )
+            else:
+                # Completely gone
+                continue
+
+            # Copy and transform sprite
+            sprite_img = sprite.sprite_3d.copy()
+            pos_x, pos_y = sprite.position
+            
+            # DEBUGGING: Track position changes
+            original_pos = (pos_x, pos_y)
+            
+            # FIXED: Calculate the visual center BEFORE scaling
+            # The visual center should remain constant during scaling
+            visual_center_x = pos_x + sprite.sprite_3d.width // 2
+            visual_center_y = pos_y + sprite.sprite_3d.height // 2
+            
+            # DEBUGGING: Log position before any transformations
+            if phase == "hold" and not hasattr(sprite, f"_logged_hold_pos_{frame_number}"):
+                print(f"[LETTER_SHIFT] Frame {frame_number}: '{sprite.char}' in HOLD phase")
+                print(f"  Position: {sprite.position}, Visual center: ({visual_center_x}, {visual_center_y})")
+                setattr(sprite, f"_logged_hold_pos_{frame_number}", True)
+
+            if scale != 1.0:
+                new_w = int(round(sprite_img.width * scale))
+                new_h = int(round(sprite_img.height * scale))
+                sprite_img = sprite_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                # FIXED: Maintain the visual center after scaling
+                # Position the scaled sprite so its center matches the original center
+                pos_x = visual_center_x - new_w // 2
+                pos_y = visual_center_y - new_h // 2
+                
+                # DEBUGGING: Log scale-based position adjustment
+                if abs(scale - 1.0) < 0.01 and not hasattr(sprite, "_logged_scale_start"):
+                    print(f"[LETTER_SHIFT] Frame {frame_number}: '{sprite.char}' START SCALING")
+                    print(f"  Scale: {scale:.4f}, Original pos: {original_pos}")
+                    print(f"  New dimensions: {new_w}x{new_h}, New pos: ({pos_x}, {pos_y})")
+                    print(f"  Position shift: dx={pos_x-original_pos[0]}, dy={pos_y-original_pos[1]}")
+                    setattr(sprite, "_logged_scale_start", True)
+
+            # Apply vertical float after scaling (keeps the center-based movement)
+            float_shift = int(round(float_y))
+            pos_y += float_shift
+            
+            # DEBUGGING: Log total position changes
+            if phase == "dissolve" and not hasattr(sprite, f"_logged_dissolve_{frame_number}"):
+                total_dx = pos_x - original_pos[0]
+                total_dy = pos_y - original_pos[1]
+                if abs(total_dx) > 0 or abs(total_dy) > 0:
+                    print(f"[LETTER_SHIFT] Frame {frame_number}: '{sprite.char}' POSITION CHANGED")
+                    print(f"  Phase: {phase}, Scale: {scale:.3f}, Float: {float_y:.1f}")
+                    print(f"  Original: {original_pos} → Final: ({pos_x}, {pos_y})")
+                    print(f"  Total shift: dx={total_dx}, dy={total_dy} (float_shift={float_shift})")
+                    setattr(sprite, f"_logged_dissolve_{frame_number}", True)
+            sprite_array = np.array(sprite_img)
+
+            # Apply kill mask if any (scaled to current sprite size)
+            if idx in self.letter_kill_masks and np.any(self.letter_kill_masks[idx]):
+                kill_mask = self.letter_kill_masks[idx]
+                if (sprite_img.width, sprite_img.height) != (kill_mask.shape[1], kill_mask.shape[0]):
+                    kill_mask = cv2.resize(kill_mask, (sprite_img.width, sprite_img.height),
+                                           interpolation=cv2.INTER_NEAREST)
+                sprite_array[:, :, 3] = (sprite_array[:, :, 3] * (1 - kill_mask)).astype(np.uint8)
+
+            # Overall alpha
+            sprite_array[:, :, 3] = (sprite_array[:, :, 3] * alpha_mult).astype(np.uint8)
+            sprite_img = Image.fromarray(sprite_array)
+
+            # Occlusion if behind subject
+            if self.is_behind and current_mask is not None:
+                sprite_np = np.array(sprite_img)
+                sp_h, sp_w = sprite_np.shape[:2]
+                y1 = max(0, int(pos_y)); y2 = min(self.resolution[1], int(pos_y) + sp_h)
+                x1 = max(0, int(pos_x)); x2 = min(self.resolution[0], int(pos_x) + sp_w)
+                sy1 = max(0, -int(pos_y)); sy2 = sy1 + (y2 - y1)
+                sx1 = max(0, -int(pos_x)); sx2 = sx1 + (x2 - x1)
+
+                if y2 > y1 and x2 > x1:
+                    mask_region = current_mask[y1:y2, x1:x2]
+                    sprite_alpha = sprite_np[sy1:sy2, sx1:sx2, 3].astype(np.float32)
+                    mask_factor = mask_region.astype(np.float32) / 255.0
+                    sprite_alpha *= (1.0 - mask_factor)
+                    sprite_np[sy1:sy2, sx1:sx2, 3] = sprite_alpha.astype(np.uint8)
+                    sprite_img = Image.fromarray(sprite_np)
+
+            canvas.paste(sprite_img, (int(pos_x), int(pos_y)), sprite_img)
+
+        result = np.array(canvas)
+        return result[:, :, :3] if result.shape[2] == 4 else result
+</content>
+</file>
+
+<file>
+<path>utils/animations/apply_3d_text_animation.py</path>
+<content>
+#!/usr/bin/env python3
+"""
+Apply 3D text motion + dissolve to any video with **high-quality edges**.
+
+Key improvements:
+- Always use a vector font (via --font) or robust auto-discovery. Logs with [TEXT_QUALITY].
+- Lossless PNG intermediate to avoid mid-pipeline compression loss.
+- Final encode in 4:4:4 (yuv444p) or RGB (libx264rgb) to preserve colored edges.
+- Debug logs to verify quality choices.
+
+Usage examples:
+  python apply_3d_text_animation.py input.mp4 --text "AWESOME" \
+      --font "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" \
+      --pixfmt yuv444p --crf 18 --preset slow --supersample 12 --debug
+
+  python apply_3d_text_animation.py input.mp4 --text "AI" --pixfmt rgb24 \
+      --font "/Library/Fonts/Arial.ttf" --supersample 12
+"""
+
+import cv2
+import numpy as np
+import subprocess
+import argparse
+import shutil
+import os
+from pathlib import Path
+from text_3d_motion import Text3DMotion
+from letter_3d_dissolve import Letter3DDissolve
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from text_placement.optimal_position_finder import OptimalTextPositionFinder, estimate_text_size
+
+
+def parse_position(position_str, width, height):
+    positions = {
+        'center': (width // 2, height // 2),
+        'top': (width // 2, height // 4),
+        'bottom': (width // 2, 3 * height // 4),
+        'left': (width // 4, height // 2),
+        'right': (3 * width // 4, height // 2),
+        'top-left': (width // 4, height // 4),
+        'top-right': (3 * width // 4, height // 4),
+        'bottom-left': (width // 4, 3 * height // 4),
+        'bottom-right': (3 * width // 4, 3 * height // 4),
+    }
+    if position_str in positions:
+        return positions[position_str]
+    try:
+        x, y = map(int, position_str.split(','))
+        return (x, y)
+    except Exception:
+        print(f"[JUMP_CUT] Warning: Invalid position '{position_str}', using center")
+        return positions['center']
+
+
+def extract_foreground_mask_safe(frame):
+    try:
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from video.segmentation.segment_extractor import extract_foreground_mask
+        mask = extract_foreground_mask(frame)
+        print(f"[JUMP_CUT] Foreground mask extracted: {mask.shape}")
+        return mask
+    except Exception as e:
+        print(f"[JUMP_CUT] No foreground mask (text won't go behind objects): {e}")
+        return None
+
+
+def apply_animation_to_video(
+    video_path,
+    text="HELLO WORLD",
+    output_path=None,
+    motion_duration=0.75,
+    dissolve_duration=1.5,
+    position='center',
+    final_opacity=0.5,
+    font_size=140,
+    text_color=(255, 220, 0),
+    start_scale=2.0,
+    end_scale=1.0,
+    final_scale=0.9,
+    loop=False,
+    extract_mask=True,
+    supersample=12,
+    font_path=None,
+    pixfmt="yuv444p",        # yuv444p | yuv420p | yuv422p | rgb24
+    crf=18,
+    preset="slow",
+    tune=None,               # e.g., "animation" or None
+    keep_frames=False,
+    auto_position=False,    # NEW: automatically find optimal position
+    debug=False
+):
+    """
+    Apply 3D text animation to a video file and encode with crisp edges.
+
+    Returns: Path to final mp4 file.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError(f"Could not open video: {video_path}")
+
+    fps = int(round(cap.get(cv2.CAP_PROP_FPS))) or 30
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    video_duration = total_frames / fps
+
+    print(f"[JUMP_CUT] Input video: {video_path}")
+    print(f"[JUMP_CUT] Resolution: {width}x{height}, FPS: {fps}")
+    print(f"[JUMP_CUT] Duration: {video_duration:.2f}s ({total_frames} frames)")
+    print(f"[JUMP_CUT] Text: '{text}'")
+    print(f"[TEXT_QUALITY] Supersample requested: {supersample}")
+    if font_path:
+        print(f"[TEXT_QUALITY] Font path requested: {font_path}")
+
+    # Determine text position
+    if auto_position:
+        print(f"[TEXT_PLACEMENT] Finding optimal position for text placement...")
+        
+        # Estimate text size for analysis
+        text_width, text_height = estimate_text_size(text, font_size, final_scale)
+        motion_frames = int(round(motion_duration * fps))
+        
+        # Find optimal position
+        position_finder = OptimalTextPositionFinder(
+            text_width=text_width,
+            text_height=text_height,
+            motion_frames=motion_frames,
+            sample_rate=3,
+            grid_divisions=6,  # 6x6 grid for faster processing
+            debug=debug
+        )
+        
+        try:
+            text_position = position_finder.find_optimal_position(
+                video_path,
+                prefer_center=True,
+                center_weight=0.15  # Slight preference for center
+            )
+            print(f"[TEXT_PLACEMENT] Optimal position found: {text_position}")
+        except Exception as e:
+            print(f"[TEXT_PLACEMENT] Failed to find optimal position: {e}")
+            print(f"[TEXT_PLACEMENT] Falling back to center position")
+            text_position = (width // 2, height // 2)
+    else:
+        text_position = parse_position(position, width, height)
+    
+    print(f"[JUMP_CUT] Text position: {text_position}")
+
+    motion_frames = int(round(motion_duration * fps))
+    dissolve_frames = int(round(dissolve_duration * fps))
+    animation_frames = motion_frames + dissolve_frames
+    animation_duration = animation_frames / fps
+
+    print(f"[JUMP_CUT] Animation: {animation_duration:.2f}s ({animation_frames} frames)")
+    print(f"[JUMP_CUT]   Motion: {motion_duration:.2f}s ({motion_frames} frames)")
+    print(f"[JUMP_CUT]   Dissolve: {dissolve_duration:.2f}s ({dissolve_frames} frames)")
+
+    # Optional foreground mask from first frame
+    segment_mask = None
+    if extract_mask:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        ret, first_frame = cap.read()
+        if ret:
+            first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+            segment_mask = extract_foreground_mask_safe(first_frame_rgb)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    # Create animations (pass font_path to ensure vector font usage)
+    motion = Text3DMotion(
+        duration=motion_duration, fps=fps, resolution=(width, height),
+        text=text, segment_mask=segment_mask, font_size=font_size,
+        text_color=text_color, depth_color=tuple(int(c * 0.8) for c in text_color),
+        depth_layers=8, depth_offset=3,
+        start_scale=start_scale, end_scale=end_scale, final_scale=final_scale,
+        start_position=text_position, end_position=text_position,
+        shrink_duration=motion_duration * 0.8, settle_duration=motion_duration * 0.2,
+        final_alpha=final_opacity, shadow_offset=6, outline_width=2,
+        perspective_angle=0, supersample_factor=supersample,
+        glow_effect=True, font_path=font_path, debug=debug,
+    )
+
+    dissolve = Letter3DDissolve(
+        duration=dissolve_duration, fps=fps, resolution=(width, height),
+        text=text, font_size=font_size,
+        text_color=text_color, depth_color=tuple(int(c * 0.8) for c in text_color),
+        depth_layers=8, depth_offset=3,
+        initial_scale=final_scale, initial_position=text_position,
+        stable_duration=0.1, stable_alpha=final_opacity,
+        dissolve_duration=0.5, dissolve_stagger=0.1,
+        float_distance=40, max_dissolve_scale=1.3,
+        randomize_order=False, segment_mask=segment_mask, is_behind=False,
+        shadow_offset=6, outline_width=2, supersample_factor=supersample,
+        post_fade_seconds=0.10, pre_dissolve_hold_frames=1, ensure_no_gap=True,
+        font_path=font_path, debug=debug,
+    )
+
+    # Prepare frames directory for lossless PNG intermediate
+    if output_path is None:
+        input_path = Path(video_path)
+        output_path = input_path.parent / f"{input_path.stem}_3d_text.mp4"
+    output_path = Path(output_path)
+
+    frames_dir = output_path.parent / f"{output_path.stem}_frames_tmp"
+    if frames_dir.exists():
+        shutil.rmtree(frames_dir)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[TEXT_QUALITY] Using lossless PNG intermediate: {frames_dir}")
+
+    print(f"[JUMP_CUT] Rendering frames...")
+    frame_count = 0
+    animation_cycle = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        if loop:
+            anim_frame = frame_count % animation_frames
+            if anim_frame == 0 and frame_count > 0:
+                animation_cycle += 1
+                print(f"[JUMP_CUT] Starting animation cycle {animation_cycle + 1}")
+        else:
+            anim_frame = frame_count if frame_count < animation_frames else -1
+
+        if anim_frame >= 0:
+            if anim_frame < motion_frames:
+                frame_rgb = motion.generate_frame(anim_frame, frame_rgb)
+                if anim_frame == motion_frames - 1:
+                    final_state = motion.get_final_state()
+                    if final_state and (frame_count < motion_frames or loop):
+                        if debug:
+                            print(f"[JUMP_CUT] Handoff at frame {frame_count}: "
+                                  f"center={final_state.center_position}, scale={final_state.scale:.3f}, "
+                                  f"alpha={final_state.alpha:.3f}")
+                        dissolve.set_initial_state(
+                            scale=final_state.scale,
+                            position=final_state.center_position,
+                            alpha=final_state.alpha,  # Use the alpha from motion's final state
+                            is_behind=final_state.is_behind,
+                            segment_mask=segment_mask,
+                            letter_sprites=final_state.letter_sprites  # Pass the letter sprites!
+                        )
+            else:
+                dissolve_frame = anim_frame - motion_frames
+                frame_rgb = dissolve.generate_frame(dissolve_frame, frame_rgb)
+
+        # Save as PNG (lossless)
+        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        png_path = frames_dir / f"frame_{frame_count:06d}.png"
+        cv2.imwrite(str(png_path), frame_bgr, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+
+        frame_count += 1
+        if frame_count % (fps * 5) == 0:
+            progress = (frame_count / total_frames) * 100
+            print(f"[JUMP_CUT] Progress: {progress:.1f}% ({frame_count}/{total_frames} frames)")
+
+    cap.release()
+
+    # Final encode from PNG sequence
+    final_out = output_path.parent / f"{output_path.stem}_hq.mp4"
+    codec = "libx264rgb" if pixfmt.lower() == "rgb24" else "libx264"
+    pixfmt_arg = "rgb24" if pixfmt.lower() == "rgb24" else pixfmt
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-framerate", str(fps),
+        "-i", str(frames_dir / "frame_%06d.png"),
+        "-s", f"{width}x{height}",
+        "-c:v", codec,
+        "-preset", preset,
+        "-crf", str(crf),
+        "-pix_fmt", pixfmt_arg,
+        "-movflags", "+faststart",
+        str(final_out)
+    ]
+    if tune:
+        # insert after codec args
+        cmd.insert(cmd.index("-crf"), "-tune")
+        cmd.insert(cmd.index("-tune") + 1, tune)
+
+    print(f"[TEXT_QUALITY] Final encode: codec={codec} pix_fmt={pixfmt_arg} crf={crf} preset={preset} "
+          f"{'(tune=' + tune + ')' if tune else ''}")
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(e.stderr.decode("utf-8", errors="ignore"))
+        raise
+
+    # Cleanup
+    if not keep_frames:
+        try:
+            shutil.rmtree(frames_dir)
+        except Exception:
+            pass
+
+    print(f"[JUMP_CUT] ✅ Final video: {final_out}")
+    print(f"[TEXT_QUALITY] To verify pixel format, run:")
+    print(f"  ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=nw=1:nk=1 {final_out}")
+    return str(final_out)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Apply 3D text animation to any video (high-quality edges).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s video.mp4
+  %(prog)s video.mp4 --text "AWESOME" --font "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+  %(prog)s video.mp4 --text "SUBSCRIBE" --position bottom --loop
+  %(prog)s video.mp4 --text "2024" --color 255,0,0 --size 200 --pixfmt yuv444p
+  %(prog)s video.mp4 --position 100,200 --motion-duration 2.0 --supersample 12
+        """
+    )
+
+    parser.add_argument('video', help='Input video file path')
+    parser.add_argument('--text', default='HELLO WORLD', help='Text to animate (default: HELLO WORLD)')
+    parser.add_argument('--output', '-o', help='Output video path base name (we add _hq.mp4)')
+
+    # Timing
+    parser.add_argument('--motion-duration', type=float, default=0.75, help='Motion phase duration (sec)')
+    parser.add_argument('--dissolve-duration', type=float, default=1.5, help='Dissolve phase duration (sec)')
+    parser.add_argument('--loop', action='store_true', help='Loop animation throughout video')
+
+    # Position
+    parser.add_argument('--position', '-p', default='center',
+                        help='Text position: center, top, bottom, left, right, or x,y (default: center)')
+    parser.add_argument('--auto-position', action='store_true',
+                        help='Automatically find optimal position for maximum visibility')
+
+    # Appearance
+    parser.add_argument('--size', type=int, default=140, help='Font size (default: 140)')
+    parser.add_argument('--color', default='255,220,0', help='Text color as R,G,B (default: 255,220,0)')
+    parser.add_argument('--opacity', type=float, default=0.5, help='Final text opacity 0.0-1.0 (default: 0.5)')
+    parser.add_argument('--start-scale', type=float, default=2.0, help='Initial scale of text')
+    parser.add_argument('--end-scale', type=float, default=1.0, help='Scale at end of motion')
+    parser.add_argument('--final-scale', type=float, default=0.9, help='Final scale during dissolve')
+
+    # Quality / system options
+    parser.add_argument('--no-mask', action='store_true',
+                        help="Disable foreground mask extraction (text won't go behind objects)")
+    parser.add_argument('--supersample', type=int, default=12,
+                        help='Supersampling factor for text quality, higher=better (default: 12)')
+    parser.add_argument('--font', help='Path to a TTF/OTF font (recommended).')
+    parser.add_argument('--pixfmt', default='yuv444p', choices=['yuv444p', 'yuv422p', 'yuv420p', 'rgb24'],
+                        help='Pixel format for final encode (yuv444p recommended).')
+    parser.add_argument('--crf', type=int, default=18, help='CRF for x264 (lower=better). Default: 18')
+    parser.add_argument('--preset', default='slow', help='x264 preset (ultrafast..placebo). Default: slow')
+    parser.add_argument('--tune', default=None, help='x264 tune, e.g., animation, film, grain (optional)')
+    parser.add_argument('--keep-frames', action='store_true', help='Keep PNG frames (debugging).')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+
+    args = parser.parse_args()
+
+    try:
+        color = tuple(map(int, args.color.split(',')))
+        if len(color) != 3 or any(c < 0 or c > 255 for c in color):
+            raise ValueError
+    except Exception:
+        print(f"[JUMP_CUT] Warning: Invalid color '{args.color}', using default")
+        color = (255, 220, 0)
+
+    try:
+        output = apply_animation_to_video(
+            video_path=args.video,
+            text=args.text,
+            output_path=args.output,
+            motion_duration=args.motion_duration,
+            dissolve_duration=args.dissolve_duration,
+            position=args.position,
+            final_opacity=args.opacity,
+            font_size=args.size,
+            text_color=color,
+            start_scale=args.start_scale,
+            end_scale=args.end_scale,
+            final_scale=args.final_scale,
+            loop=args.loop,
+            extract_mask=not args.no_mask,
+            supersample=args.supersample,
+            font_path=args.font,
+            pixfmt=args.pixfmt,
+            crf=args.crf,
+            preset=args.preset,
+            tune=args.tune,
+            keep_frames=args.keep_frames,
+            auto_position=args.auto_position,
+            debug=args.debug
+        )
+        print(f"\n✅ Success! Output saved to: {output}")
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    exit(main())
+</content>
+</file>
+
+</relevant_files>
+</issue_context>

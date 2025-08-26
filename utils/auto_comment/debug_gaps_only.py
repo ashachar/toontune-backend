@@ -57,7 +57,7 @@ def find_audio_file(remark_text, audio_file_hint=None):
     clean_text = remark_text.lower().replace("?", "").replace(".", "").strip()
     
     possible_paths = [
-        Path(f"uploads/assets/sounds/snark_remarks/{clean_text}.mp3"),
+        Path(f"uploads/assets/sounds/comments_audio/{clean_text}.mp3"),
         Path(f"uploads/assets/videos/ai_math1/{audio_file_hint}") if audio_file_hint else None,
     ]
     

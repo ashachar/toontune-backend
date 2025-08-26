@@ -15,11 +15,12 @@ Intelligently collect relevant project files for an issue and create an XML cont
 
 When this command is invoked, Claude will:
 1. **Capture the COMPLETE user input** - problem, proposed solutions, hints, directions, everything
-2. **Analyze the issue** to understand what the problem is about
-3. **Decide on a short, descriptive issue prefix** for debug logging (5-15 characters, all caps with underscores)
-4. **Search for relevant files** using Grep, Glob, and other tools to find ONLY directly relevant code files
-5. **Curate a focused list** of the most relevant files (typically 5-20 files max)
-6. **Call the XML generation script** with the FULL user input (not summarized), issue prefix, and specific file paths
+2. **Add session context** - Include relevant context from the current conversation that would help another LLM understand the issue (what was tried, what partially worked, related fixes, etc.)
+3. **Analyze the issue** to understand what the problem is about
+4. **Decide on a short, descriptive issue prefix** for debug logging (5-15 characters, all caps with underscores)
+5. **Search for relevant files** using Grep, Glob, and other tools to find ONLY directly relevant code files
+6. **Curate a focused list** of the most relevant files (typically 5-20 files max)
+7. **Call the XML generation script** with the ENRICHED issue description (user input + session context), issue prefix, and specific file paths
 
 The Python script (`create_issue_xml.py`) is 100% DETERMINISTIC and only:
 - Takes the COMPLETE user input as the issue description
@@ -37,11 +38,22 @@ The XML output will include a `<debugging>` tag that specifies:
 - All debug prints must follow the structure: `[ISSUE_PREFIX] message`
 - Example: `[ANIM_HANDOFF] Letter positions frozen at: [(350, 180), (375, 180), ...]`
 
+## Session Context Guidelines
+When enriching the issue description with session context, include:
+- **What was already tried**: Previous fixes that were attempted in this session
+- **Partial solutions**: Changes that helped but didn't fully resolve the issue  
+- **Related problems**: Other issues that were discovered or fixed along the way
+- **Current state**: What the code currently does vs. what it should do
+- **Technical details**: Specific line numbers, function names, or values that were identified as problematic
+
+The enriched description should be self-contained so another LLM can understand the full context without access to the conversation history.
+
 ## Examples
 ```
 /summarize "text animation position jump when transitioning. I think we should store the final positions and pass them to the next animation"
+# Claude adds context: "During 3D text animation handoff from motion to dissolve at frame 19, there's an opacity jump from gradually reduced alpha to stable_alpha. Already fixed MotionState to include alpha field and pass it through, but letters still show blink effect in hold phase."
 # Claude decides issue prefix: "ANIM_HANDOFF"
-# Claude passes FULL input including the solution suggestion
+# Claude passes ENRICHED input with both user request and session context
 # Claude finds: utils/animations/text_behind_segment.py, utils/animations/word_dissolve.py, test_refactored_animations.py
 
 /summarize "START text not rendering behind person"

@@ -1,0 +1,96 @@
+[JUMP_CUT] Input video: test_final_182.mp4
+[JUMP_CUT] Resolution: 1280x720, FPS: 25
+[JUMP_CUT] Duration: 10.08s (252 frames)
+[JUMP_CUT] Text: 'A'
+[TEXT_QUALITY] Supersample requested: 12
+[JUMP_CUT] Text position: (640, 360)
+[JUMP_CUT] Animation: 2.28s (57 frames)
+[JUMP_CUT]   Motion: 0.75s (19 frames)
+[JUMP_CUT]   Dissolve: 1.50s (38 frames)
+[JUMP_CUT] Foreground mask extracted: (720, 1280)
+[Text3DMotion] Prepared 1 letter sprites
+[TEXT_QUALITY] Supersample factor: 12
+[TEXT_QUALITY] Using lossless PNG intermediate: outputs/test_debug_alpha_frames_tmp
+[JUMP_CUT] Rendering frames...
+[Text3DMotion] Frame 5: Dynamic mask extracted
+[Text3DMotion] Frame 10: Dynamic mask extracted
+[Text3DMotion] Frame 15: Dynamic mask extracted
+[Text3DMotion] Final state stored with 1 letter sprites
+[JUMP_CUT] Handoff at frame 18: center=(640, 360), scale=0.926, alpha=0.630
+[OPACITY_BLINK] Handoff received. motion_final_alpha=0.630 -> dissolve.stable_alpha=0.630
+[POS_HANDOFF] Received handoff -> center=(640, 360), scale=0.926, alpha=0.630, is_behind=True
+[POS_HANDOFF] Using 1 letter sprites from motion animation
+[POS_HANDOFF] Dissolve order (excluding spaces): [0]
+[JUMP_CUT] schedule[0] 'A' idx=0: start=2, hold_end=2, end=14, fade_end=16
+[OPACITY_BLINK] Relative alpha multiplier at dissolve start = target(0.630) / incoming(0.630) = 1.000
+[POS_HANDOFF] Dynamic mask extracted FRESH for frame 0 - NO CACHE! (is_behind=True)
+[POS_HANDOFF] Frame0 check -> first letter 'A' paste_topleft=(586, 303), anchor=(0, 0)
+[OPACITY_BLINK] First dissolve frame expects effective alpha ~= 0.630 (sprites premultiplied by 0.630)
+[OPACITY_BLINK] frame=0 letter='A' phase=stable target_alpha=0.630 incoming=0.630 relative_mult=1.000
+[JUMP_CUT] 'A' enters HOLD at frame 2 (alpha=0.630)
+[LETTER_SHIFT] Frame 2: 'A' in HOLD phase
+  Position: (586, 303), Visual center: (640, 360)
+[OPACITY_BLINK] frame=2 letter='A' phase=hold target_alpha=0.630 incoming=0.630 relative_mult=1.000
+[JUMP_CUT] 'A' begins DISSOLVE at frame 3 (t=0.083, alpha≈0.630)
+[LETTER_SHIFT] Frame 3: 'A' START SCALING
+  Scale: 1.0059, Original pos: (586, 303)
+  New dimensions: 109x115, New pos: (586, 303)
+  Position shift: dx=0, dy=0
+[LETTER_SHIFT] Frame 3: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.006, Float: -0.8
+  Original: (586, 303) → Final: (586, 302)
+  Total shift: dx=0, dy=-1 (float_shift=-1)
+[LETTER_SHIFT] Frame 4: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.022, Float: -3.0
+  Original: (586, 303) → Final: (585, 299)
+  Total shift: dx=-1, dy=-4 (float_shift=-3)
+[LETTER_SHIFT] Frame 5: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.047, Float: -6.2
+  Original: (586, 303) → Final: (584, 295)
+  Total shift: dx=-2, dy=-8 (float_shift=-6)
+[LETTER_SHIFT] Frame 6: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.078, Float: -10.4
+  Original: (586, 303) → Final: (582, 289)
+  Total shift: dx=-4, dy=-14 (float_shift=-10)
+[LETTER_SHIFT] Frame 7: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.113, Float: -15.0
+  Original: (586, 303) → Final: (580, 282)
+  Total shift: dx=-6, dy=-21 (float_shift=-15)
+[LETTER_SHIFT] Frame 8: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.150, Float: -20.0
+  Original: (586, 303) → Final: (578, 275)
+  Total shift: dx=-8, dy=-28 (float_shift=-20)
+[LETTER_SHIFT] Frame 9: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.187, Float: -25.0
+  Original: (586, 303) → Final: (576, 268)
+  Total shift: dx=-10, dy=-35 (float_shift=-25)
+[POS_HANDOFF] Dynamic mask extracted FRESH for frame 10 - NO CACHE! (is_behind=True)
+[LETTER_SHIFT] Frame 10: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.222, Float: -29.6
+  Original: (586, 303) → Final: (574, 261)
+  Total shift: dx=-12, dy=-42 (float_shift=-30)
+[LETTER_SHIFT] Frame 11: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.253, Float: -33.8
+  Original: (586, 303) → Final: (573, 255)
+  Total shift: dx=-13, dy=-48 (float_shift=-34)
+[LETTER_SHIFT] Frame 12: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.278, Float: -37.0
+  Original: (586, 303) → Final: (571, 250)
+  Total shift: dx=-15, dy=-53 (float_shift=-37)
+[LETTER_SHIFT] Frame 13: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.294, Float: -39.2
+  Original: (586, 303) → Final: (570, 247)
+  Total shift: dx=-16, dy=-56 (float_shift=-39)
+[LETTER_SHIFT] Frame 14: 'A' POSITION CHANGED
+  Phase: dissolve, Scale: 1.300, Float: -40.0
+  Original: (586, 303) → Final: (570, 246)
+  Total shift: dx=-16, dy=-57 (float_shift=-40)
+[POS_HANDOFF] Dynamic mask extracted FRESH for frame 20 - NO CACHE! (is_behind=True)
+[POS_HANDOFF] Dynamic mask extracted FRESH for frame 30 - NO CACHE! (is_behind=True)
+[JUMP_CUT] Progress: 49.6% (125/252 frames)
+[TEXT_QUALITY] Final encode: codec=libx264 pix_fmt=yuv444p crf=18 preset=slow 
+[JUMP_CUT] ✅ Final video: outputs/test_debug_alpha_hq.mp4
+[TEXT_QUALITY] To verify pixel format, run:
+  ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=nw=1:nk=1 outputs/test_debug_alpha_hq.mp4
+
+✅ Success! Output saved to: outputs/test_debug_alpha_hq.mp4

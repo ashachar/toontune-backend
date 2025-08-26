@@ -1,1 +1,0 @@
-export REPLICATE_API_TOKEN='your-token-here'

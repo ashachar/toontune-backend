@@ -41,7 +41,7 @@ class VideoProcessor:
     
     def create_video_with_speed_adjustments(
         self, 
-        snarks_with_pausing: List[Dict], 
+        comments_with_pausing: List[Dict], 
         mixed_audio_path: Path, 
         output_path: Path
     ):
@@ -49,7 +49,7 @@ class VideoProcessor:
         print("  🎬 Applying speed adjustments...")
         
         # Separate remarks by whether they need slowdown
-        all_remarks = sorted(snarks_with_pausing, key=lambda x: x["snark"].time)
+        all_remarks = sorted(comments_with_pausing, key=lambda x: x["comment"].time)
         
         # Check if any need slowdown
         if not any(s["needs_slowdown"] for s in all_remarks):
@@ -95,18 +95,18 @@ class VideoProcessor:
         print(f"  {'='*60}")
         
         for item in all_remarks:
-            snark = item["snark"]
+            comment = item["comment"]
             gap_duration = item["gap_duration"]
             remark_duration = item["duration"]
             speed_factor = item["speed_factor"]
             
-            print(f"  • Remark '{snark.text}':")
+            print(f"  • Remark '{comment.text}':")
             print(f"    - Gap: {gap_duration:.2f}s, Remark: {remark_duration:.2f}s")
             
             if speed_factor < 1.0:
                 speed_pct = speed_factor * 100
                 print(f"    - Speed: {speed_pct:.1f}% (slowed by {100-speed_pct:.1f}%)")
-                print(f"    - Video at {snark.time:.2f}s slowed to stretch {gap_duration:.2f}s → {remark_duration:.2f}s")
+                print(f"    - Video at {comment.time:.2f}s slowed to stretch {gap_duration:.2f}s → {remark_duration:.2f}s")
             else:
                 print(f"    - Speed: 100% (normal - remark fits in gap)")
         
@@ -124,8 +124,8 @@ class VideoProcessor:
         print(f"  {'='*60}")
         
         for i, item in enumerate(all_remarks):
-            snark = item["snark"]
-            gap_start = snark.time
+            comment = item["comment"]
+            gap_start = comment.time
             gap_duration = item["gap_duration"]
             speed_factor = item["speed_factor"]
             remark_duration = item["duration"]
@@ -158,13 +158,13 @@ class VideoProcessor:
                 print(f"     Source: [{gap_start:.3f}s for {gap_duration:.3f}s]")
                 print(f"     Output: {output_duration:.3f}s @ {speed_factor*100:.1f}% speed")
                 print(f"     Output: [{output_time:.3f}s → {output_time + output_duration:.3f}s]")
-                print(f"     Remark: '{snark.text}' ({remark_duration:.3f}s)")
+                print(f"     Remark: '{comment.text}' ({remark_duration:.3f}s)")
                 output_time += output_duration
             else:
                 print(f"  📦 Segment {segment_idx:02d} [GAP]:")
                 print(f"     Source: [{gap_start:.3f}s for {gap_duration:.3f}s]")
                 print(f"     Output: [{output_time:.3f}s → {output_time + gap_duration:.3f}s]")
-                print(f"     Remark: '{snark.text}' ({remark_duration:.3f}s)")
+                print(f"     Remark: '{comment.text}' ({remark_duration:.3f}s)")
                 output_time += gap_duration
             
             from utils.auto_comment.pipeline.video_utils import create_gap_segment

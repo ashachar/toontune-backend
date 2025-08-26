@@ -5,8 +5,8 @@ import random
 import requests
 from typing import List, Dict, Optional, Set, Tuple
 
-from utils.auto_comment.pipeline.models import Snark, SilenceGap
-from utils.auto_comment.pipeline.config import GEMINI_API_KEY, GEMINI_MODEL, MAX_SNARKS
+from utils.auto_comment.pipeline.models import Comment, SilenceGap
+from utils.auto_comment.pipeline.config import GEMINI_API_KEY, GEMINI_MODEL, MAX_COMMENTS
 
 
 class CommentGenerator:
@@ -17,13 +17,13 @@ class CommentGenerator:
         self.field_cache = None
         self.expertise_level = None
         
-    def generate_contextual_snarks(
+    def generate_contextual_comments(
         self, 
         transcript: Dict, 
         gaps: List[SilenceGap]
-    ) -> List[Snark]:
+    ) -> List[Comment]:
         """Generate sophisticated, context-aware professional comments."""
-        print("🤖 Generating contextual snarks...")
+        print("🤖 Generating contextual comments...")
         
         # First, analyze the field and expertise level
         if self.gemini_key:
@@ -31,11 +31,18 @@ class CommentGenerator:
             print(f"  📚 Detected field: {self.field_cache}")
             print(f"  🎓 Expertise level: {self.expertise_level}")
         
-        snarks = []
+        comments = []
         used_texts = set()
+        last_comment_time = -float('inf')  # Track time of last added comment
         
         # Process gaps for sophisticated comments
-        for i, gap in enumerate(gaps[:MAX_SNARKS]):
+        for i, gap in enumerate(gaps[:MAX_COMMENTS]):
+            # CRITICAL: Enforce 20-second minimum gap between consecutive comments
+            time_since_last = gap.start - last_comment_time
+            if time_since_last < 20.0:
+                print(f"  ⏭️ Skipping gap at {gap.start:.1f}s (only {time_since_last:.1f}s since last comment, need 20s)")
+                continue
+            
             # Get surrounding context (before and after the gap)
             context_before, context_after = self._get_surrounding_context(
                 transcript, gap.start, gap.duration
@@ -43,7 +50,7 @@ class CommentGenerator:
             
             # Generate sophisticated comment
             if self.gemini_key:
-                snark = self._generate_sophisticated_comment(
+                comment = self._generate_sophisticated_comment(
                     context_before, 
                     context_after, 
                     gap.duration, 
@@ -52,23 +59,24 @@ class CommentGenerator:
                     is_end=(i == len(gaps) - 1)
                 )
             else:
-                snark = self._get_sophisticated_fallback(
+                comment = self._get_sophisticated_fallback(
                     context_before, gap.duration, used_texts
                 )
             
-            if snark and snark["text"].lower() not in used_texts:
-                snarks.append(Snark(
-                    text=snark["text"],
+            if comment and comment["text"].lower() not in used_texts:
+                comments.append(Comment(
+                    text=comment["text"],
                     time=gap.start + 0.2,
-                    emotion=snark["emotion"],
+                    emotion=comment["emotion"],
                     context=context_before[:50] if context_before else "",
                     gap_duration=gap.duration
                 ))
-                used_texts.add(snark["text"].lower())
-                print(f"  ✨ New: \"{snark['text']}\" ({snark['emotion']})")
+                used_texts.add(comment["text"].lower())
+                last_comment_time = gap.start  # Update time of last added comment
+                print(f"  ✨ New: \"{comment['text']}\" ({comment['emotion']}) at {gap.start:.1f}s")
         
-        print(f"✅ Total snarks: {len(snarks)} (0 reused, {len(snarks)} new)")
-        return snarks
+        print(f"✅ Total comments: {len(comments)} (0 reused, {len(comments)} new)")
+        return comments
     
     def _detect_field_and_expertise(self, transcript: Dict) -> Tuple[str, str]:
         """Detect the field/domain and appropriate expertise level."""
@@ -222,6 +230,7 @@ Requirements:
 - Show deep understanding and insight
 - Professional but can be slightly informal (as if thinking out loud)
 - NEVER use these already-used phrases: {', '.join(used_texts) if used_texts else 'none'}
+- IMPORTANT: Comments should be spaced at least 20 seconds apart for natural pacing
 
 Example sophisticated comments for inspiration (DO NOT copy these exactly):
 {chr(10).join('- ' + ex for ex in random.sample(field_info['examples'], min(3, len(field_info['examples']))))}

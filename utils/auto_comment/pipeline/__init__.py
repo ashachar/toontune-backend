@@ -1,10 +1,10 @@
 """Auto-comment pipeline package."""
 
 from .main_pipeline import EndToEndCommentPipeline
-from .models import Snark, SilenceGap
+from .models import Comment, SilenceGap
 
 __all__ = [
     "EndToEndCommentPipeline",
-    "Snark",
+    "Comment",
     "SilenceGap"
 ]

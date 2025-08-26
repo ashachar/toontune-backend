@@ -24,6 +24,30 @@
 - If you need to test different approaches, use temporary test files that get deleted after use
 - Avoid cluttering the codebase with multiple versions of the same functionality
 
+## Video Output Naming Convention
+**CRITICAL: NEVER CREATE MULTIPLE VERSIONS OF THE SAME VIDEO**
+- When creating an edited version of a video, use descriptive effect names
+- Format: `input_video_<effect_name>.mp4` where effect_name describes what was done
+- Examples:
+  - `ai_video1.mp4` → `ai_video1_3dtext.mp4` (added 3D text)
+  - `ai_video1.mp4` → `ai_video1_smooth.mp4` (applied smoothing)
+  - `ai_video1.mp4` → `ai_video1_dissolve.mp4` (added dissolve effect)
+- NEVER use generic suffixes like:
+  - `_final`, `_fixed`, `_correct`, `_proper`, `_better`, `_updated`
+  - `_v2`, `_v3`, `_new`, `_latest`
+- This keeps the output directory organized and makes it clear what each video contains
+
+## Test Video Output Location
+**ALL test videos MUST be saved to the `outputs/` folder**
+- When running tests or generating sample videos, always output to `outputs/`
+- Create subdirectories for specific test runs if needed: `outputs/test_3dtext/`, `outputs/test_dissolve/`
+- This keeps the root directory clean and organized
+- Examples:
+  - Testing 3D text: save to `outputs/test_3dtext.mp4`
+  - Testing dissolve effect: save to `outputs/test_dissolve.mp4`
+  - Multiple iterations: `outputs/iteration1/`, `outputs/iteration2/`
+- NEVER save test videos directly in the backend root directory
+
 ## Animation Code Duplication Policy
 **CRITICAL: NEVER duplicate animation code - always check for existing implementations first**
 - Before implementing ANY animation, MUST search for existing animation classes using:
@@ -55,6 +79,118 @@ Additionally, mention any output files (artifacts) that were generated as a resu
 - Standard conversion command:
   ```bash
   ffmpeg -i input.mp4 -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -movflags +faststart output_h264.mp4
+  ```
+
+## Video Continuity Validation - CRITICAL
+**IMPORTANT: ALWAYS validate video continuity after creating ANY video**
+- After generating any video output, MUST run the continuity validation script
+- This detects duplicate frames that indicate the video jumps back to previous content
+- Command:
+  ```bash
+  python utils/video/validation/validate_continuity.py <output_video.mp4>
+  ```
+- The script will:
+  - Detect exact duplicate frames (excluding uniform screens like black/white)
+  - Report problematic duplicates (>1s apart) that indicate content repetition
+  - Exit with code 0 if valid, 1 if issues found
+- If validation fails, investigate and fix the issue before delivering the video
+- Common causes of failures:
+  - Incorrect segment ordering in video pipelines
+  - Overlapping timestamp extractions (check FFmpeg -ss and -t usage)
+  - Gap assignments not matching chronological order
+  - FFmpeg seeking issues with keyframes (use -ss before -i for input seeking)
+- **Special attention for comment pipelines**: The precise_gap_pipeline.py automatically runs segment mapping diagnostics
+
+## Audio Comment Video Generation - CRITICAL
+**MANDATORY: When creating videos with audio comments, ALWAYS generate BOTH regular and debug versions**
+- The debug version shows a timestamp overlay with all comment times and text
+- This helps verify comment placement and spacing visually
+- Commands:
+  ```bash
+  # Generate regular version
+  python utils/auto_comment/precise_gap_pipeline.py <input_video.mp4>
+  
+  # ALWAYS also generate debug version with overlay
+  python utils/auto_comment/precise_gap_pipeline.py <input_video.mp4> --debug
+  ```
+- The debug overlay shows:
+  - List of all comments with timestamps
+  - Comment text (truncated to 30 characters)
+  - Visual verification of comment spacing
+- Output files:
+  - Regular: `<video_name>_precise_comments.mp4`
+  - Debug: `<video_name>_precise_comments_debug.mp4`
+
+## Audio Editing Transcript Verification - CRITICAL
+**MANDATORY: After ANY video with audio editing (comments, music, etc.), MUST verify transcript alignment**
+- This ensures inserted audio makes sense and is properly timed
+- Command:
+  ```bash
+  python utils/video/validation/local_extract_transcript.py <output_video.mp4>
+  ```
+- The script will:
+  - Extract and transcribe audio using Whisper (runs locally, no API costs)
+  - Detect inserted comments/audio additions
+  - Verify segments are aligned with the transcript
+  - Check comments appear at natural pauses (not mid-sentence)
+  - **🚨 DETECT REPEATED PHRASES**: Finds if same 3+ word sequences repeat within 20 seconds
+  - Report timing and alignment issues
+  - Exit with code 0 if valid, 1 if issues found
+- Verification checks:
+  1. **Segment Alignment**: Calculated segments match final transcript timing
+  2. **Comment Placement**: Comments make contextual sense with surrounding content
+  3. **Natural Pauses**: Comments appear at sentence boundaries, not mid-word
+  4. **No Overlaps**: Audio doesn't overlap or cut off speech
+  5. **🔴 NO REPEATED PHRASES**: Same 3+ word sequences should NOT repeat within 20 seconds
+- Output files:
+  - `*_whisper_transcript.json`: Full transcript with timestamps
+  - `*_whisper_transcript.txt`: Plain text transcript
+  - `*_verification.json`: Detailed verification report
+
+### ⚠️ CRITICAL ISSUE: Repeated Phrases Detection
+**If the script detects repeated phrases, this is a SEVERE PROBLEM that MUST be fixed immediately!**
+- **What it means**: The video has duplicate content - segments are being played multiple times
+- **Why it's critical**: This creates a stuttering effect where viewers hear the same words repeatedly
+- **Common causes**:
+  - Incorrect segment extraction with overlapping timestamps
+  - FFmpeg seeking issues causing content duplication
+  - Pipeline concatenating the same segments multiple times
+  - Gap processing extracting wrong video portions
+  - **KEYFRAME SEEKING BUG**: Using `-c:v copy` causes imprecise cuts at keyframes
+- **IMMEDIATE ACTION REQUIRED**:
+  1. **STOP** - Do NOT deliver the video to the user
+  2. **ALERT** - Inform the user: "🚨 CRITICAL: Video has repeated content detected! The same phrases appear multiple times within 20 seconds. This needs immediate fixing."
+  3. **DEBUG** - Run `utils/auto_comment/debug_repeated_content.py` to find exact duplication points
+  4. **FIX** - Ensure ALL segments use re-encoding (NEVER use `-c:v copy` for extraction)
+  5. **REVALIDATE** - After fixing, run validation again until no repeated phrases are found
+
+### 📌 Comment Audio Organization
+**Audio files for comments are stored in `uploads/assets/sounds/comments_audio/`**
+- This folder contains audio files for ALL comment types (thoughtful, analytical, sarcastic, etc.)
+- Comments can have various tones - sarcasm is just one style among many
+- Audio files are named based on the comment text (e.g., "noncommutative.mp3", "synergistic.mp3")
+- The pipeline searches for audio in this centralized location
+
+### 📌 Comment Spacing Requirements
+**CRITICAL: Comments MUST be spaced at least 20 seconds apart**
+- The comment generator enforces minimum 20-second gaps between consecutive comments
+- This ensures natural pacing and avoids overwhelming the viewer
+- If remarks.json has comments closer than 20 seconds:
+  - Use `regenerate_remarks_with_spacing.py` to filter them
+  - Use `fix_remarks_for_scribe_gaps.py` to align with actual video gaps
+
+### 📌 KNOWN FIX: Always Re-encode Video Segments
+**CRITICAL**: When extracting video segments, ALWAYS re-encode with libx264, NEVER use `-c:v copy`
+- **Problem**: Using copy codec causes FFmpeg to seek to nearest keyframe BEFORE the requested timestamp
+- **Result**: Segments start earlier than intended, causing content overlap and repetition
+- **Solution**: Always use `-c:v libx264` for precise cuts at exact timestamps
+- **Example**:
+  ```bash
+  # WRONG - causes imprecise cuts
+  ffmpeg -ss 10.5 -i video.mp4 -t 5 -c:v copy segment.mp4
+  
+  # CORRECT - precise cuts
+  ffmpeg -ss 10.5 -i video.mp4 -t 5 -c:v libx264 -preset fast -crf 18 segment.mp4
   ```
 
 ## Project Context
@@ -196,7 +332,7 @@ python utils/video_segmentation/video_segmentation_and_annotation.py <input_vide
 
 ### **IMPORTANT: Always use these utilities for downsampling videos and images**
 
-Located in: `utils/downsample/`
+Located in: `utils/video/downsample/`
 
 These utilities provide efficient downsampling to reduce file sizes and processing time while maintaining quality.
 
@@ -206,15 +342,15 @@ These utilities provide efficient downsampling to reduce file sizes and processi
 
 ```bash
 # Standard usage with default "small" preset
-python utils/downsample/video_downsample.py input_video.mp4
+python utils/video/downsample/video_downsample.py input_video.mp4
 
 # Specific presets
-python utils/downsample/video_downsample.py video.mp4 --preset small  # 256x256 (default)
-python utils/downsample/video_downsample.py video.mp4 --preset tiny   # 64x64 (extreme)
-python utils/downsample/video_downsample.py video.mp4 --preset mini   # 128x128
+python utils/video/downsample/video_downsample.py video.mp4 --preset small  # 256x256 (default)
+python utils/video/downsample/video_downsample.py video.mp4 --preset tiny   # 64x64 (extreme)
+python utils/video/downsample/video_downsample.py video.mp4 --preset mini   # 128x128
 
 # Custom resolution with FPS reduction
-python utils/downsample/video_downsample.py video.mp4 --size 320 240 --fps 15
+python utils/video/downsample/video_downsample.py video.mp4 --size 320 240 --fps 15
 ```
 
 **Video Presets:**
@@ -230,20 +366,20 @@ python utils/downsample/video_downsample.py video.mp4 --size 320 240 --fps 15
 
 ```bash
 # Standard usage with default "small" preset
-python utils/downsample/image_downsample.py input_image.png
+python utils/video/downsample/image_downsample.py input_image.png
 
 # Specific presets
-python utils/downsample/image_downsample.py image.png --preset small  # 128x128 (default)
-python utils/downsample/image_downsample.py image.png --preset mini   # 64x64
-python utils/downsample/image_downsample.py image.png --preset icon   # 8x8 (extreme)
+python utils/video/downsample/image_downsample.py image.png --preset small  # 128x128 (default)
+python utils/video/downsample/image_downsample.py image.png --preset mini   # 64x64
+python utils/video/downsample/image_downsample.py image.png --preset icon   # 8x8 (extreme)
 
 # With effects
-python utils/downsample/image_downsample.py image.png --pixel-art     # Pixel art effect
-python utils/downsample/image_downsample.py image.png --colors 16     # Reduce to 16 colors
-python utils/downsample/image_downsample.py image.png --retro         # Retro game style
+python utils/video/downsample/image_downsample.py image.png --pixel-art     # Pixel art effect
+python utils/video/downsample/image_downsample.py image.png --colors 16     # Reduce to 16 colors
+python utils/video/downsample/image_downsample.py image.png --retro         # Retro game style
 
 # Batch processing
-python utils/downsample/image_downsample.py *.jpg --preset small
+python utils/video/downsample/image_downsample.py *.jpg --preset small
 ```
 
 **Image Presets:**
@@ -267,6 +403,38 @@ python utils/downsample/image_downsample.py *.jpg --preset small
 - 70-second video: 62MB → 2.9MB (small preset, 95% reduction)
 - 70-second video: 62MB → 0.56MB (tiny preset, 99% reduction)
 - 1024x1536 image: 163KB → 4.5KB (small preset, 97% reduction)
+
+## ⚠️ CRITICAL: Dynamic Masking - NO CACHING EVER! ⚠️
+
+### The Problem - 100% IMPORTANT
+**NEVER CACHE MASKS - ALWAYS CALCULATE FRESH FOR EVERY FRAME**
+- Moving objects (hands, body parts) change position every frame
+- Cached masks will cause text to appear in front of objects incorrectly
+- This is especially critical for "text behind object" effects
+
+### Rules for Masking
+1. **OBLITERATE ALL CACHING** - No `_frame_mask_cache` or similar
+2. **FRESH CALCULATION EVERY FRAME** - Extract foreground mask dynamically
+3. **NO STATIC MASKS** - Even first-frame masks become outdated immediately
+4. **ALWAYS USE CURRENT FRAME** - Pass the actual current video frame to mask extraction
+
+### Example of WRONG Implementation
+```python
+# WRONG - NEVER DO THIS!
+if frame_number not in self._frame_mask_cache:
+    mask = extract_foreground_mask(frame)
+    self._frame_mask_cache[frame_number] = mask  # NO CACHING!
+else:
+    mask = self._frame_mask_cache[frame_number]  # STALE MASK!
+```
+
+### Example of CORRECT Implementation
+```python
+# CORRECT - ALWAYS DO THIS!
+# Extract fresh mask for EVERY frame
+mask = extract_foreground_mask(current_frame)
+# Apply mask immediately without storing
+```
 
 ## ⚠️ CRITICAL: OpenCV vs FFmpeg Coordinate System Discrepancy ⚠️
 

@@ -11,11 +11,11 @@ from typing import List, Dict, Optional
 from pydub import AudioSegment
 from pydub.effects import normalize
 
-from utils.auto_comment.pipeline.models import Snark
+from utils.auto_comment.pipeline.models import Comment
 from utils.auto_comment.pipeline.config import (
     ELEVENLABS_API_KEY, ELEVENLABS_MODEL, ELEVENLABS_VOICE_ID,
     ELEVENLABS_STABILITY, ELEVENLABS_SIMILARITY_BOOST,
-    SNARK_STORAGE, TARGET_DBFS
+    COMMENT_AUDIO_STORAGE, TARGET_DBFS
 )
 
 
@@ -25,18 +25,18 @@ class AudioProcessor:
     def __init__(self, video_path: Path, output_folder: Path):
         self.video_path = video_path
         self.output_folder = output_folder
-        self.snark_storage = SNARK_STORAGE
-        self.snark_storage.mkdir(parents=True, exist_ok=True)
+        self.comment_storage = COMMENT_AUDIO_STORAGE
+        self.comment_storage.mkdir(parents=True, exist_ok=True)
     
-    def process_snarks_audio(
-        self, snarks: List[Snark]
+    def process_comments_audio(
+        self, comments: List[Comment]
     ) -> List[Dict]:
-        """Process audio for all snarks with pausing decisions."""
-        snarks_with_pausing = []
+        """Process audio for all comments with pausing decisions."""
+        comments_with_pausing = []
         
-        for snark in snarks:
+        for comment in comments:
             # Get or generate audio
-            audio_file = self._get_or_generate_audio(snark.text)
+            audio_file = self._get_or_generate_audio(comment.text)
             if not audio_file:
                 continue
             
@@ -45,7 +45,7 @@ class AudioProcessor:
             duration = len(audio) / 1000.0
             
             # Determine if we need to slow down video
-            gap_duration = snark.gap_duration
+            gap_duration = comment.gap_duration
             needs_slowdown = duration > gap_duration
             
             # Calculate speed factor
@@ -54,8 +54,8 @@ class AudioProcessor:
             else:
                 speed_factor = 1.0
             
-            snarks_with_pausing.append({
-                "snark": snark,
+            comments_with_pausing.append({
+                "comment": comment,
                 "audio": audio,
                 "audio_file": str(audio_file),
                 "duration": duration,
@@ -64,14 +64,14 @@ class AudioProcessor:
                 "speed_factor": speed_factor
             })
         
-        return snarks_with_pausing
+        return comments_with_pausing
     
     def _get_or_generate_audio(self, text: str) -> Optional[Path]:
         """Get existing or generate new audio."""
         # Clean filename
         filename = re.sub(r'[^a-zA-Z0-9_]', '', text.lower().replace(' ', '_'))[:50]
         filename = f"{filename}.mp3"
-        audio_path = self.snark_storage / filename
+        audio_path = self.comment_storage / filename
         
         # Check if exists
         if audio_path.exists():
@@ -120,7 +120,7 @@ class AudioProcessor:
         return None
     
     def create_audio_with_speed_adjustments(
-        self, snarks_with_pausing: List[Dict]
+        self, comments_with_pausing: List[Dict]
     ) -> Path:
         """Create audio track that matches video with speed adjustments."""
         # Extract original audio
@@ -137,17 +137,17 @@ class AudioProcessor:
         change = TARGET_DBFS - normalized.dBFS
         normalized = normalized.apply_gain(change)
         
-        # Sort snarks by time
-        snarks_with_pausing.sort(key=lambda x: x["snark"].time)
+        # Sort comments by time
+        comments_with_pausing.sort(key=lambda x: x["comment"].time)
         
         # Build new audio track accounting for speed changes
         mixed = AudioSegment.empty()
         source_pos = 0  # Position in original audio
         output_pos = 0  # Position in output audio
         
-        for item in snarks_with_pausing:
-            snark = item["snark"]
-            gap_start_ms = int(snark.time * 1000)
+        for item in comments_with_pausing:
+            comment = item["comment"]
+            gap_start_ms = int(comment.time * 1000)
             gap_duration_ms = int(item["gap_duration"] * 1000)
             speed_factor = item["speed_factor"]
             remark_audio = item["audio"].apply_gain(2)  # Boost remark volume

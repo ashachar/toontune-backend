@@ -7,7 +7,7 @@ from typing import List, Dict
 
 from pydub import AudioSegment
 
-from utils.auto_comment.pipeline.models import Snark
+from utils.auto_comment.pipeline.models import Comment
 from utils.auto_comment.pipeline.transcript_analyzer import TranscriptAnalyzer
 from utils.auto_comment.pipeline.comment_generator import CommentGenerator
 from utils.auto_comment.pipeline.audio_processor import AudioProcessor
@@ -52,13 +52,13 @@ class EndToEndCommentPipeline:
             return str(self.video_path)
         
         # Step 3: Generate contextual comments
-        snarks = self.comment_generator.generate_contextual_snarks(transcript, gaps)
+        comments = self.comment_generator.generate_contextual_comments(transcript, gaps)
         
         # Step 4 & 5: Generate speech and mix into video
-        output = self.mix_snarks_into_video(snarks)
+        output = self.mix_comments_into_video(comments)
         
         # Save report
-        self._save_report(transcript, gaps, snarks, output)
+        self._save_report(transcript, gaps, comments, output)
         
         print("\n" + "=" * 70)
         print("✨ PIPELINE COMPLETE!")
@@ -67,7 +67,7 @@ class EndToEndCommentPipeline:
         print(f"🎬 Output: {output}")
         
         # Calculate cost
-        total_chars = sum(len(s.text) for s in snarks)
+        total_chars = sum(len(c.text) for c in comments)
         cost = total_chars * 0.0003
         print(f"💰 Estimated cost: ${cost:.3f}")
         
@@ -80,29 +80,29 @@ class EndToEndCommentPipeline:
         
         return output
     
-    def mix_snarks_into_video(self, snarks: List[Snark]) -> str:
-        """Mix snarks into final video."""
+    def mix_comments_into_video(self, comments: List[Comment]) -> str:
+        """Mix comments into final video."""
         print("🎬 Creating final video with comments...")
         
         # Save remarks JSON
-        self._save_remarks(snarks)
+        self._save_remarks(comments)
         
-        # Process audio for all snarks (gets audio files and calculates speed factors)
-        snarks_with_pausing = self.audio_processor.process_snarks_audio(snarks)
+        # Process audio for all comments (gets audio files and calculates speed factors)
+        comments_with_pausing = self.audio_processor.process_comments_audio(comments)
         
-        if not snarks_with_pausing:
+        if not comments_with_pausing:
             print("❌ No valid comments to add")
             return str(self.video_path)
         
         # Check if any remarks need speed adjustment
-        has_slowdowns = any(s["needs_slowdown"] for s in snarks_with_pausing)
+        has_slowdowns = any(c["needs_slowdown"] for c in comments_with_pausing)
         
         if has_slowdowns:
             print("  🐢 Some remarks need video speed adjustment...")
         
         # Create mixed audio
         mixed_path = self.audio_processor.create_audio_with_speed_adjustments(
-            snarks_with_pausing
+            comments_with_pausing
         )
         
         # Create final video
@@ -111,7 +111,7 @@ class EndToEndCommentPipeline:
         if has_slowdowns:
             print("  🎬 Creating video with speed adjustments...")
             self.video_processor.create_video_with_speed_adjustments(
-                snarks_with_pausing, mixed_path, output_path
+                comments_with_pausing, mixed_path, output_path
             )
         else:
             # Simple remux without speed adjustments
@@ -129,41 +129,41 @@ class EndToEndCommentPipeline:
         print(f"✅ Output: {output_path}")
         return str(output_path)
     
-    def _save_remarks(self, snarks: List[Snark]):
+    def _save_remarks(self, comments: List[Comment]):
         """Save remarks to JSON file."""
         remarks_file = self.output_folder / "remarks.json"
         remarks_data = []
         
-        for i, snark in enumerate(snarks):
+        for i, comment in enumerate(comments):
             remarks_data.append({
-                "time": snark.time,
-                "text": snark.text,
-                "emotion": snark.emotion,
-                "context": snark.context[:50] if snark.context else "",
+                "time": comment.time,
+                "text": comment.text,
+                "emotion": comment.emotion,
+                "context": comment.context[:50] if comment.context else "",
                 "audio_file": f"remark_{i+1}.mp3",
-                "library_file": Path(snark.audio_path).name if snark.audio_path else None
+                "library_file": Path(comment.audio_path).name if comment.audio_path else None
             })
         
         with open(remarks_file, "w") as f:
             json.dump(remarks_data, f, indent=2)
         print(f"  📝 Saved remarks: {remarks_file}")
     
-    def _save_report(self, transcript: Dict, gaps: List, snarks: List[Snark], output: str):
+    def _save_report(self, transcript: Dict, gaps: List, comments: List[Comment], output: str):
         """Save pipeline report."""
         report = {
             "video": str(self.video_path),
             "transcript_segments": len(transcript["segments"]),
             "silence_gaps": len(gaps),
-            "snarks_generated": len(snarks),
-            "snarks": [
+            "comments_generated": len(comments),
+            "comments": [
                 {
-                    "time": s.time,
-                    "text": s.text,
-                    "emotion": s.emotion,
-                    "context": s.context[:30] if s.context else "",
-                    "gap_duration": s.gap_duration
+                    "time": c.time,
+                    "text": c.text,
+                    "emotion": c.emotion,
+                    "context": c.context[:30] if c.context else "",
+                    "gap_duration": c.gap_duration
                 }
-                for s in snarks
+                for c in comments
             ],
             "output": output
         }

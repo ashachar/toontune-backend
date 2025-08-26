@@ -15,11 +15,11 @@ ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
 
 # Paths
 UPLOAD_BASE = Path("/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads")
-SNARK_STORAGE = UPLOAD_BASE / "assets" / "sounds" / "snark_remarks"
+COMMENT_AUDIO_STORAGE = UPLOAD_BASE / "assets" / "sounds" / "comments_audio"
 
 # Pipeline Settings
 MIN_GAP_DURATION = 0.6  # Minimum gap duration for a comment
-MAX_SNARKS = 10  # Maximum number of comments per video
+MAX_COMMENTS = 10  # Maximum number of comments per video
 TARGET_DBFS = -18  # Target loudness for audio normalization
 
 # Speed Adjustment Settings

@@ -3,7 +3,7 @@
 Universal Snark Generator for any scene
 - Uses ELEVENLABS_MODEL from .env
 - Names files based on text content
-- Stores in uploads/assets/sounds/snark_remarks/
+- Stores in uploads/assets/sounds/comments_audio/
 """
 
 import os
@@ -28,7 +28,7 @@ class SnarkGenerator:
         self.scene_number = scene_number
         
         # Storage directory
-        self.snark_storage = Path("/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/sounds/snark_remarks")
+        self.snark_storage = Path("/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/uploads/assets/sounds/comments_audio")
         self.snark_storage.mkdir(parents=True, exist_ok=True)
         
         # Get model from .env

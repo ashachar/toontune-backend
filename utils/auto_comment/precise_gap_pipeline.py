@@ -115,38 +115,114 @@ class PreciseGapPipeline:
         print(f"📁 All sub-videos saved in: {self.work_dir}")
         print("="*70)
         
+        # Run segment mapping diagnostic
+        self._run_segment_mapping_diagnostic()
+        
         return output_path
+    
+    def _run_segment_mapping_diagnostic(self):
+        """Run segment mapping diagnostic to verify 1-to-1 mapping."""
+        print("\n" + "="*70)
+        print("📊 SEGMENT MAPPING DIAGNOSTIC")
+        print("="*70)
+        
+        # Import and run the diagnostic
+        try:
+            from .diagnose_segment_mapping import analyze_segment_mapping
+            analyze_segment_mapping()
+        except ImportError:
+            # If module not available, run inline diagnostic
+            self._inline_segment_diagnostic()
+    
+    def _inline_segment_diagnostic(self):
+        """Inline diagnostic if separate module not available."""
+        print("\n🔍 Verifying segment continuity...")
+        
+        # Check segments for continuity
+        segments_info = []
+        last_end = 0.0
+        issues = []
+        
+        # Read segment info from work dir if available
+        concat_file = self.work_dir / "concat_list.txt"
+        if concat_file.exists():
+            with open(concat_file) as f:
+                lines = f.readlines()
+            print(f"   Total segments in final video: {len(lines)}")
+            
+        # Verify no timestamp overlaps in split points
+        if hasattr(self, '_last_split_points'):
+            for i in range(1, len(self._last_split_points)):
+                prev = self._last_split_points[i-1]
+                curr = self._last_split_points[i]
+                
+                if curr["start"] < prev["end"]:
+                    issues.append(f"Overlap at segment {i}: {curr['start']:.2f} < {prev['end']:.2f}")
+                elif curr["start"] > prev["end"]:
+                    issues.append(f"Gap at segment {i}: {curr['start']:.2f} > {prev['end']:.2f}")
+        
+        if issues:
+            print("❌ Issues found:")
+            for issue in issues:
+                print(f"   - {issue}")
+        else:
+            print("✅ All segments are continuous with no overlaps")
+        
+        print("-" * 70)
     
     def _analyze_split_points(self) -> List[Dict]:
         """Analyze remarks and create split points for video."""
         print("\n📊 Analyzing split points...")
         
-        # Get gap durations from transcript
-        transcript_path = self.video_path.parent / self.video_name / "transcript.json"
-        gaps = {}
+        # Try to load Scribe gaps first (more precise)
+        scribe_gaps_path = self.video_path.parent / self.video_name / "gaps_analysis_scribe.json"
+        gaps_list = []
         
-        if transcript_path.exists():
-            with open(transcript_path) as f:
-                transcript = json.load(f)
-                segments = transcript.get("segments", [])
-                
-                for i in range(len(segments) - 1):
-                    gap_start = segments[i]["end"]
-                    gap_end = segments[i + 1]["start"]
-                    gap_duration = gap_end - gap_start
-                    if gap_duration > 0.3:  # Minimum gap threshold
-                        gaps[gap_start] = gap_duration
+        if scribe_gaps_path.exists():
+            print("   📝 Using ElevenLabs Scribe word-level gaps")
+            with open(scribe_gaps_path) as f:
+                scribe_data = json.load(f)
+                gaps_list = scribe_data.get("gaps", [])
+                print(f"   Found {len(gaps_list)} natural gaps from Scribe")
+        else:
+            # Fallback to transcript gaps
+            transcript_path = self.video_path.parent / self.video_name / "transcript.json"
+            if transcript_path.exists():
+                print("   Using phrase-level transcript gaps")
+                with open(transcript_path) as f:
+                    transcript = json.load(f)
+                    segments = transcript.get("segments", [])
+                    
+                    for i in range(len(segments) - 1):
+                        gap_start = segments[i]["end"]
+                        gap_end = segments[i + 1]["start"]
+                        gap_duration = gap_end - gap_start
+                        if gap_duration > 0.3:  # Minimum gap threshold
+                            gaps_list.append({
+                                "start": gap_start,
+                                "end": gap_end,
+                                "duration": gap_duration
+                            })
         
         split_points = []
         current_pos = 0
         
+        # Sort gaps by start time for chronological assignment
+        gaps_list_sorted = sorted(gaps_list, key=lambda x: x["start"])
+        
+        # Use gaps in chronological order for remarks
         for i, remark in enumerate(self.remarks):
-            remark_time = remark["time"]
+            if i >= len(gaps_list_sorted):
+                print(f"   ⚠️ No more gaps for remark {i+1}")
+                break
+            
+            gap = gaps_list_sorted[i]  # Use gaps in chronological order
+            remark_time = gap["start"]
             remark_text = remark["text"]
             audio_file = remark.get("audio_file")
             
-            # Get gap duration
-            gap_duration = gaps.get(remark_time, 0.8)  # Default 0.8s if not found
+            # Get gap duration from the actual gap
+            gap_duration = gap["duration"]
             
             # Get audio duration
             if audio_file:
@@ -158,8 +234,8 @@ class PreciseGapPipeline:
                 possible_paths = [
                     self.video_path.parent / self.video_name / audio_file,
                     self.video_path.parent / self.video_name / f"remark_{i+1}.mp3",
-                    Path("uploads/assets/sounds/snark_remarks") / f"{clean_text}.mp3",
-                    Path("uploads/assets/sounds/snark_remarks") / f"{remark_text.lower().replace('?', '').replace('.', '')}.mp3"
+                    Path("uploads/assets/sounds/comments_audio") / f"{clean_text}.mp3",
+                    Path("uploads/assets/sounds/comments_audio") / f"{remark_text.lower().replace('?', '').replace('.', '')}.mp3"
                 ]
                 
                 audio_path = None
@@ -190,34 +266,63 @@ class PreciseGapPipeline:
                 })
             
             # Add gap segment with remark info
-            # Gap duration should be based on the audio duration, NOT fixed!
-            # If audio is longer than natural gap, we'll slow the video
-            gap_segment_duration = max(gap_duration, audio_duration)
+            # Use actual gap end time from Scribe data
+            gap_segment_duration = gap_duration
             
             split_points.append({
                 "type": "gap",
                 "start": remark_time,
-                "end": remark_time + gap_segment_duration,
+                "end": gap.get("end", remark_time + gap_segment_duration),
                 "duration": gap_segment_duration,
                 "remark": remark,
                 "remark_text": remark_text,
                 "remark_duration": audio_duration,
                 "audio_file": audio_file,
                 "speed_factor": min(1.0, gap_segment_duration / audio_duration) if audio_duration > 0 else 1.0,
-                "index": len(split_points)
+                "index": len(split_points),
+                "context": gap.get("context_before", "") + " | " + gap.get("context_after", "")
             })
             
-            current_pos = remark_time + gap_segment_duration
+            current_pos = gap.get("end", remark_time + gap_segment_duration)
         
-        # Add final segment
+        # Sort all gap segments by start time
+        gap_segments = [sp for sp in split_points if sp["type"] == "gap"]
+        gap_segments.sort(key=lambda x: x["start"])
+        
+        # Rebuild split_points with normal segments between gaps
+        final_split_points = []
+        current_pos = 0
+        
+        for gap in gap_segments:
+            # Add normal segment before this gap
+            if current_pos < gap["start"]:
+                final_split_points.append({
+                    "type": "normal",
+                    "start": current_pos,
+                    "end": gap["start"],
+                    "duration": gap["start"] - current_pos,
+                    "index": len(final_split_points)
+                })
+            
+            # Add the gap segment
+            gap["index"] = len(final_split_points)
+            final_split_points.append(gap)
+            current_pos = gap["end"]
+        
+        # Add final normal segment
         if current_pos < self.video_duration:
-            split_points.append({
+            final_split_points.append({
                 "type": "normal",
                 "start": current_pos,
                 "end": self.video_duration,
                 "duration": self.video_duration - current_pos,
-                "index": len(split_points)
+                "index": len(final_split_points)
             })
+        
+        split_points = final_split_points
+        
+        # Save for diagnostic
+        self._last_split_points = split_points
         
         print(f"📍 Created {len(split_points)} split points")
         for sp in split_points[:5]:  # Show first 5
@@ -230,9 +335,36 @@ class PreciseGapPipeline:
         
         return split_points
     
+    def _verify_no_overlaps(self, split_points: List[Dict]) -> bool:
+        """Verify that segments don't overlap to prevent content duplication."""
+        issues = []
+        for i in range(1, len(split_points)):
+            prev = split_points[i-1]
+            curr = split_points[i]
+            
+            if curr["start"] < prev["end"]:
+                issues.append(f"❌ Overlap: Segment {i} starts at {curr['start']:.2f}s "
+                            f"but segment {i-1} ends at {prev['end']:.2f}s")
+            elif curr["start"] > prev["end"] + 0.1:  # Allow tiny gaps
+                gap_size = curr["start"] - prev["end"]
+                if gap_size > 0.5:  # Only warn for significant gaps
+                    issues.append(f"⚠️ Gap: {gap_size:.2f}s between segments {i-1} and {i}")
+        
+        if issues:
+            print("\n🔍 Segment continuity check:")
+            for issue in issues:
+                print(f"   {issue}")
+            if any("❌" in i for i in issues):
+                return False
+        return True
+    
     def _split_video_into_segments(self, split_points: List[Dict]) -> List[Dict]:
         """Split video into individual segment files."""
         print(f"\n✂️ Splitting video into {len(split_points)} segments...")
+        
+        # Verify no overlaps before extraction
+        if not self._verify_no_overlaps(split_points):
+            print("⚠️ WARNING: Segment overlaps detected! This may cause content repetition.")
         
         segments = []
         
@@ -240,31 +372,21 @@ class PreciseGapPipeline:
             segment_file = self.segments_dir / f"segment_{i:03d}_{sp['type']}.mp4"
             
             # Extract segment with precise duration
-            # For gaps, we need precise duration, so we may need to re-encode
-            if sp["type"] == "gap":
-                # For gaps, use re-encoding to ensure exact duration
-                cmd = [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-ss", str(sp["start"]),
-                    "-i", str(self.video_path),
-                    "-t", str(sp["duration"]),
-                    "-c:v", "libx264", "-preset", "veryslow", "-crf", "10",  # High quality
-                    "-c:a", "aac", "-b:a", "320k",
-                    "-avoid_negative_ts", "make_zero",
-                    str(segment_file)
-                ]
-            else:
-                # For normal segments, use copy to avoid quality loss
-                cmd = [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-ss", str(sp["start"]),
-                    "-i", str(self.video_path),
-                    "-t", str(sp["duration"]),
-                    "-c:v", "copy",
-                    "-c:a", "copy",
-                    "-avoid_negative_ts", "make_zero",
-                    str(segment_file)
-                ]
+            # CRITICAL: Always re-encode to ensure precise cuts at exact timestamps
+            # Using -c:v copy can cause segments to start at keyframes before the requested time
+            # This leads to overlapping content between segments
+            
+            # Always use re-encoding for precise cuts
+            cmd = [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-ss", str(sp["start"]),  # Input seeking (before -i)
+                "-i", str(self.video_path),
+                "-t", str(sp["duration"]),  # Duration from new position
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",  # Good quality, faster encoding
+                "-c:a", "aac", "-b:a", "192k",
+                "-avoid_negative_ts", "make_zero",
+                str(segment_file)
+            ]
             
             print(f"   [{i+1}/{len(split_points)}] Extracting {sp['type']} segment: "
                   f"{sp['start']:.2f}s - {sp['end']:.2f}s")
@@ -403,8 +525,8 @@ class PreciseGapPipeline:
             possible_paths = [
                 self.video_path.parent / self.video_name / gap_seg["audio_file"],
                 self.video_path.parent / self.video_name / f"remark_{gap_seg['index']//2+1}.mp3",
-                Path("uploads/assets/sounds/snark_remarks") / f"{clean_text}.mp3",
-                Path("uploads/assets/sounds/snark_remarks") / f"{remark_text.lower().replace('?', '').replace('.', '')}.mp3"
+                Path("uploads/assets/sounds/comments_audio") / f"{clean_text}.mp3",
+                Path("uploads/assets/sounds/comments_audio") / f"{remark_text.lower().replace('?', '').replace('.', '')}.mp3"
             ]
             
             remark_path = None
@@ -567,13 +689,15 @@ class PreciseGapPipeline:
                 str(output_path)
             ]
         else:
-            # Without debug overlay, we can use copy codec for no quality loss
+            # Without debug overlay, still re-encode to ensure smooth playback
+            # All segments are already high quality from extraction
             cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "concat",
                 "-safe", "0",
                 "-i", str(concat_file),
-                "-c", "copy",  # Copy all codecs - no re-encoding!
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",  # Match segment quality
+                "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
                 str(output_path)
             ]

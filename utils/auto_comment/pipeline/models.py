@@ -13,8 +13,8 @@ class SilenceGap:
 
 
 @dataclass
-class Snark:
-    """Represents a comment/snark to be inserted."""
+class Comment:
+    """Represents a comment to be inserted."""
     text: str
     time: float
     emotion: str

@@ -322,7 +322,7 @@ class HighQualityGapPipeline:
         clean_text = text.lower().replace("?", "").replace(".", "").strip()
         
         paths = [
-            Path(f"uploads/assets/sounds/snark_remarks/{clean_text}.mp3"),
+            Path(f"uploads/assets/sounds/comments_audio/{clean_text}.mp3"),
             self.video_path.parent / self.video_name / hint if hint else None,
         ]
         
