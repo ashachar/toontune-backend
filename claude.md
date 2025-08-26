@@ -550,3 +550,34 @@ python unified_video_pipeline.py video.mp4 --target-scene-duration 45
 - **Re-running with existing transcript**: Use `--no-transcript --no-downsample`
 - **Adjusting scenes only**: Use `--no-transcript --no-downsample --no-prompts --no-inference --no-editing`
 - **Testing editing only**: Use `--no-transcript --no-downsample --no-scenes --no-prompts --dry-run`
+
+## 3D Text Animation Optimal Positioning
+
+**IMPORTANT: Text positioning now defaults to finding the least occluded location**
+
+The `apply_3d_text_animation.py` script now automatically analyzes the video to find the optimal text position with minimal occlusion by foreground objects. This ensures text remains maximally visible throughout the animation.
+
+### Positioning Behavior:
+- **Default**: Automatic optimal position finding (least occluded across animation duration)
+- **Manual override**: Use `--no-auto-position --position <x,y>` to specify exact position
+- **Algorithm**: Analyzes multiple frames, evaluates grid of candidate positions, scores by visibility
+- **Fallback**: If optimal position finding fails, uses center position
+
+### Usage Examples:
+```bash
+# Default: auto-finds optimal position
+python utils/animations/apply_3d_text_animation.py video.mp4 --text "HELLO"
+
+# Disable auto-positioning, use center
+python utils/animations/apply_3d_text_animation.py video.mp4 --text "HELLO" --no-auto-position
+
+# Force specific position
+python utils/animations/apply_3d_text_animation.py video.mp4 --text "HELLO" --no-auto-position --position 400,300
+```
+
+### Technical Details:
+- Uses `OptimalTextPositionFinder` from `utils/text_placement/optimal_position_finder.py`
+- Samples frames at regular intervals during motion animation period
+- Evaluates 6x6 grid of candidate positions
+- Scores based on average visibility, minimum visibility, and occlusion frames
+- Applies slight center preference (15% weight) to avoid extreme edge positions

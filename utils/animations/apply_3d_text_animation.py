@@ -99,7 +99,7 @@ def apply_animation_to_video(
     preset="slow",
     tune=None,               # e.g., "animation" or None
     keep_frames=False,
-    auto_position=False,    # NEW: automatically find optimal position
+    auto_position=True,     # DEFAULT: automatically find optimal position
     debug=False
 ):
     """
@@ -342,8 +342,10 @@ Examples:
     # Position
     parser.add_argument('--position', '-p', default='center',
                         help='Text position: center, top, bottom, left, right, or x,y (default: center)')
-    parser.add_argument('--auto-position', action='store_true',
-                        help='Automatically find optimal position for maximum visibility')
+    parser.add_argument('--auto-position', action='store_true', default=True,
+                        help='Automatically find optimal position for maximum visibility (default: True)')
+    parser.add_argument('--no-auto-position', dest='auto_position', action='store_false',
+                        help='Disable automatic optimal position finding')
 
     # Appearance
     parser.add_argument('--size', type=int, default=140, help='Font size (default: 140)')
