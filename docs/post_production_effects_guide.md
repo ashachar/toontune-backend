@@ -127,6 +127,53 @@ The system can use pre-calculated RVM (Robust Video Matting) outputs:
 - **RVM Green Screen**: `ai_math1_rvm_green_5s_024078685789.mp4` - Foreground with green background (RECOMMENDED)
 - **RVM Mask**: `ai_math1_rvm_mask_5s_024078685789.mp4` - Often just grayscale video, NOT a true alpha mask
 
+### Cached RVM Background Removal System
+
+The system includes intelligent caching for Replicate's Robust Video Matting to avoid unnecessary API calls:
+
+#### Cache Management (`utils/video/background/cached_rvm.py`)
+
+**Key Features:**
+- Automatically checks for existing RVM outputs before making API calls
+- Stores results in project-specific folders
+- Generates consistent hashes for cache identification
+- Saves both green screen and mask versions
+
+**Cache Location:**
+```
+uploads/assets/videos/{video_name}/
+├── {video_name}_rvm_green_{duration}s_{hash}.mp4  # Green screen output
+├── {video_name}_rvm_mask_{duration}s_{hash}.mp4   # Mask output
+└── {video_name}_rvm_meta_{duration}s_{hash}.json  # Metadata
+```
+
+**Usage:**
+```python
+from utils.video.background.cached_rvm import CachedRobustVideoMatting
+
+processor = CachedRobustVideoMatting()
+
+# Will check cache first, only call API if needed
+green_screen_path = processor.get_rvm_output(
+    video_path="uploads/assets/videos/ai_math1.mp4",
+    duration=5  # Process first 5 seconds (None for full video)
+)
+
+# Direct compositing with background
+final_output = processor.composite_with_background(
+    video_path="uploads/assets/videos/ai_math1.mp4",
+    background_video="path/to/background.mp4",
+    output_path="outputs/composited.mp4",
+    duration=5
+)
+```
+
+**Cache Workflow:**
+1. **Check existing cache**: Look for RVM outputs with matching hash
+2. **Use cached if found**: No API call needed, instant availability
+3. **Process if not cached**: Call Replicate API and save results
+4. **Store for future use**: Save green screen, mask, and metadata
+
 #### CRITICAL LESSON: Verify Your Mask Type
 
 **IMPORTANT**: The RVM "mask" file may NOT be a true alpha mask! Always verify:
@@ -190,6 +237,45 @@ test_configs = [
 #### Complete Pipeline Reference
 
 See `pipelines/apply_stock_backgrounds_refined_chromakey.py` for the production-ready implementation.
+
+### Dynamic Background Changes Throughout Video
+
+The system supports changing backgrounds at different timestamps based on content themes:
+
+#### Full Video Pipeline (`pipelines/full_video_stock_backgrounds_pipeline.py`)
+
+**Features:**
+- Analyzes transcript to identify thematic segments
+- Automatically searches and downloads relevant stock videos
+- Changes backgrounds at key moments in the narrative
+- Uses cached RVM to avoid redundant processing
+
+**Example Workflow:**
+```python
+# Thematic segments automatically identified from transcript
+segments = [
+    {"start": 0, "end": 15, "theme": "AI Innovation", "keywords": ["AI", "technology"]},
+    {"start": 15, "end": 35, "theme": "Mathematics", "keywords": ["calculus", "math"]},
+    {"start": 35, "end": 60, "theme": "Data Science", "keywords": ["data", "analytics"]}
+]
+
+# Process each segment with appropriate background
+for segment in segments:
+    # Check cache for existing stock video
+    # Download new if needed using Coverr API
+    # Apply chromakey with segment timing
+    apply_chromakey_segment(green_screen, stock_video, output, 
+                           segment['start'], segment['duration'])
+```
+
+#### Quick Demo (`apply_dynamic_backgrounds_5sec.py`)
+
+Demonstrates multiple background changes in a 5-second video:
+```bash
+python apply_dynamic_backgrounds_5sec.py
+```
+
+Output shows backgrounds changing every 1-2 seconds based on content.
 
 ### Stock Video Selection Criteria
 
@@ -289,6 +375,15 @@ ffmpeg -i processed.mp4 -i original.mp4 -c:v libx264 -c:a copy -map 0:v:0 -map 1
 - **Easing function**: Use sine-based `(1 - np.cos(progress * π)) / 2` for smoothness
 - **Opacity**: Square the progress for softer fade-in `opacity = eased_progress²`
 - **Word spacing**: Based on transcript gaps, not fixed intervals
+
+#### 7. **Multi-line Text Layout**
+**IMPORTANT**: Long sentences should wrap to multiple lines for readability
+- **Maximum 6 words per row** - prevents overcrowding
+- **Automatic line wrapping** - split sentences exceeding max words
+- **Centered layout** - each row centered horizontally
+- **Vertical spacing** - 1.4x font size between rows
+- **Row-based stagger** - slight timing offset for each row during animation
+- **Unified dissolve** - all rows of a sentence dissolve together
 
 ### Golden Standard Pipeline Example
 

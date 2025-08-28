@@ -4,27 +4,60 @@ This folder contains fully working, production-ready pipeline examples that demo
 
 ## Current Pipelines
 
-### word_level_pipeline.py
-**Word-by-Word Text Animation with Fog Dissolve**
+### word_level_pipeline.py (Multi-line Version)
+**Complete Word-by-Word Text Animation with Multi-line Support**
 
-A complete implementation showing:
-- Individual word object management throughout all animation phases
+A production-ready implementation with automatic line wrapping for long sentences:
+- **Maximum 6 words per row** for optimal readability
+- **Automatic line wrapping** for sentences exceeding 6 words
+- **Proper vertical spacing** between rows
+- **Row-based animation stagger** for visual appeal
+- Parses full transcript JSON into sentence segments
+- Individual word object management throughout all animation phases  
 - Fixed position calculation (positions never change after initial calculation)
 - Sentence-level direction consistency (all words from same direction)
+- Alternating direction between sentences for visual variety
 - Smooth fog dissolve transitions without position shifts
 - Audio preservation during video processing
-- Proper easing functions and timing
 
 Key features:
-- Uses `WordObject` dataclass for persistent word state
-- Sine-based easing for smooth animations
-- Per-word fog parameters (randomized once)
-- Dissolved state tracking to prevent reappearance
-- FFmpeg audio merging for final output
+- `MultiLineWordPipeline` class with configurable max words per row
+- Row tracking for each word object
+- Automatic sentence splitting into multiple rows
+- Centered multi-line text layout
+- Row-based stagger in rise animations
+- All rows of a sentence dissolve together
+- Works from any directory location
 
 Usage:
 ```python
 python pipelines/word_level_pipeline.py
+```
+
+Output: `outputs/ai_math1_multiline_30s_h264.mp4` (30-second test)
+
+### word_level_pipeline_single_line.py
+**Single-line Word Animation (Full Video)**
+
+The previous version that keeps all words on a single line.
+Processes entire transcript but may have readability issues with long sentences.
+
+Usage:
+```python
+python pipelines/word_level_pipeline_single_line.py
+```
+
+Output: `outputs/ai_math1_full_word_animation_h264.mp4`
+
+### word_level_pipeline_simple.py (Original 6-second Demo)
+**Simple Word-by-Word Animation Demo**
+
+The original 6-second demonstration with two hardcoded sentences.
+Useful for quick testing and understanding the core concepts.
+
+Usage:
+```python
+python pipelines/word_level_pipeline_simple.py
 ```
 
 Output: `outputs/word_level_pipeline_h264.mp4`

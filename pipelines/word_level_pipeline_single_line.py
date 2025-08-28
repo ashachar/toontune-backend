@@ -1,6 +1,6 @@
 """
-Multi-line Word-Level Text Animation Pipeline
-Limits to 6 words per row with automatic line wrapping
+Full Word-Level Text Animation Pipeline for AI Math Video
+Processes entire transcript with word-by-word animation and fog dissolve
 """
 
 import cv2
@@ -27,7 +27,6 @@ class WordObject:
     end_time: float
     rise_duration: float
     from_below: bool  # Direction for this word's sentence
-    row: int  # Which row this word is on (0, 1, 2, etc.)
     # Fog parameters (randomized once, then fixed)
     blur_x: float
     blur_y: float
@@ -36,26 +35,23 @@ class WordObject:
 
 @dataclass
 class SentenceData:
-    """Data for a complete sentence (possibly multi-line)"""
+    """Data for a complete sentence"""
     text: str
     start_time: float
     end_time: float
     fog_start: float
     fog_end: float
     from_below: bool
-    num_rows: int = 1
     words: List[WordObject] = None
 
-class MultiLineWordPipeline:
+class WordLevelPipeline:
     """
-    Pipeline with multi-line support (max 6 words per row)
+    Pipeline that maintains word-level objects throughout all animations
     """
     
-    def __init__(self, font_size=48, max_words_per_row=6):
+    def __init__(self, font_size=48):
         self.font_size = font_size
-        self.max_words_per_row = max_words_per_row
         self.color = (255, 255, 255)
-        self.line_spacing = int(font_size * 1.4)  # Space between rows
         
         # Font for measurements
         try:
@@ -67,25 +63,9 @@ class MultiLineWordPipeline:
         self.word_objects: List[WordObject] = []
         self.sentences: List[SentenceData] = []
     
-    def split_into_rows(self, words: List[str]) -> List[List[str]]:
-        """Split words into rows with max 6 words per row"""
-        rows = []
-        current_row = []
-        
-        for word in words:
-            current_row.append(word)
-            if len(current_row) >= self.max_words_per_row:
-                rows.append(current_row)
-                current_row = []
-        
-        if current_row:  # Add remaining words
-            rows.append(current_row)
-        
-        return rows
-    
-    def create_word_object(self, word_text: str, start_time: float, duration: float,
-                           from_below: bool, row: int) -> WordObject:
-        """Create a single word object with timing and row info"""
+    def create_word_objects(self, word_text: str, start_time: float, duration: float,
+                           center: Tuple[int, int], from_below: bool) -> WordObject:
+        """Create a single word object with timing"""
         temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
         draw = ImageDraw.Draw(temp_img)
         
@@ -96,56 +76,42 @@ class MultiLineWordPipeline:
         return WordObject(
             text=word_text,
             x=0,  # Will be set when positioning sentence
-            y=0,  # Will be set when positioning sentence
+            y=center[1],
             width=width,
             height=height,
             start_time=start_time,
             end_time=start_time + duration,
             rise_duration=0.8,
             from_below=from_below,
-            row=row,
             blur_x=random.uniform(0.8, 1.2),
             blur_y=random.uniform(0.8, 1.2),
             fog_density=random.uniform(0.9, 1.1),
             dissolve_speed=random.uniform(0.95, 1.05)
         )
     
-    def position_multiline_sentence(self, words: List[WordObject], rows: List[List[str]], 
-                                   center: Tuple[int, int]):
-        """Calculate and set fixed positions for words in multi-line sentence"""
-        if not words or not rows:
+    def position_sentence_words(self, words: List[WordObject], center: Tuple[int, int]):
+        """Calculate and set fixed positions for all words in a sentence"""
+        if not words:
             return
         
+        # Calculate total width including spaces
         temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
         draw = ImageDraw.Draw(temp_img)
         space_width = draw.textbbox((0, 0), " ", font=self.font)[2]
         
-        # Calculate total height for centering
-        total_height = len(rows) * self.line_spacing
-        start_y = center[1] - total_height // 2 + self.line_spacing // 2
+        total_width = sum(w.width for w in words) + space_width * (len(words) - 1)
         
-        # Position each row
-        word_index = 0
-        for row_num, row_words in enumerate(rows):
-            # Calculate row width
-            row_width = sum(words[word_index + i].width for i in range(len(row_words)))
-            row_width += space_width * (len(row_words) - 1)
-            
-            # Center this row horizontally
-            start_x = center[0] - row_width // 2
-            current_x = start_x
-            row_y = start_y + row_num * self.line_spacing
-            
-            # Position words in this row
-            for i in range(len(row_words)):
-                word = words[word_index]
-                word.x = current_x
-                word.y = row_y
-                current_x += word.width + space_width
-                word_index += 1
+        # Position words
+        start_x = center[0] - total_width // 2
+        current_x = start_x
+        
+        for word in words:
+            word.x = current_x
+            word.y = center[1]
+            current_x += word.width + space_width
     
     def parse_transcript_to_sentences(self, transcript_path: str) -> List[SentenceData]:
-        """Parse transcript and create sentence data with multi-line support"""
+        """Parse transcript and create sentence data with proper timing"""
         with open(transcript_path, 'r') as f:
             transcript = json.load(f)
         
@@ -157,10 +123,6 @@ class MultiLineWordPipeline:
             text = segment['text'].strip()
             if not text:
                 continue
-            
-            # Check if sentence needs multiple rows
-            words = text.split()
-            rows = self.split_into_rows(words)
             
             # Alternate direction for visual variety
             from_below = (i % 2 == 0)
@@ -175,21 +137,17 @@ class MultiLineWordPipeline:
                 end_time=segment['end'],
                 fog_start=fog_start,
                 fog_end=fog_end,
-                from_below=from_below,
-                num_rows=len(rows)
+                from_below=from_below
             )
             sentences.append(sentence)
         
         return sentences
     
     def create_words_for_sentence(self, sentence: SentenceData, center: Tuple[int, int]):
-        """Create word objects for a sentence with multi-line support"""
+        """Create word objects for a sentence with proper timing"""
         words_text = sentence.text.split()
         if not words_text:
             return []
-        
-        # Split into rows
-        rows = self.split_into_rows(words_text)
         
         # Calculate timing for each word
         total_duration = sentence.end_time - sentence.start_time
@@ -198,18 +156,16 @@ class MultiLineWordPipeline:
         word_objects = []
         current_time = sentence.start_time
         
-        # Create word objects with row information
-        for row_num, row_words in enumerate(rows):
-            for word in row_words:
-                word_obj = self.create_word_object(
-                    word, current_time, word_duration,
-                    sentence.from_below, row_num
-                )
-                word_objects.append(word_obj)
-                current_time += word_duration * 1.25  # Add small gap between words
+        for word in words_text:
+            word_obj = self.create_word_objects(
+                word, current_time, word_duration,
+                center, sentence.from_below
+            )
+            word_objects.append(word_obj)
+            current_time += word_duration * 1.25  # Add small gap between words
         
-        # Position all words in their rows
-        self.position_multiline_sentence(word_objects, rows, center)
+        # Position all words
+        self.position_sentence_words(word_objects, center)
         
         return word_objects
     
@@ -246,12 +202,11 @@ class MultiLineWordPipeline:
             eased_progress = (1 - np.cos(rise_progress * np.pi)) / 2
             opacity = eased_progress
             
-            # Rise from below or above (with row-based stagger)
-            stagger = word_obj.row * 5  # Slight stagger for different rows
+            # Rise from below or above
             if word_obj.from_below:
-                y_offset = int((1 - eased_progress) * (50 + stagger))
+                y_offset = int((1 - eased_progress) * 50)
             else:
-                y_offset = int((eased_progress - 1) * (50 + stagger))
+                y_offset = int((eased_progress - 1) * 50)
         
         # Draw word with opacity
         text_color = (255, 255, 255, int(255 * opacity))
@@ -369,71 +324,64 @@ class MultiLineWordPipeline:
         return result
 
 
-def create_multiline_video_pipeline():
-    """Create video with multi-line word animation"""
+def create_full_video_pipeline():
+    """Create full video with word-level tracking throughout"""
     
-    print("Creating Multi-line Word-Level Animation Pipeline")
+    print("Creating Full Word-Level Animation Pipeline")
     print("=" * 60)
-    print("Maximum 6 words per row with automatic wrapping")
+    print("Processing entire AI Math video with all sentences")
     print()
     
-    # Input/output paths (works from any location)
-    base_path = "." if os.path.exists("uploads") else ".."
-    input_video = f"{base_path}/uploads/assets/videos/ai_math1.mp4"
-    transcript_path = f"{base_path}/uploads/assets/videos/ai_math1/transcript.json"
-    
-    # First create a 30-second test
-    print("Extracting 30-second test segment...")
-    output_dir = f"{base_path}/outputs"
-    os.makedirs(output_dir, exist_ok=True)
-    test_segment = f"{output_dir}/ai_math1_30s_multiline.mp4"
-    os.system(f"ffmpeg -i {input_video} -t 30 -c:v libx264 -preset fast -crf 18 -c:a copy {test_segment} -y 2>/dev/null")
+    # Input/output paths
+    input_video = "uploads/assets/videos/ai_math1.mp4"
+    transcript_path = "uploads/assets/videos/ai_math1/transcript.json"
+    output_path = "outputs/ai_math1_full_word_animation.mp4"
     
     # Create pipeline
-    pipeline = MultiLineWordPipeline(font_size=48, max_words_per_row=6)
+    pipeline = WordLevelPipeline(font_size=48)
     
     # Parse transcript into sentences
     print("Parsing transcript...")
     pipeline.sentences = pipeline.parse_transcript_to_sentences(transcript_path)
-    
-    # Filter for first 30 seconds for testing
-    pipeline.sentences = [s for s in pipeline.sentences if s.start_time < 30]
-    print(f"Processing {len(pipeline.sentences)} sentences in first 30 seconds")
+    print(f"Found {len(pipeline.sentences)} sentences")
     
     # Create word objects for each sentence
-    print("\nCreating word objects with multi-line layout...")
+    print("Creating word objects...")
     center_position = (640, 360)  # Center of 1280x720 video
     
     for i, sentence in enumerate(pipeline.sentences):
         sentence.words = pipeline.create_words_for_sentence(sentence, center_position)
         pipeline.word_objects.extend(sentence.words)
         
-        # Show info about multi-line sentences
-        if sentence.num_rows > 1:
+        # Show first few sentences for verification
+        if i < 5:
             direction = "below" if sentence.from_below else "above"
-            print(f"  Sentence {i+1}: {sentence.num_rows} rows, {len(sentence.words)} words, from {direction}")
-            print(f"    Text: {sentence.text[:60]}...")
+            print(f"  Sentence {i+1} ({len(sentence.words)} words, from {direction}): "
+                  f"{sentence.text[:50]}...")
     
-    print(f"\nTotal word objects created: {len(pipeline.word_objects)}")
+    print(f"Total word objects created: {len(pipeline.word_objects)}")
     
     # Open video
-    cap = cv2.VideoCapture(test_segment)
+    cap = cv2.VideoCapture(input_video)
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps
     
     print(f"\nVideo properties:")
     print(f"  Resolution: {width}x{height}")
     print(f"  FPS: {fps:.2f}")
-    print(f"  Frames: {total_frames}")
+    print(f"  Duration: {duration:.1f} seconds")
+    print(f"  Total frames: {total_frames}")
     
     # Create output video (temporary, without audio)
-    temp_output = f"{output_dir}/temp_multiline_30s.mp4"
+    temp_output = "outputs/temp_full_word_animation.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(temp_output, fourcc, fps, (width, height))
     
-    print("\nRendering multi-line animation...")
+    print("\nRendering animation...")
+    print("This may take a few minutes for the full video...")
     
     frame_count = 0
     last_progress = -1
@@ -448,9 +396,9 @@ def create_multiline_video_pipeline():
         # Process frame with word animations
         animated_frame = pipeline.process_frame(frame, time_seconds)
         
-        # Add info overlay
-        info_text = f"Multi-line (max 6 words/row) | {time_seconds:.1f}s"
-        cv2.putText(animated_frame, info_text,
+        # Add subtle progress indicator
+        progress_text = f"Time: {time_seconds:.1f}s / {duration:.1f}s"
+        cv2.putText(animated_frame, progress_text,
                    (10, height - 20), cv2.FONT_HERSHEY_SIMPLEX,
                    0.4, (150, 150, 150), 1)
         
@@ -458,8 +406,8 @@ def create_multiline_video_pipeline():
         
         # Progress reporting
         progress = int(frame_count * 100 / total_frames)
-        if progress != last_progress and progress % 10 == 0:
-            print(f"  Progress: {progress}%")
+        if progress != last_progress and progress % 5 == 0:
+            print(f"  Progress: {progress}% ({frame_count}/{total_frames} frames)")
             last_progress = progress
         
         frame_count += 1
@@ -470,36 +418,36 @@ def create_multiline_video_pipeline():
     print("\nMerging with audio and converting to H.264...")
     
     # Merge with audio and convert to H.264
-    final_output = f"{output_dir}/ai_math1_multiline_30s_h264.mp4"
-    os.system(f"""ffmpeg -i {temp_output} -i {test_segment} \
+    final_output = output_path.replace('.mp4', '_h264.mp4')
+    os.system(f"""ffmpeg -i {temp_output} -i {input_video} \
         -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p \
         -c:a copy -map 0:v:0 -map 1:a:0? \
         -movflags +faststart {final_output} -y 2>/dev/null""")
     
-    # Clean up temp files
+    # Clean up temp file
     os.remove(temp_output)
-    os.remove(test_segment)
     
-    print(f"\n✅ Multi-line video created: {final_output}")
-    print("\nFeatures demonstrated:")
-    print("  • Maximum 6 words per row")
-    print("  • Automatic line wrapping for long sentences")
-    print("  • Proper vertical spacing between rows")
-    print("  • Row-based stagger for rise animation")
-    print("  • All rows dissolve together as one sentence")
+    print(f"\n✅ Full video created: {final_output}")
+    print("\nAnimation features:")
+    print("  • All sentences from transcript animated")
+    print("  • Words enter from alternating directions")
+    print("  • Fixed positions maintained throughout")
+    print("  • Fog dissolve after each sentence")
+    print("  • Original audio preserved")
+    print(f"  • Total processing: {len(pipeline.sentences)} sentences, {len(pipeline.word_objects)} words")
     
     return final_output
 
 
 if __name__ == "__main__":
-    print("MULTI-LINE WORD-LEVEL TEXT ANIMATION PIPELINE")
+    print("FULL WORD-LEVEL TEXT ANIMATION PIPELINE")
     print("=" * 60)
-    print("Handles long sentences with automatic line wrapping")
+    print("Complete transcript animation with professional effects")
     print()
     
-    output = create_multiline_video_pipeline()
+    output = create_full_video_pipeline()
     
     if output:
-        print(f"\n✨ Success! Multi-line video ready: {output}")
-        print("\nThis version properly handles long sentences by")
-        print("wrapping them across multiple lines (max 6 words each).")
+        print(f"\n✨ Success! Full video ready: {output}")
+        print("\nThis demonstrates the complete word-level animation system")
+        print("applied to an entire video with perfect synchronization.")
