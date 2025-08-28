@@ -48,6 +48,20 @@
   - Multiple iterations: `outputs/iteration1/`, `outputs/iteration2/`
 - NEVER save test videos directly in the backend root directory
 
+## Golden Standard Pipelines Folder
+**ALL working pipeline examples MUST be saved to the `pipelines/` folder**
+- When a pipeline is fully working and demonstrates best practices, save it to `pipelines/`
+- This folder contains golden standard implementations that should be referenced
+- Each pipeline should be self-contained and runnable
+- Include clear documentation in the file about what the pipeline demonstrates
+- Examples of pipelines to save:
+  - Word-level text animations with fog dissolve
+  - Background replacement with stock videos
+  - Complete video processing workflows
+- Reference these pipelines when implementing similar functionality
+- Current golden standards:
+  - `pipelines/word_level_pipeline.py` - Word-by-word animation with fog dissolve, audio preservation
+
 ## Animation Code Duplication Policy
 **CRITICAL: NEVER duplicate animation code - always check for existing implementations first**
 - Before implementing ANY animation, MUST search for existing animation classes using:

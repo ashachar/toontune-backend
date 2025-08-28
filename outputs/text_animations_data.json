@@ -1,0 +1,199 @@
+{
+  "animations": [
+    {
+      "id": 1,
+      "time_range": "0-5s",
+      "text_content": "למה זה חליו בזדמוח?",
+      "animation_type": "fade_in_from_transparent",
+      "description": "\n        TEXT FADE-IN ANIMATION:\n        - Text starts completely transparent (invisible)\n        - Gradually increases opacity from 0% to 100% over ~1 second\n        - Text appears centered in upper portion of screen\n        - White text color with subtle shadow\n        - Smooth linear fade transition\n        - Text remains static in position during fade\n        ",
+      "family": "opacity_transitions",
+      "parameters": {
+        "duration_ms": 1000,
+        "start_opacity": 0,
+        "end_opacity": 1,
+        "easing": "linear",
+        "position": "top_center",
+        "color": "#FFFFFF",
+        "shadow": true
+      }
+    },
+    {
+      "id": 2,
+      "time_range": "8-12s",
+      "text_content": "רפורמה חדשה בישראל",
+      "animation_type": "slide_in_from_top",
+      "description": "\n        SLIDE-IN FROM TOP ANIMATION:\n        - Multi-line text slides down from above the frame\n        - Starts completely off-screen (y = -100px)\n        - Slides smoothly into position over ~0.8 seconds\n        - Uses ease-out easing for natural deceleration\n        - Text appears line by line with slight stagger\n        - White text with drop shadow for depth\n        - Final position is center-aligned\n        ",
+      "family": "slide_transitions",
+      "parameters": {
+        "duration_ms": 800,
+        "direction": "top",
+        "offset_pixels": -100,
+        "easing": "ease_out",
+        "stagger_ms": 100,
+        "color": "#FFFFFF",
+        "shadow": true
+      }
+    },
+    {
+      "id": 3,
+      "time_range": "18-22s",
+      "text_content": "חיסכון כדי לקבל הטבות בנייה",
+      "animation_type": "fade_slide_combo",
+      "description": "\n        FADE + SLIDE COMBINATION:\n        - Text simultaneously fades in AND slides up slightly\n        - Starts at 0% opacity and 20px below final position\n        - Both animations run in parallel over ~1.2 seconds\n        - Creates a \"floating up\" appearance effect\n        - Two lines of text animate together\n        - Smooth ease-in-out curve for natural motion\n        ",
+      "family": "combo_transitions",
+      "parameters": {
+        "duration_ms": 1200,
+        "start_opacity": 0,
+        "end_opacity": 1,
+        "vertical_offset": 20,
+        "easing": "ease_in_out",
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": 4,
+      "time_range": "28-32s",
+      "text_content": "בין 8-12 שבועות",
+      "animation_type": "typewriter_reveal",
+      "description": "\n        TYPEWRITER/CHARACTER REVEAL:\n        - Text appears character by character from left to right\n        - Each character fades in quickly (~50ms per character)\n        - Creates typing effect without cursor\n        - Maintains consistent spacing throughout reveal\n        - Bottom-positioned text with larger font size\n        - White text on semi-transparent background\n        ",
+      "family": "reveal_transitions",
+      "parameters": {
+        "duration_ms": 1500,
+        "char_duration_ms": 50,
+        "direction": "left_to_right",
+        "background": "semi_transparent",
+        "position": "bottom_center",
+        "font_size": "large"
+      }
+    },
+    {
+      "id": 5,
+      "time_range": "38-42s",
+      "text_content": "מה קורה רושראל?",
+      "animation_type": "zoom_fade_in",
+      "description": "\n        ZOOM + FADE IN ANIMATION:\n        - Text starts at 120% scale and 0% opacity\n        - Simultaneously scales down to 100% while fading in\n        - Creates a \"zooming in from distance\" effect\n        - Duration ~1 second with ease-out curve\n        - Centered positioning\n        - Subtle drop shadow for depth\n        ",
+      "family": "scale_transitions",
+      "parameters": {
+        "duration_ms": 1000,
+        "start_scale": 1.2,
+        "end_scale": 1.0,
+        "start_opacity": 0,
+        "end_opacity": 1,
+        "easing": "ease_out",
+        "position": "center"
+      }
+    },
+    {
+      "id": 6,
+      "time_range": "48-52s",
+      "text_content": "שמעתם טוב טוב\\nדרך העודה בעריה",
+      "animation_type": "staggered_line_fade",
+      "description": "\n        STAGGERED LINE FADE-IN:\n        - Multiple lines of text fade in with delay between lines\n        - First line appears, then 300ms delay, then second line\n        - Each line fades in over 500ms\n        - Creates hierarchical text reveal\n        - Top line appears first (main message)\n        - Bottom line appears second (supporting text)\n        ",
+      "family": "staggered_transitions",
+      "parameters": {
+        "line_duration_ms": 500,
+        "line_delay_ms": 300,
+        "total_duration_ms": 1300,
+        "easing": "ease_in",
+        "position": "two_tier"
+      }
+    },
+    {
+      "id": 7,
+      "time_range": "58-62s",
+      "text_content": "מעשור ל-3-4 שנים",
+      "animation_type": "blur_to_focus",
+      "description": "\n        BLUR TO FOCUS ANIMATION:\n        - Text starts heavily blurred (gaussian blur radius ~10px)\n        - Gradually reduces blur to sharp text over ~1.5 seconds\n        - Simultaneously increases opacity from 70% to 100%\n        - Creates a \"coming into focus\" effect\n        - Large bold text at bottom of screen\n        - White text with strong shadow for readability\n        ",
+      "family": "blur_transitions",
+      "parameters": {
+        "duration_ms": 1500,
+        "start_blur": 10,
+        "end_blur": 0,
+        "start_opacity": 0.7,
+        "end_opacity": 1.0,
+        "font_weight": "bold",
+        "position": "bottom_center"
+      }
+    },
+    {
+      "id": 8,
+      "time_range": "70-75s",
+      "text_content": "Contact information",
+      "animation_type": "slide_up_bounce",
+      "description": "\n        SLIDE UP WITH BOUNCE:\n        - Text slides up from bottom of screen\n        - Overshoots final position slightly\n        - Bounces back with spring physics\n        - Total animation ~1.2 seconds\n        - Elastic easing for playful feel\n        - Used for call-to-action text\n        ",
+      "family": "elastic_transitions",
+      "parameters": {
+        "duration_ms": 1200,
+        "overshoot": 1.1,
+        "bounce_count": 2,
+        "damping": 0.6,
+        "direction": "up",
+        "easing": "elastic_out"
+      }
+    },
+    {
+      "id": 9,
+      "time_range": "90-95s",
+      "text_content": "Important message",
+      "animation_type": "glow_pulse_appear",
+      "description": "\n        GLOW PULSE APPEARANCE:\n        - Text appears with animated glowing outline\n        - Glow pulses 2-3 times during appearance\n        - Combines fade-in with glow animation\n        - Glow color matches text color but brighter\n        - Creates attention-grabbing effect\n        - Used for important notifications\n        ",
+      "family": "glow_effects",
+      "parameters": {
+        "duration_ms": 2000,
+        "pulse_count": 3,
+        "glow_radius": 5,
+        "glow_intensity": 1.5,
+        "base_opacity": 1.0,
+        "color": "#FFFFFF"
+      }
+    },
+    {
+      "id": 10,
+      "time_range": "110-115s",
+      "text_content": "Rotating information",
+      "animation_type": "3d_rotate_in",
+      "description": "\n        3D ROTATION ENTRANCE:\n        - Text rotates in 3D space (Y-axis rotation)\n        - Starts at 90° rotation (edge-on, invisible)\n        - Rotates to 0° (face-on) over ~1 second\n        - Includes perspective for depth effect\n        - Slight fade-in during rotation\n        - Professional transition effect\n        ",
+      "family": "3d_transitions",
+      "parameters": {
+        "duration_ms": 1000,
+        "rotation_axis": "Y",
+        "start_rotation": 90,
+        "end_rotation": 0,
+        "perspective": 1000,
+        "opacity_fade": true
+      }
+    }
+  ],
+  "families": {
+    "opacity_transitions": [
+      1
+    ],
+    "slide_transitions": [
+      2
+    ],
+    "combo_transitions": [
+      3
+    ],
+    "reveal_transitions": [
+      4
+    ],
+    "scale_transitions": [
+      5
+    ],
+    "staggered_transitions": [
+      6
+    ],
+    "blur_transitions": [
+      7
+    ],
+    "elastic_transitions": [
+      8
+    ],
+    "glow_effects": [
+      9
+    ],
+    "3d_transitions": [
+      10
+    ]
+  }
+}

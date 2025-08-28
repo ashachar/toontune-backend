@@ -1,0 +1,51 @@
+[
+  {
+    "start_time": 0,
+    "end_time": 5,
+    "description": "Opening text fade-in",
+    "animation_type": "sequential_line_reveal",
+    "frame_count": 75
+  },
+  {
+    "start_time": 8,
+    "end_time": 12,
+    "description": "Multi-line text slide",
+    "animation_type": "vertical_slide",
+    "frame_count": 60
+  },
+  {
+    "start_time": 18,
+    "end_time": 22,
+    "description": "Two-line text appearance",
+    "animation_type": "static_text",
+    "frame_count": 60
+  },
+  {
+    "start_time": 28,
+    "end_time": 32,
+    "description": "Bottom text with top text",
+    "animation_type": "sequential_line_reveal",
+    "frame_count": 60
+  },
+  {
+    "start_time": 38,
+    "end_time": 42,
+    "description": "Text question",
+    "animation_type": "vertical_slide",
+    "frame_count": 60
+  },
+  {
+    "start_time": 48,
+    "end_time": 52,
+    "description": "Two-tier text",
+    "animation_type": "sequential_line_reveal",
+    "frame_count": 60
+  },
+  {
+    "start_time": 58,
+    "end_time": 62,
+    "description": "Contact info reveal",
+    "animation_type": "static_text",
+    "frame_count": 60
+  }
+]

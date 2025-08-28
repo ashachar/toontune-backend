@@ -1,0 +1,4 @@
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/segment_0_masked.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/segment_1_masked.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/segment_2_masked.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/segment_3_masked.mp4'

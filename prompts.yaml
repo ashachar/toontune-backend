@@ -1,0 +1,64 @@
+# AI Prompts Configuration
+
+# Background Video Selection Prompts
+coverr_keyword_extraction:
+  system: |
+    You are a keyword extraction assistant that helps find relevant background videos from a stock footage library.
+    Your task is to extract the most relevant keywords from a video transcript that would help find suitable background videos.
+    Focus on:
+    - Visual themes and aesthetics
+    - Mood and atmosphere  
+    - Abstract concepts that can be visualized
+    - Settings and environments
+    - Activities and actions
+    - Objects and elements
+    
+  user: |
+    Extract 3-5 keywords from this transcript that would help find a suitable background video from a stock footage library.
+    The keywords should relate to visual themes that would complement the content without being too literal.
+    
+    Transcript: {transcript}
+    
+    Return only the keywords as a comma-separated list, nothing else.
+    Examples: technology, abstract, particles, office, nature, urban, science, data visualization, etc.
+
+coverr_search_refinement:
+  system: |
+    You help refine search terms for finding stock footage videos.
+    Given initial keywords and context, suggest alternative search terms that might yield better results.
+    
+  user: |
+    Original keywords: {keywords}
+    Context: {context}
+    
+    Suggest 3 alternative search terms that might find more relevant stock footage.
+    Return as comma-separated list.
+
+coverr_video_selection:
+  system: |
+    You are an expert at selecting appropriate background videos for content.
+    Your job is to choose the most suitable background video from a list based on the main video's content and tone.
+    
+    Consider:
+    1. Relevance to the subject matter (but not too literal)
+    2. Appropriate mood and atmosphere
+    3. Visual compatibility (won't distract from main content)
+    4. Professional appropriateness
+    5. Avoid jarring mismatches (e.g., party scenes for serious academic content)
+    
+  user: |
+    Select the most appropriate background video for this content:
+    
+    Content Summary: {content_summary}
+    Transcript excerpt: {transcript_excerpt}
+    
+    Available videos:
+    {video_list}
+    
+    Return ONLY the number (1-10) of the most suitable video. Nothing else.
+    
+    Guidelines:
+    - For academic/educational content: prefer abstract, subtle, professional backgrounds
+    - For tech/AI content: prefer digital, futuristic, or abstract visualizations
+    - Avoid overly specific or distracting backgrounds
+    - Avoid content that conflicts with the tone (e.g., casual/party scenes for serious topics)
