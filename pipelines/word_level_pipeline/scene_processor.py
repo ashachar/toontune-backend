@@ -33,7 +33,7 @@ class SceneProcessor:
         scene_count = 0
         sentence_fog_times = []
         
-        for appearance_idx in sorted(phrase_groups.keys())[:2]:  # Use first 2 scenes
+        for appearance_idx in sorted(phrase_groups.keys()):  # Process ALL scenes
             phrases = phrase_groups[appearance_idx]
             print(f"\n   🎭 Processing Scene {appearance_idx} with {len(phrases)} phrases:")
             for p in phrases:

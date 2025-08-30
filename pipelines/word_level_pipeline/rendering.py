@@ -39,13 +39,16 @@ class WordRenderer:
         
         # Don't render if dissolved or not started yet
         # Note: We allow rendering even if previous scene is dissolving to enable crossfade
-        if is_dissolved or time_seconds < word_obj.start_time:
+        # Words should FINISH their animation at start_time, so begin at start_time - rise_duration
+        animation_start = word_obj.start_time - word_obj.rise_duration
+        if is_dissolved or time_seconds < animation_start:
             return frame
         
         # Calculate rise animation progress
+        # Animation runs from (start_time - rise_duration) to start_time
         rise_progress = 1.0
-        if time_seconds < word_obj.start_time + word_obj.rise_duration:
-            rise_progress = (time_seconds - word_obj.start_time) / word_obj.rise_duration
+        if time_seconds < word_obj.start_time:
+            rise_progress = (time_seconds - animation_start) / word_obj.rise_duration
         
         # Create word image with padding for effects
         padding = 100

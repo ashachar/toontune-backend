@@ -27,11 +27,15 @@ class WordFactory:
         temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
         draw = ImageDraw.Draw(temp_img)
         
-        # Use font size from placement
+        # Use font size from placement, increase by 50% if behind
+        actual_font_size = placement.font_size
+        if placement.is_behind:
+            actual_font_size = int(actual_font_size * 1.5)
+        
         try:
-            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', placement.font_size)
+            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', actual_font_size)
             if text == "surprised if":
-                print(f"         DEBUG: Using font size {placement.font_size} for 'surprised if'")
+                print(f"         DEBUG: Using font size {actual_font_size} for 'surprised if'")
         except:
             font = ImageFont.load_default()
             if text == "surprised if":
@@ -126,7 +130,7 @@ class WordFactory:
                 rise_duration=0.8,
                 from_below=from_below,
                 is_behind=placement.is_behind,  # Use visibility-based decision
-                font_size=placement.font_size,  # Store font size for rendering
+                font_size=actual_font_size,  # Store actual font size (increased if behind)
                 scene_index=scene_index,  # Track which scene this word belongs to
                 color=placement.color if hasattr(placement, 'color') else (255, 255, 255),  # Use color from placement
             )

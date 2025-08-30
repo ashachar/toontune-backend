@@ -67,7 +67,7 @@ class TranscriptEnricher:
         # Convert words to readable text with timing - include indices AND gaps for clarity
         text_with_timing = []
         prev_end = 0
-        for i, word in enumerate(words[:150]):  # Increase limit to give more context
+        for i, word in enumerate(words):  # Process ALL words, no limit
             gap = word['start'] - prev_end if prev_end > 0 else 0
             gap_marker = f" [GAP: {gap:.2f}s]" if gap > 0.3 else ""
             text_with_timing.append(f"[{i}] {word['text']} ({word['start']:.2f}s){gap_marker}")
@@ -110,13 +110,13 @@ class TranscriptEnricher:
                 "temperature": 0.2,
                 "topK": 40,
                 "topP": 0.95,
-                "maxOutputTokens": 8192,
+                "maxOutputTokens": 32768,
                 "responseMimeType": "application/json"  # Request JSON response
             }
         }
         
         try:
-            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response = requests.post(url, headers=headers, json=data, timeout=120)
             response.raise_for_status()
             result = response.json()
             

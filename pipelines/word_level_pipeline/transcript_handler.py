@@ -72,9 +72,9 @@ class TranscriptHandler:
         
         # Group phrases by appearance_index (scenes)
         phrase_groups = {}
-        # Dynamically limit phrases based on duration
-        max_phrases = int(duration_seconds * 2.5)  # Roughly 2-3 phrases per second
-        for phrase in enriched_phrases[:max_phrases]:
+        # Process ALL phrases, not limited by duration
+        # This allows full video processing
+        for phrase in enriched_phrases:
             idx = phrase.appearance_index
             if idx not in phrase_groups:
                 phrase_groups[idx] = []
