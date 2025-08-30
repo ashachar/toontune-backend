@@ -9,9 +9,9 @@ from pathlib import Path
 # Add to path for imports
 sys.path.append(str(Path(__file__).parent))
 
-from pipeline.steps.step_7_karaoke import KaraokeStep
-from pipeline.steps.step_8_embed_phrases import EmbedPhrasesStep
-from pipeline.steps.step_9_embed_cartoons import EmbedCartoonsStep
+from karaoke.steps.step_7_karaoke import KaraokeStep
+from karaoke.steps.step_8_embed_phrases import EmbedPhrasesStep
+from karaoke.steps.step_9_embed_cartoons import EmbedCartoonsStep
 
 def main():
     print("="*70)

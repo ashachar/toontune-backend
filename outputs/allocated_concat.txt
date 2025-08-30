@@ -1,0 +1,3 @@
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/allocated_seg_00_mathematics.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/allocated_seg_01_innovation.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/allocated_seg_02_abstract_tech.mp4'

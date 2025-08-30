@@ -1,0 +1,137 @@
+🚀 Starting Full Video Background Pipeline
+⚠️  This will process the entire 206-second video
+⏳ Expected time: 5-10 minutes
+
+================================================================================
+FULL VIDEO BACKGROUND PIPELINE
+================================================================================
+Input: uploads/assets/videos/ai_math1.mp4
+Duration: 205.8 seconds
+
+================================================================================
+STEP 1: ROBUST VIDEO MATTING (Full Video)
+================================================================================
+⏳ Processing full video with RVM (this may take several minutes)...
+✓ Found cached RVM output: uploads/assets/videos/ai_math1/ai_math1_rvm_green_full_f6ddd62c7a5e.mp4
+  Created: 2025-08-28T17:45:51.010565
+  Model: robust_video_matting
+Using cached RVM output - no API call needed!
+✅ RVM output ready: uploads/assets/videos/ai_math1/ai_math1_rvm_green_full_f6ddd62c7a5e.mp4
+
+================================================================================
+STEP 2: BACKGROUND ALLOCATION
+================================================================================
+📝 Analyzing transcript for background allocation...
+
+📊 Allocated 8 segments:
+  1. [   0.0s -   15.0s] ( 15.0s) : abstract_tech       
+  2. [  15.0s -   35.0s] ( 20.0s) : mathematics         
+  3. [  35.0s -   58.0s] ( 23.0s) : innovation          
+  4. [  58.0s -   85.0s] ( 27.0s) : research            
+  5. [  85.0s -  115.0s] ( 30.0s) : data_visualization  
+  6. [ 115.0s -  145.0s] ( 30.0s) : cosmic              
+  7. [ 145.0s -  175.0s] ( 30.0s) : innovation          
+  8. [ 175.0s -  205.8s] ( 30.8s) : education           
+
+✅ Allocation saved: uploads/assets/videos/ai_math1/full_video_allocation.json
+
+================================================================================
+STEP 3: BACKGROUND ACQUISITION
+================================================================================
+
+[1/8] abstract_tech
+  ✅ Found in cache: technology_df622fdbed2c.mp4
+
+[2/8] mathematics
+  ✅ Found in cache: mathematics_f55227553cc3.mp4
+
+[3/8] innovation
+  🔍 Searching online for innovation...
+  ⚠️ No background found, will use fallback
+
+[4/8] research
+  ✅ Found in cache: data_analytics_e4b6ba46605b.mp4
+
+[5/8] data_visualization
+  ✅ Found in cache: data_analytics_e4b6ba46605b.mp4
+
+[6/8] cosmic
+  🔍 Searching online for cosmic...
+  ⚠️ No background found, will use fallback
+
+[7/8] innovation
+  🔍 Searching online for innovation...
+  ⚠️ No background found, will use fallback
+
+[8/8] education
+  ✅ Found in cache: ai_visualization_a72e2842d2f7.mp4
+
+================================================================================
+STEP 4: VIDEO PROCESSING
+================================================================================
+
+[1/8] Processing abstract_tech (0.0s - 15.0s)
+  ✅ Processed: full_seg_00_abstract_tech.mp4
+
+[2/8] Processing mathematics (15.0s - 35.0s)
+  ✅ Processed: full_seg_01_mathematics.mp4
+
+[3/8] Processing innovation (35.0s - 58.0s)
+  ⚠️ No background found - using fallback image
+  📦 Using fallback image: background.jpg
+  ✅ Created fallback video from image
+  ✅ Processed: full_seg_02_innovation.mp4
+
+[4/8] Processing research (58.0s - 85.0s)
+  ✅ Processed: full_seg_03_research.mp4
+
+[5/8] Processing data_visualization (85.0s - 115.0s)
+  ✅ Processed: full_seg_04_data_visualization.mp4
+
+[6/8] Processing cosmic (115.0s - 145.0s)
+  ⚠️ No background found - using fallback image
+  📦 Using fallback image: background.jpg
+  ✅ Created fallback video from image
+  ✅ Processed: full_seg_05_cosmic.mp4
+
+[7/8] Processing innovation (145.0s - 175.0s)
+  ⚠️ No background found - using fallback image
+  📦 Using fallback image: background.jpg
+  ✅ Created fallback video from image
+  ✅ Processed: full_seg_06_innovation.mp4
+
+[8/8] Processing education (175.0s - 205.8s)
+  ✅ Processed: full_seg_07_education.mp4
+
+================================================================================
+STEP 5: FINAL VIDEO ASSEMBLY
+================================================================================
+🔗 Concatenating segments...
+✅ Concatenated: ai_math1_full_no_audio.mp4
+🔊 Adding audio from original video...
+✅ Final video: ai_math1_FULL_BACKGROUNDS_20250828_185439.mp4
+
+🧹 Cleaning up temporary files...
+
+================================================================================
+✅ SUCCESS! FULL VIDEO PROCESSED
+================================================================================
+
+📹 Final Output: outputs/ai_math1_FULL_BACKGROUNDS_20250828_185439.mp4
+📏 Size: 43.4 MB
+⏱️  Duration: 205.5 seconds
+🎬 Segments: 8
+
+📊 Background Timeline:
+  1. [   0.0s -   15.0s] ( 15.0s) : abstract_tech
+  2. [  15.0s -   35.0s] ( 20.0s) : mathematics
+  3. [  35.0s -   58.0s] ( 23.0s) : innovation
+  4. [  58.0s -   85.0s] ( 27.0s) : research
+  5. [  85.0s -  115.0s] ( 30.0s) : data_visualization
+  6. [ 115.0s -  145.0s] ( 30.0s) : cosmic
+  7. [ 145.0s -  175.0s] ( 30.0s) : innovation
+  8. [ 175.0s -  205.8s] ( 30.8s) : education
+
+🎥 Opening final video...
+
+✅ Pipeline completed successfully!

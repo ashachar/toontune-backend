@@ -54,6 +54,10 @@
 - This folder contains golden standard implementations that should be referenced
 - Each pipeline should be self-contained and runnable
 - Include clear documentation in the file about what the pipeline demonstrates
+- **CRITICAL: NEVER create a new different main script you're working on in the pipelines folder unless EXPLICITLY instructed by the user**
+  - Work on scripts in the root or appropriate utils folder first
+  - Only move to pipelines when user specifically requests it
+  - The pipelines folder is for FINALIZED, user-approved reference implementations
 - Examples of pipelines to save:
   - Word-level text animations with fog dissolve
   - Background replacement with stock videos
@@ -61,6 +65,7 @@
 - Reference these pipelines when implementing similar functionality
 - Current golden standards:
   - `pipelines/word_level_pipeline.py` - Word-by-word animation with fog dissolve, audio preservation
+  - `pipelines/full_video_background_pipeline.py` - Full video with dynamic background changes
 
 ## Animation Code Duplication Policy
 **CRITICAL: NEVER duplicate animation code - always check for existing implementations first**

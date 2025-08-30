@@ -242,12 +242,34 @@ See `pipelines/apply_stock_backgrounds_refined_chromakey.py` for the production-
 
 The system supports changing backgrounds at different timestamps based on content themes:
 
+#### Background Timestamp Allocation
+
+The system uses AI to intelligently allocate backgrounds based on transcript analysis. This is configured in `prompts.yaml` under `transcript_background_allocation`.
+
+**Prompt Features:**
+- Analyzes full transcript for theme shifts
+- Allocates backgrounds to timestamp ranges
+- Ensures minimum 10-second segments (avoids rapid changes)
+- Maximum 10 background changes per video
+- Returns structured JSON with timestamps, themes, and keywords
+
+**Available Themes:**
+- `abstract_tech` - Digital particles, circuits for AI/tech content
+- `mathematics` - Equations, geometric shapes for math sections
+- `data_visualization` - Charts, networks for data/analytics
+- `research` - Laboratory, scientific imagery
+- `nature` - Calm scenes for philosophical discussions
+- `innovation` - Creative process visuals
+- `education` - Learning environment backgrounds
+- `cosmic` - Universe imagery for big concepts
+- `minimal` - Subtle patterns for focus sections
+
 #### Full Video Pipeline (`pipelines/full_video_stock_backgrounds_pipeline.py`)
 
 **Features:**
-- Analyzes transcript to identify thematic segments
+- Uses `transcript_background_allocation` prompt to determine segments
 - Automatically searches and downloads relevant stock videos
-- Changes backgrounds at key moments in the narrative
+- Changes backgrounds at AI-determined timestamps
 - Uses cached RVM to avoid redundant processing
 
 **Example Workflow:**
@@ -292,9 +314,66 @@ The CoverrManager uses these strategies to select appropriate backgrounds:
 ### Caching Strategy
 
 Videos are cached at multiple levels:
-1. **Global Coverr Cache**: `assets/videos/coverr/`
-2. **Project Cache**: `uploads/assets/videos/{project_name}/`
-3. **Naming Convention**: `{project}_background_{start}_{end}_{video_id}.mp4`
+
+#### 1. **Centralized Background Cache** (`uploads/assets/backgrounds/`)
+**PRIMARY CACHE - Check here first before downloading new backgrounds!**
+
+Managed by `utils/video/background/background_cache_manager.py`:
+- **Universal cache** for all background videos across projects
+- **Searchable by theme and keywords**
+- **Metadata tracking** with source, duration, and relevance scoring
+- **Import existing backgrounds** from project folders
+
+**Cache Structure:**
+```
+uploads/assets/backgrounds/
+├── cache_metadata.json         # Searchable metadata for all backgrounds
+├── mathematics_f55227553cc3.mp4       # Theme-based naming
+├── ai_visualization_2f90f56df74c.mp4
+├── data_analytics_e4b6ba46605b.mp4
+└── [theme]_[hash].mp4
+```
+
+**Usage:**
+```python
+from utils.video.background.background_cache_manager import BackgroundCacheManager
+
+manager = BackgroundCacheManager()
+
+# Search for existing backgrounds BEFORE downloading
+existing = manager.get_best_match(
+    theme="mathematics",
+    keywords=["calculus", "equations", "geometry"]
+)
+
+if existing:
+    print(f"Found cached background: {existing}")
+    # Use this instead of downloading
+else:
+    # Only download if not in cache
+    # Then add to cache after downloading
+    manager.add_background(
+        downloaded_video,
+        theme="mathematics",
+        keywords=["calculus", "equations"],
+        source="coverr",
+        source_id="abc123"
+    )
+```
+
+**Key Features:**
+- **Theme-based search**: Find backgrounds by visual theme
+- **Keyword matching**: Score-based relevance ranking
+- **Automatic deduplication**: Hash-based to prevent duplicates
+- **Import tool**: `import_existing_backgrounds.py` to consolidate existing videos
+
+#### 2. **Project-Specific Cache** (`uploads/assets/videos/{project_name}/`)
+- Contains project-specific videos and RVM outputs
+- Naming: `{project}_background_{start}_{end}_{video_id}.mp4`
+
+#### 3. **Legacy Coverr Cache** (`assets/videos/coverr/`)
+- Original Coverr downloads (being migrated to centralized cache)
+- Can be imported using `manager.import_from_coverr_cache()`
 
 ### Performance Optimization
 
@@ -326,6 +405,63 @@ When `demo_mode=True` or API unavailable:
 4. **Quality Loss**: Adjust CRF value (lower = better quality, larger file)
 
 ## Transcript-Synchronized Word Animations (CRITICAL SECTION)
+
+### Foreground Masking with Cached RVM
+
+The word-level pipeline now integrates with the cached RVM (Robust Video Matting) system for accurate foreground masking when rendering text behind subjects.
+
+#### How It Works
+
+1. **Automatic Cache Detection**: When initializing the pipeline, it checks for existing RVM masks in the video's project folder
+2. **Mask Types Supported**:
+   - **RVM Mask Videos**: `{video_name}_rvm_mask_*.mp4` - Direct mask usage
+   - **RVM Green Screen Videos**: `{video_name}_rvm_green_*.mp4` - Converts to mask on-the-fly
+3. **Fallback Method**: If no cached mask exists, falls back to edge detection (not recommended)
+
+#### Usage in Word-Level Pipeline
+
+The masking system is automatically initialized when you run the word-level pipeline:
+
+```python
+from pipelines.word_level_pipeline import create_word_level_video
+
+# The pipeline automatically looks for cached masks
+create_word_level_video("uploads/assets/videos/ai_math1.mp4", duration_seconds=6.0)
+```
+
+#### Pre-generating Masks
+
+To ensure high-quality masking, pre-generate RVM masks before running the pipeline:
+
+```python
+from utils.video.background.cached_rvm import CachedRobustVideoMatting
+
+processor = CachedRobustVideoMatting()
+
+# Generate mask for the video (will be cached)
+green_screen_path = processor.get_rvm_output(
+    "uploads/assets/videos/ai_math1.mp4",
+    duration=None  # Process full video
+)
+```
+
+#### Implementation Details
+
+The masking is handled by `ForegroundMaskExtractor` in `pipelines/word_level_pipeline/masking.py`:
+
+- **Initialization**: Accepts video path to locate cached masks
+- **Frame Synchronization**: Uses frame numbers to sync mask video with main video
+- **Green Screen Conversion**: Automatically converts green screen to binary mask
+- **Quality Assurance**: Clean, smooth masks without the noise of edge detection
+
+#### Benefits Over Edge Detection
+
+- **Accurate Segmentation**: AI-powered person detection vs noisy edge detection
+- **Clean Masks**: No random pixels or artifacts
+- **Temporal Consistency**: Mask is consistent across frames
+- **Better Text Rendering**: Text behind person looks natural without cut-up letters
+
+## Transcript-Synchronized Word Animations (CONTINUED)
 
 ### Core Principles & Rules of Thumb
 
@@ -384,6 +520,29 @@ ffmpeg -i processed.mp4 -i original.mp4 -c:v libx264 -c:a copy -map 0:v:0 -map 1
 - **Vertical spacing** - 1.4x font size between rows
 - **Row-based stagger** - slight timing offset for each row during animation
 - **Unified dissolve** - all rows of a sentence dissolve together
+
+#### 8. **Enriched Transcripts with AI Analysis**
+**CRITICAL**: Use LLM to analyze transcript importance for dynamic emphasis
+- **Sub-sentence grouping** - Break transcript into meaningful 1-6 word phrases
+- **Importance scoring** - Assign 0.0-1.0 scores based on content significance
+- **Emphasis types**:
+  - `title` - Main topics, headlines (1.4x size, bold, golden, raised)
+  - `critical` - Key insights, numbers (1.25x size, bold, red tint, glow)
+  - `important` - Supporting concepts (1.15x size, conditional bold)
+  - `normal` - Regular narrative (base size)
+- **Visual properties per phrase**:
+  ```python
+  visual_style = {
+      "font_size_multiplier": 1.0-1.4,
+      "bold": True/False,
+      "position_y_offset": -30 to 0,
+      "color_tint": (r, g, b),
+      "animation_speed": 0.7-1.0,
+      "glow_effect": True/False
+  }
+  ```
+- **LLM prompt structure** - Analyze transcript → identify key concepts → assign scores
+- **Mock fallback** - Generate reasonable emphasis without API using keyword heuristics
 
 ### Golden Standard Pipeline Example
 

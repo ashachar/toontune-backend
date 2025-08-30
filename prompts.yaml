@@ -62,3 +62,210 @@ coverr_video_selection:
     - For tech/AI content: prefer digital, futuristic, or abstract visualizations
     - Avoid overly specific or distracting backgrounds
     - Avoid content that conflicts with the tone (e.g., casual/party scenes for serious topics)
+
+# Transcript Enrichment Prompts
+transcript_enrichment:
+  system: |
+    You are an expert at semantic text analysis and visual storytelling for video captions.
+    Your task is to segment transcripts into meaningful phrases for animated text display.
+    You understand linguistic patterns and how to identify the semantic core of sentences.
+    
+    Your goal: Create precise, focused phrases that highlight ONLY the most important words.
+    
+  user: |
+    Analyze this transcript and segment it into meaningful phrases with importance scores.
+
+    Transcript words with timing:
+    {words_with_timing}
+
+    CRITICAL SEGMENTATION PRINCIPLES:
+
+    1. IDENTIFY SEMANTIC CORES:
+       - Technical terms, domain-specific words
+       - Action verbs that describe key processes
+       - Quantitative values (numbers, percentages)
+       - Proper nouns and named entities
+       - Novel or unusual combinations
+
+    2. SEPARATE STRUCTURAL ELEMENTS:
+       - Discourse markers should be isolated (e.g., "Yes,", "Well,", "So,")
+       - Connectors should be grouped together (e.g., "on top of", "in addition to")
+       - Articles and prepositions stay with their objects only if inseparable
+
+    3. PHRASE BOUNDARY GUIDELINES:
+       
+       EXAMPLE 1: "integral to improve its engine performance"
+       WRONG: ["integral to improve its"]
+       RIGHT: ["integral"], ["to"], ["improve"], ["its"], ["engine"], ["performance"]
+       
+       EXAMPLE 2: "operator on top of the derivative"  
+       WRONG: ["operator on top of"]
+       RIGHT: ["operator"], ["on top of the"], ["derivative"]
+       
+       EXAMPLE 3: "AI created new math"
+       WRONG: ["AI"], ["created"], ["new"], ["math"]
+       RIGHT: ["AI created new math"] (this is a complete novel concept)
+       
+       EXAMPLE 4: "Would you be surprised if AI invented"
+       WRONG: ["Would you be surprised"], ["if AI invented"]
+       RIGHT: ["Would you be"], ["surprised if"], ["AI"], ["invented"]
+
+    4. IMPORTANCE SCORING (0.0 to 1.0):
+       - 0.9-1.0: Novel concepts, breakthrough claims, paradigm shifts
+       - 0.7-0.9: Technical terms, key processes, important entities
+       - 0.5-0.7: Supporting details, quantitative data
+       - 0.3-0.5: Regular narrative flow
+       - 0.0-0.3: Connectors, fillers, discourse markers
+
+    5. EMPHASIS TYPES:
+       - "mega_title": Complete novel concepts (e.g., "AI created new math")
+       - "critical": Key technical terms or breakthroughs
+       - "important": Domain-specific words, significant actions
+       - "question": Interrogative phrases
+       - "normal": Standard narrative
+       - "minor": Discourse markers, transitions
+
+    6. COMPOUND TERMS TO KEEP TOGETHER:
+       - Domain-specific: "machine learning", "neural network", "language model"
+       - Technical: "calculus operator", "differential equation"
+       - Novel concepts: Anything that forms a new, unified idea
+       
+    7. WORDS TO ISOLATE FOR EMPHASIS:
+       - Action verbs: improve, optimize, discover, invent, create
+       - Quantifiers: double, triple, 10x, 50%
+       - Comparatives: better, faster, stronger
+       - Technical nouns when standalone: derivative, integral, algorithm
+
+    8. SCENE BOUNDARIES (appearance_index) - EXTREMELY CRITICAL:
+       ⚠️ MANDATORY: Look for TIMING GAPS in the transcript to determine scene boundaries!
+       
+       RULES FOR NEW SCENES (increment appearance_index):
+       a) TIME GAP RULE (HIGHEST PRIORITY): If there's a gap > 0.3 seconds between phrases
+       b) SENTENCE BOUNDARY RULE: After each complete sentence (., ?, !)
+       c) MAXIMUM LENGTH RULE: Never put more than 2 sentences in same scene
+       
+       HOW TO DETECT GAPS:
+       - Look at the end time of one word and start time of next word
+       - If gap > 0.3 seconds = DEFINITELY a new scene
+       - Natural pauses in speech indicate scene boundaries
+       
+       EXAMPLE WITH TIMINGS:
+       "Yes," (0.14s) → appearance_index: 1
+       "AI" (1.02s) → appearance_index: 1 (same sentence despite gap)
+       "created new math" (1.34s-2.92s) → appearance_index: 1 (ends at 2.92s)
+       
+       [SCENE BREAK - Different sentence starts at 2.96s]
+       
+       "Would you be" (2.96s) → appearance_index: 2 (NEW SCENE - new sentence!)
+       "surprised if" (3.60s) → appearance_index: 2 
+       
+       [If question continues too long, break it up!]
+       
+       "AI" (4.60s) → appearance_index: 2 (or 3 if question is getting long)
+       "invented" (5.00s) → appearance_index: 2 or 3
+       
+       ⚠️ CRITICAL RULES:
+       1. NEVER put more than 2-3 seconds of continuous speech in one scene
+       2. "Would you be surprised if" MUST be appearance_index: 2 (not 1!)  
+       3. Break up long questions into multiple scenes
+       4. Each scene should be visually digestible (not overwhelming)
+
+    9. POSITION ASSIGNMENT (top or bottom) - CRITICAL NEW RULE:
+       Each phrase MUST be assigned to either "top" or "bottom" of screen.
+       
+       RULES FOR POSITION ASSIGNMENT:
+       a) If scene has exactly 2 phrases: first → "top", second → "bottom"
+       b) If scene has 3+ phrases: 
+          - First half (chronologically) → "top"
+          - Second half → "bottom"
+          - Must maintain chronological order!
+       c) Single phrase scenes: alternate between "top" and "bottom"
+       
+       EXAMPLES:
+       Scene with 2 phrases:
+       - "Yes," → position: "top"
+       - "AI created new math" → position: "bottom"
+       
+       Scene with 4 phrases:
+       - "Would you be" → position: "top" (first half)
+       - "surprised if" → position: "top" (first half)
+       - "AI" → position: "bottom" (second half)
+       - "invented" → position: "bottom" (second half)
+       
+       IMPORTANT: Phrases at the same position will appear side-by-side with different colors/sizes based on importance.
+
+    Return JSON array with precise segmentation:
+    [
+      {{
+        "phrase": "exact words from transcript",
+        "word_indices": [indices of words in this phrase],
+        "importance": 0.0-1.0,
+        "type": "emphasis_type",
+        "appearance_index": 1-N (scene number, increment every 1-2 sentences),
+        "position": "top" or "bottom" (REQUIRED - screen position),
+        "reason": "why this segmentation"
+      }}
+    ]
+
+# Background Timestamp Allocation Prompts
+transcript_background_allocation:
+  system: |
+    You are an expert at analyzing video transcripts and determining optimal moments for background changes.
+    Your task is to allocate stock video backgrounds to specific timestamps based on content themes.
+    You understand visual storytelling and how backgrounds can enhance narrative without distraction.
+    
+  user: |
+    Analyze this transcript and allocate background video themes to appropriate timestamps.
+    
+    Full transcript:
+    {full_transcript}
+    
+    Video duration: {duration_seconds} seconds
+    
+    Task:
+    1. Identify major theme shifts in the content
+    2. Allocate background themes to specific timestamp ranges
+    3. Each segment should be at least 10 seconds (avoid rapid changes)
+    4. Maximum 10 background changes for the entire video
+    5. Choose themes that enhance but don't distract from content
+    
+    Background themes can be ANY descriptive term that captures the visual mood needed.
+    Examples of themes (but NOT limited to these):
+    - "abstract_tech" - Digital particles, circuits, futuristic
+    - "mathematics" - Equations, geometric shapes, graphs
+    - "data_visualization" - Charts, networks, flowing data
+    - "research" - Laboratory, microscope, scientific
+    - "nature" - Calm nature scenes for philosophy sections
+    - "innovation" - Lightbulbs, gears, creative process
+    - "education" - Classroom, books, learning environment
+    - "cosmic" - Space, stars, universe for big concepts
+    - "minimal" - Clean, subtle patterns for focus sections
+    - "urban_motion" - City timelapses, traffic flow
+    - "organic_flow" - Liquid, smoke, natural movement
+    - "geometric_patterns" - Abstract shapes, tessellations
+    - Or ANY other theme that fits the content's mood and message
+    
+    Return JSON array with this structure:
+    [
+      {
+        "start_time": 0.0,
+        "end_time": 15.5,
+        "theme": "abstract_tech",
+        "keywords": ["AI", "technology", "digital", "future"],
+        "reason": "Opening introduces AI creating new mathematics"
+      },
+      {
+        "start_time": 15.5,
+        "end_time": 35.0,
+        "theme": "mathematics",
+        "keywords": ["calculus", "equations", "math", "formulas"],
+        "reason": "Discussion of mathematical operators and theories"
+      }
+    ]
+    
+    Guidelines:
+    - Match background themes to content being discussed
+    - Avoid jarring transitions (group related content)
+    - Use "minimal" for dense information sections
+    - Use "cosmic" for philosophical/big picture moments
+    - Ensure smooth narrative flow with background changes

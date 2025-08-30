@@ -14,8 +14,8 @@ import argparse
 from pathlib import Path
 
 # Import pipeline components
-from pipeline import PipelineConfig
-from pipeline.steps.step_4_prompts_v2 import PromptsStepV2
+from karaoke import PipelineConfig
+from karaoke.steps.step_4_prompts_v2 import PromptsStepV2
 
 
 def regenerate_prompts_for_video(video_name: str, base_dir: str = "uploads/assets/videos"):
