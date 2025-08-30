@@ -105,9 +105,11 @@ class ForegroundMaskExtractor:
                 # Convert to grayscale if needed
                 if len(mask_frame.shape) == 3:
                     mask_frame = cv2.cvtColor(mask_frame, cv2.COLOR_BGR2GRAY)
-                # Threshold to binary
-                _, mask = cv2.threshold(mask_frame, 128, 255, cv2.THRESH_BINARY)
-                return mask
+                # CRITICAL: Do NOT threshold RVM masks! They use grayscale values where:
+                # - Low values (0-200ish) = foreground/person
+                # - High values (200-255) = background
+                # Thresholding destroys this information and creates incorrect white pixels
+                return mask_frame
         
         # If we have a cached green screen, extract mask from it
         if hasattr(self, 'cached_green_video'):

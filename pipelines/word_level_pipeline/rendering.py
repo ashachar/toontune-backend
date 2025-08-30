@@ -96,7 +96,7 @@ class WordRenderer:
         actual_x = word_obj.x - padding
         actual_y = word_obj.y + y_offset - padding
         
-        # Ensure within bounds
+        # Ensure within bounds for animated position
         y_start = max(0, actual_y)
         y_end = min(frame.shape[0], actual_y + word_bgr.shape[0])
         x_start = max(0, actual_x)
@@ -118,10 +118,20 @@ class WordRenderer:
                 # If rendering behind, extract mask and apply only to background
                 if word_obj.is_behind:
                     foreground_mask = self.mask_extractor.get_mask_for_frame(frame, self.current_frame_number)
+                    
+                    # IMPORTANT: For animated text, we need to check the mask at the CURRENT animated position
+                    # not the final position, so the text is properly masked during its entire animation
                     mask_region = foreground_mask[y_start:y_end, x_start:x_end]
-                    # RVM mask: high values (>180) = background, low/mid values (<180) = foreground
-                    # We want to render text ONLY in background areas (high mask values)
-                    bg_mask = (mask_region > 180).astype(np.float32)
+                    
+                    # RVM mask (without thresholding) uses:
+                    # - Background: 204 (uniform gray value)
+                    # - Person/foreground: < 204 (darker values, variable)
+                    # Use threshold of 203 to separate foreground from background
+                    bg_mask = (mask_region >= 204).astype(np.float32)
+                    # This creates a binary mask: 
+                    # - mask < 204: bg_mask = 0 (NO text - person/foreground)
+                    # - mask >= 204: bg_mask = 1 (text appears - background)
+                    
                     alpha = alpha * bg_mask
                 
                 for c in range(3):
