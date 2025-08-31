@@ -32,9 +32,10 @@ def test_would_bug():
         return
     
     # Run the pipeline with debug output
+    # Process 8 seconds to include the 'operator' word animation (starts at 6.32s)
     output_path = create_word_level_video(
         input_video_path=input_video,
-        duration_seconds=6.0,  # Process 6 second segment
+        duration_seconds=8.0,  # Process 8 second segment to include 'operator' animation
         output_name="ai_math1_would_bug_fixed.mp4"
     )
     

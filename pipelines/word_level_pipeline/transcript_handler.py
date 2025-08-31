@@ -70,11 +70,17 @@ class TranscriptHandler:
         
         print(f"   ✓ Generated/loaded {len(enriched_phrases)} enriched phrases")
         
+        # Filter phrases by duration if processing a segment
+        if duration_seconds and duration_seconds < float('inf'):
+            filtered_phrases = [p for p in enriched_phrases if p.start_time < duration_seconds]
+            if len(filtered_phrases) < len(enriched_phrases):
+                print(f"   📍 Filtering to {len(filtered_phrases)} phrases for {duration_seconds}s segment")
+        else:
+            filtered_phrases = enriched_phrases
+        
         # Group phrases by appearance_index (scenes)
         phrase_groups = {}
-        # Process ALL phrases, not limited by duration
-        # This allows full video processing
-        for phrase in enriched_phrases:
+        for phrase in filtered_phrases:
             idx = phrase.appearance_index
             if idx not in phrase_groups:
                 phrase_groups[idx] = []

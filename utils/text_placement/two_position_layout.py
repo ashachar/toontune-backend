@@ -7,6 +7,7 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 import cv2
+from PIL import Image, ImageDraw, ImageFont
 
 
 @dataclass 
@@ -27,13 +28,14 @@ class TwoPositionLayoutManager:
         self.video_width = video_width
         self.video_height = video_height
         
-        # Define default Y positions - CLOSER TO CENTER for better visibility
-        self.default_top_y = int(video_height * 0.30)  # 30% from top (closer to center)
-        self.default_bottom_y = int(video_height * 0.70)  # 70% from top (closer to center)
+        # Define default Y positions - BETTER VISIBILITY
+        self.default_top_y = int(video_height * 0.20)  # 20% from top 
+        self.default_bottom_y = int(video_height * 0.70)  # 70% from top (safe space for descenders!)
         
         # Alternative Y positions if heads are in the way
-        self.alt_top_y = int(video_height * 0.20)  # Higher up (20% from top)
-        self.alt_bottom_y = int(video_height * 0.80)  # Lower down (80% from top)
+        # More reasonable positions that aren't at the extreme edges
+        self.alt_top_y = 50  # Near top but with some padding
+        self.alt_bottom_y = int(video_height * 0.72)  # 72% from top (MORE room for descenders!)
         
         # Define importance-based colors (RGB)
         self.importance_colors = {
@@ -84,6 +86,111 @@ class TwoPositionLayoutManager:
             
         return placements
         
+    def _split_text_to_lines(self, text: str, font_size: int, max_width: int) -> List[str]:
+        """
+        Split text into multiple lines if it's too long to fit
+        
+        Args:
+            text: The text to potentially split
+            font_size: Font size to use
+            max_width: Maximum width per line
+            
+        Returns:
+            List of text lines (usually 1 or 2 lines)
+        """
+        # Create temp image for text measurement
+        temp_img = Image.new('RGBA', (self.video_width, 200), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(temp_img)
+        
+        try:
+            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', font_size)
+        except:
+            font = ImageFont.load_default()
+        
+        # Check if text fits as-is
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0] + 6  # Include outline
+        
+        if text_width <= max_width:
+            return [text]  # Fits on one line
+        
+        # Split into words and find optimal break point
+        words = text.split()
+        if len(words) <= 2:
+            return [text]  # Too short to split meaningfully
+        
+        # Try to split roughly in the middle
+        mid_point = len(words) // 2
+        best_split = mid_point
+        best_balance = float('inf')
+        
+        # Find the most balanced split point
+        for split_idx in range(max(1, mid_point - 2), min(len(words) - 1, mid_point + 3)):
+            line1 = " ".join(words[:split_idx])
+            line2 = " ".join(words[split_idx:])
+            
+            # Measure both lines
+            bbox1 = draw.textbbox((0, 0), line1, font=font)
+            bbox2 = draw.textbbox((0, 0), line2, font=font)
+            width1 = bbox1[2] - bbox1[0] + 6
+            width2 = bbox2[2] - bbox2[0] + 6
+            
+            # Check if both lines fit
+            if width1 <= max_width and width2 <= max_width:
+                # Calculate balance (prefer similar line lengths)
+                balance = abs(width1 - width2)
+                if balance < best_balance:
+                    best_balance = balance
+                    best_split = split_idx
+        
+        # Return the best split
+        line1 = " ".join(words[:best_split])
+        line2 = " ".join(words[best_split:])
+        return [line1, line2]
+    
+    def _calculate_safe_font_size(self, text: str, base_font_size: int, max_width: int = None) -> int:
+        """
+        Calculate a safe font size that ensures text fits within screen boundaries
+        
+        Args:
+            text: The text to render
+            base_font_size: Initial font size
+            max_width: Maximum allowed width (default: 85% of screen width)
+            
+        Returns:
+            Adjusted font size that fits within boundaries
+        """
+        if max_width is None:
+            # Use 85% of screen width as safe margin (leaving 7.5% on each side)
+            max_width = int(self.video_width * 0.85)
+        
+        # Create temp image for text measurement (needs to be large enough for text)
+        temp_img = Image.new('RGBA', (self.video_width, 200), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(temp_img)
+        
+        current_size = base_font_size
+        
+        # Try progressively smaller sizes until text fits
+        while current_size >= 30:  # Minimum readable size
+            try:
+                font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', current_size)
+            except:
+                font = ImageFont.load_default()
+            
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            
+            # Account for outline effect (adds ~6 pixels)
+            text_width += 6
+            
+            if text_width <= max_width:
+                return current_size
+            
+            # Reduce size by 5% and try again
+            current_size = int(current_size * 0.95)
+        
+        return 30  # Minimum size if nothing else fits
+    
     def _layout_horizontal_group(self, phrases: List[Dict], y_position: int,
                                 foreground_masks: List[np.ndarray] = None,
                                 sample_frames: List[np.ndarray] = None) -> List[PhrasePlacement]:
@@ -128,7 +235,7 @@ class TwoPositionLayoutManager:
                 head_end = head_x + head_width // 2
                 if not (text_end < head_start or text_start > head_end):
                     will_overlap_head = True
-                    print(f"   ⚡ Text will overlap with head - making it 30% larger and placing behind")
+                    print(f"   ⚡ Text will overlap with head - making it 50% larger and placing behind")
                     break
         
         # Create placements for each phrase with adjusted properties
@@ -139,26 +246,69 @@ class TwoPositionLayoutManager:
             # Base font size
             font_size = self._get_font_size(importance)
             
-            # If overlapping with head, make 30% larger and put behind
+            # If overlapping with head, make 20% larger and put behind
             is_behind = False
             if will_overlap_head:
-                font_size = int(font_size * 1.3)  # 30% larger
+                font_size = int(font_size * 1.2)  # 20% larger for behind text
                 is_behind = True
             
-            color = self._get_color(emphasis_type, importance)
-            
-            # Create placement with simple centered positioning
-            # The word factory will handle the actual centering
-            placement = PhrasePlacement(
-                phrase=phrase_dict['phrase'],
-                position=(None, y_position),  # Let word factory center it
-                font_size=font_size,
-                is_behind=is_behind,
-                visibility_score=1.0,  # Not calculating visibility anymore
-                color=color
+            # CRITICAL: Ensure text fits within screen boundaries
+            max_width = int(self.video_width * 0.85)  # 85% of width for safe margins
+            safe_font_size = self._calculate_safe_font_size(
+                phrase_dict['phrase'], 
+                font_size,
+                max_width
             )
             
-            placements.append(placement)
+            # Use the smaller of the two to ensure it fits
+            original_font_size = font_size
+            font_size = min(font_size, safe_font_size)
+            
+            # Debug output if size was adjusted
+            if safe_font_size < original_font_size * 0.8:
+                print(f"   ⚠️ Font size reduced from {original_font_size} to {safe_font_size} to fit screen")
+            
+            # Check if text still doesn't fit even at minimum size - then split it
+            text_lines = [phrase_dict['phrase']]
+            if font_size == 30:  # Hit minimum size
+                # Try splitting the text into two lines
+                text_lines = self._split_text_to_lines(phrase_dict['phrase'], font_size, max_width)
+                if len(text_lines) > 1:
+                    print(f"   📄 Splitting long text into {len(text_lines)} lines:")
+                    for line in text_lines:
+                        print(f"      - '{line}'")
+            
+            # Get color - use dark color for behind text so it's visible on light background
+            if is_behind:
+                # Use dark blue/black for behind text to be visible on white background
+                color = (50, 50, 100)  # Dark blue-ish color
+            else:
+                color = self._get_color(emphasis_type, importance)
+            
+            # Create placement(s) - one for each line if split
+            for i, text_line in enumerate(text_lines):
+                # Adjust Y position for multiple lines
+                line_y = y_position
+                if len(text_lines) > 1:
+                    # Stack lines vertically with spacing
+                    line_spacing = int(font_size * 1.2)
+                    if i == 0:
+                        line_y = y_position - line_spacing // 2
+                    else:
+                        line_y = y_position + line_spacing // 2
+                
+                # Create placement with simple centered positioning
+                # The word factory will handle the actual centering
+                placement = PhrasePlacement(
+                    phrase=text_line,
+                    position=(None, line_y),  # Let word factory center it
+                    font_size=font_size,
+                    is_behind=is_behind,
+                    visibility_score=1.0,  # Not calculating visibility anymore
+                    color=color
+                )
+                
+                placements.append(placement)
         
         return placements
     
@@ -167,9 +317,8 @@ class TwoPositionLayoutManager:
         Detect head/face regions across ALL frames to ensure text never overlaps throughout scene
         Returns list of (x_center, width) tuples for merged head regions
         """
-        # For bottom position, disable head detection (3D text false positive)
-        if y_position > self.video_height // 2:
-            return []
+        # Check all positions for head/face regions - no exceptions
+        # Head detection should work for both top and bottom text
         
         all_head_regions = []
         
@@ -221,16 +370,25 @@ class TwoPositionLayoutManager:
     
     def _detect_heads_in_single_frame(self, mask: np.ndarray, y_position: int) -> List[Tuple[int, int]]:
         """
-        Detect head regions in a single frame
+        Detect FACE/HEAD regions only (not body/torso) in a single frame
         Returns list of (x_center, width) tuples
         """
         head_regions = []
         
-        # Focus on the region around our Y position (±100 pixels)
-        y_start = max(0, y_position - 100)
-        y_end = min(mask.shape[0], y_position + 100)
+        # CRITICAL: Only detect faces/heads in the TOP portion of the frame
+        # Faces are typically in the top 40% of the frame (0-288 pixels for 720p)
+        max_face_y = int(self.video_height * 0.4)  # Top 40% of frame
         
-        # Get horizontal slice around our text position
+        # Only proceed if text Y position could overlap with face area
+        if y_position > max_face_y + 100:
+            # Text is too far below face area to collide
+            return []
+        
+        # Focus on the face region (top 40% of frame)
+        y_start = 0
+        y_end = max_face_y
+        
+        # Get horizontal slice of the face region
         region_slice = mask[y_start:y_end, :]
         
         # Threshold to binary
@@ -239,18 +397,25 @@ class TwoPositionLayoutManager:
         # Find contours (connected components)
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Filter for head-like regions
+        # Filter for face-like regions
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             
-            # Conservative head detection: 150-350 pixels wide
-            if 150 < w < 350:
-                # Must be tall enough and near center
-                if h > 80 and abs(x + w // 2 - self.video_width // 2) < 300:
-                    head_center = x + w // 2
-                    # Add padding for safety
-                    head_width = w + 60  # 30 pixels padding on each side
-                    head_regions.append((head_center, head_width))
+            # Face detection criteria:
+            # - Width: 120-300 pixels (faces are smaller than torsos)
+            # - Height: at least 100 pixels
+            # - Position: must be in top 40% of frame
+            # - Centered: typically near horizontal center
+            if 120 < w < 300 and h > 100:
+                # Check if it's roughly centered (faces usually are)
+                if abs(x + w // 2 - self.video_width // 2) < 400:
+                    # Check if this region extends low enough to collide with text
+                    face_bottom = y + h
+                    if face_bottom + 50 >= y_position:  # Face extends near text position
+                        head_center = x + w // 2
+                        # Add padding for safety
+                        head_width = w + 60  # 30 pixels padding on each side
+                        head_regions.append((head_center, head_width))
         
         return head_regions
     
@@ -469,11 +634,13 @@ class TwoPositionLayoutManager:
         center_end = 3 * self.video_width // 4
         center_strip = strip[:, center_start:center_end]
         
-        obstruction_ratio = np.sum(center_strip > 128) / center_strip.size
+        # RVM mask: lower values (0-150) = foreground/person, higher values (150-255) = background
+        # We want to detect foreground obstruction, so look for LOW values
+        obstruction_ratio = np.sum(center_strip < 150) / center_strip.size
         
-        # If more than 60% obstructed in center, use alternative position
-        # Higher threshold since we're closer to center now
-        if obstruction_ratio > 0.6:
+        # If more than 40% obstructed in center by foreground, use alternative position
+        # Lower threshold (40%) to be more aggressive about avoiding faces
+        if obstruction_ratio > 0.4:
             print(f"   ⚠️ High obstruction ({obstruction_ratio:.1%}) at {position_type} position y={default_y}")
             print(f"      Using alternative position y={alt_y}")
             return alt_y
@@ -482,10 +649,10 @@ class TwoPositionLayoutManager:
         
     def _get_font_size(self, importance: float) -> int:
         """Get font size based on importance"""
-        # Base size 40, scales up to 65 for maximum importance
-        # But cap at 55 to prevent overly wide text
-        min_size = 40
-        max_size = 55  # Reduced from 65 to prevent overflow
+        # MODERATE SIZES: Base 45px, up to 65px for maximum importance
+        # Balanced for visibility without overflow
+        min_size = 45  # Balanced size
+        max_size = 65  # Reasonable maximum
         return int(min_size + (max_size - min_size) * importance)
         
     def _get_color(self, emphasis_type: str, importance: float) -> Tuple[int, int, int]:

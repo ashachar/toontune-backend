@@ -512,14 +512,29 @@ ffmpeg -i processed.mp4 -i original.mp4 -c:v libx264 -c:a copy -map 0:v:0 -map 1
 - **Opacity**: Square the progress for softer fade-in `opacity = eased_progress²`
 - **Word spacing**: Based on transcript gaps, not fixed intervals
 
-#### 7. **Multi-line Text Layout**
-**IMPORTANT**: Long sentences should wrap to multiple lines for readability
+#### 7. **Multi-line Text Layout & Bounding Box Management**
+**CRITICAL**: Text must fit within screen boundaries with safe margins
+- **Automatic font size adjustment** - Dynamically reduce font size if text exceeds boundaries
+- **Safe margins** - Keep text within 85-90% of screen width
+- **Bounding box checking** - Calculate text width including outline effects (adds ~6px)
+- **Progressive size reduction** - Try smaller sizes until text fits (minimum 30px)
 - **Maximum 6 words per row** - prevents overcrowding
 - **Automatic line wrapping** - split sentences exceeding max words
 - **Centered layout** - each row centered horizontally
 - **Vertical spacing** - 1.4x font size between rows
 - **Row-based stagger** - slight timing offset for each row during animation
 - **Unified dissolve** - all rows of a sentence dissolve together
+
+**Font Size Algorithm**:
+```python
+# Start with base size from importance scoring
+base_size = 45-65px based on importance
+# Check if text fits within 85% of screen width
+while text_width > screen_width * 0.85:
+    font_size *= 0.95  # Reduce by 5%
+    if font_size < 30:  # Minimum readable size
+        break
+```
 
 #### 8. **Enriched Transcripts with AI Analysis**
 **CRITICAL**: Use LLM to analyze transcript importance for dynamic emphasis
@@ -543,6 +558,23 @@ ffmpeg -i processed.mp4 -i original.mp4 -c:v libx264 -c:a copy -map 0:v:0 -map 1
   ```
 - **LLM prompt structure** - Analyze transcript → identify key concepts → assign scores
 - **Mock fallback** - Generate reasonable emphasis without API using keyword heuristics
+
+#### 9. **Face-Aware Text Placement with Automatic Behind Rendering**
+**CRITICAL RULE**: Text that intersects with detected faces/heads MUST automatically be set to `is_behind=True`
+- **Face Detection**: The system uses RVM masks to detect face/head regions
+- **Intersection Check**: During layout, check if text bounding box overlaps with head regions
+- **Automatic Behind Mode**: If intersection detected:
+  - Set `is_behind=True` for the text
+  - Increase font size by 50% (configurable)
+  - Apply foreground masking so text appears behind the person
+- **Implementation Flow**:
+  1. Layout manager detects head regions from RVM masks
+  2. For each text placement, check intersection with heads
+  3. If intersection: `is_behind=True`, else `is_behind=False`
+  4. Renderer uses mask to show text only in background areas
+- **No Manual Setting**: The `is_behind` flag should NOT be set in enriched transcripts
+  - It's determined dynamically based on actual face positions
+  - This ensures text is only behind when it actually overlaps faces
 
 ### Golden Standard Pipeline Example
 
@@ -583,6 +615,9 @@ for word_obj in word_objects:
 3. **Avoid caching frames/masks** - Dynamic content requires fresh calculations
 4. **Don't forget audio** - Use `-c:a copy` in FFmpeg commands
 5. **Never let dissolved text reappear** - Track dissolved state properly
+6. **Text overflow** - Always check bounding boxes and adjust font size to fit
+7. **Hard-coded font sizes** - Use dynamic sizing based on text length and screen space
+8. **Ignoring outline width** - Account for ~6px added by multi-layer outlines
 
 ## Related Effects
 

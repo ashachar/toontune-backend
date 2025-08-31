@@ -28,7 +28,7 @@ class FrameProcessor:
         """Process frame by rendering all active words with proper layering"""
         result = frame.copy()
         
-        # Set frame number for mask synchronization
+        # CRITICAL: Set the frame number in the renderer for proper mask synchronization
         if frame_number is not None:
             self.renderer.set_frame_number(frame_number)
         
@@ -74,19 +74,50 @@ class FrameProcessor:
                 if scene_words:
                     print(f"   Scene {scene_idx}: {' '.join(scene_words[:10])}")  # Show first 10 words
         
-        # Render behind words first
+        # GROUP BEHIND WORDS BY Y POSITION AND SCENE for phrase rendering
+        # CRITICAL FIX: Group words that are CLOSE in Y position (within 50 pixels)
+        # because baseline alignment means words have slightly different Y values
+        behind_phrases = {}
+        y_tolerance = 50  # Words within 50 pixels vertically are considered same phrase
+        
         for word_obj in behind_words:
-            # Determine which sentence/scene this word belongs to based on start time
-            sentence_index = self._get_sentence_index(word_obj, sentence_fog_times)
+            # Find an existing group with similar Y position
+            found_group = None
+            for (y_pos, scene_idx) in behind_phrases.keys():
+                if scene_idx == word_obj.scene_index and abs(y_pos - word_obj.y) <= y_tolerance:
+                    found_group = (y_pos, scene_idx)
+                    break
             
+            if found_group:
+                # Add to existing group
+                behind_phrases[found_group].append(word_obj)
+            else:
+                # Create new group using this word's Y as reference
+                group_key = (word_obj.y, word_obj.scene_index)
+                behind_phrases[group_key] = [word_obj]
+        
+        # Sort each phrase by X position to ensure correct word order
+        for key in behind_phrases:
+            behind_phrases[key].sort(key=lambda w: w.x)
+        
+        # Render each behind phrase as a complete unit
+        for (y_pos, scene_idx), phrase_words in behind_phrases.items():
+            # Check if any word in the phrase is dissolved
             fog_progress = 0.0
             is_dissolved = False
-            if 0 <= sentence_index < len(fog_progress_by_sentence):
-                fog_progress = fog_progress_by_sentence[sentence_index]
-                is_dissolved = dissolved_by_sentence[sentence_index]
+            if 0 <= scene_idx < len(fog_progress_by_sentence):
+                fog_progress = fog_progress_by_sentence[scene_idx]
+                is_dissolved = dissolved_by_sentence[scene_idx]
             
-            result = self.renderer.render_word_with_masking(word_obj, result, time_seconds, 
-                                                          fog_progress, is_dissolved)
+            # Skip if dissolved
+            if not is_dissolved:
+                # Debug output for the "Would you be surprised if" phrase
+                if any(w.text in ["Would", "be", "surprised"] for w in phrase_words):
+                    words_text = " ".join(w.text for w in phrase_words)
+                    print(f"   🎨 Rendering behind phrase at y={y_pos}: '{words_text}'")
+                
+                # Render the entire phrase at once
+                result = self.renderer.render_phrase_behind(result, phrase_words, time_seconds)
         
         # Then render front words
         for word_obj in front_words:

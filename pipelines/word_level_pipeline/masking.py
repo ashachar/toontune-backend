@@ -38,24 +38,16 @@ class ForegroundMaskExtractor:
         project_folder = self.video_path.parent / video_name
         
         if project_folder.exists():
-            # Look for RVM mask files
-            mask_files = list(project_folder.glob(f"{video_name}_rvm_mask_*.mp4"))
-            if mask_files:
-                # Use the most recent mask file
-                self.cached_mask_video = sorted(mask_files, key=lambda x: x.stat().st_mtime)[-1]
+            # Look for the standard RVM mask file (no suffixes)
+            standard_mask = project_folder / f"{video_name}_rvm_mask.mp4"
+            if standard_mask.exists():
+                self.cached_mask_video = standard_mask
                 print(f"   🎭 Found cached RVM mask: {self.cached_mask_video.name}")
                 
-                # Open the mask video
+                # Open the mask video (which is actually a green screen)
                 self.mask_cap = cv2.VideoCapture(str(self.cached_mask_video))
+                self.is_green_screen = True  # All masks are green screens now
                 return
-        
-        # Check for green screen version (convert to mask on the fly)
-        green_files = list(project_folder.glob(f"{video_name}_rvm_green_*.mp4"))
-        if green_files:
-            self.cached_green_video = sorted(green_files, key=lambda x: x.stat().st_mtime)[-1]
-            print(f"   🎭 Found cached RVM green screen: {self.cached_green_video.name}")
-            # We'll extract mask from green screen on the fly
-            return
     
     def _extract_mask_from_green_screen(self, frame: np.ndarray) -> np.ndarray:
         """Extract mask from a green screen frame
@@ -96,32 +88,27 @@ class ForegroundMaskExtractor:
         Returns:
             Binary mask where 255 = foreground, 0 = background
         """
+        # Try to reload mask if not loaded (can happen in multiprocessing)
+        if self.mask_cap is None and self.cached_mask_video:
+            self.mask_cap = cv2.VideoCapture(str(self.cached_mask_video))
+            
         # If we have a cached mask video, use it
         if self.mask_cap is not None and frame_number is not None:
             # Seek to the correct frame
             self.mask_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, mask_frame = self.mask_cap.read()
             if ret:
-                # Convert to grayscale if needed
+                # If this is a green screen video, return it as-is (color)
+                # The rendering code will detect green pixels
+                if hasattr(self, 'is_green_screen') and self.is_green_screen:
+                    return mask_frame  # Return full color frame for green detection
+                
+                # For regular masks, convert to grayscale if needed
                 if len(mask_frame.shape) == 3:
                     mask_frame = cv2.cvtColor(mask_frame, cv2.COLOR_BGR2GRAY)
-                # CRITICAL: Do NOT threshold RVM masks! They use grayscale values where:
-                # - Low values (0-200ish) = foreground/person
-                # - High values (200-255) = background
-                # Thresholding destroys this information and creates incorrect white pixels
                 return mask_frame
         
-        # If we have a cached green screen, extract mask from it
-        if hasattr(self, 'cached_green_video'):
-            # Create a temporary video capture for the green screen
-            green_cap = cv2.VideoCapture(str(self.cached_green_video))
-            if frame_number is not None:
-                green_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, green_frame = green_cap.read()
-            green_cap.release()
-            
-            if ret:
-                return self._extract_mask_from_green_screen(green_frame)
+        # Green screen is now handled via mask_cap above
         
         # Fallback to basic edge detection (not recommended but keeping for compatibility)
         return self._extract_basic_mask(frame)

@@ -173,26 +173,64 @@ transcript_enrichment:
     9. POSITION ASSIGNMENT (top or bottom) - CRITICAL NEW RULE:
        Each phrase MUST be assigned to either "top" or "bottom" of screen.
        
+       ⚠️ STRICT MAXIMUM WORD LIMITS PER SCENE - ABSOLUTELY MANDATORY:
+       - Maximum 6 words TOTAL at "top" position per scene (counting ALL phrases at top)
+       - Maximum 6 words TOTAL at "bottom" position per scene (counting ALL phrases at bottom)  
+       - Total maximum: 12 words per scene (6 top + 6 bottom)
+       - If approaching limit, create a new scene (increment appearance_index)
+       
+       CRITICAL: When multiple phrases share the same position in a scene, their words ADD UP!
+       Example: If you have 2 phrases at "top" with 3 words each = 6 words total at top
+       
        RULES FOR POSITION ASSIGNMENT:
-       a) If scene has exactly 2 phrases: first → "top", second → "bottom"
-       b) If scene has 3+ phrases: 
-          - First half (chronologically) → "top"
-          - Second half → "bottom"
-          - Must maintain chronological order!
-       c) Single phrase scenes: alternate between "top" and "bottom"
+       a) Count TOTAL words across ALL phrases at each position in the scene
+       b) NEVER exceed 6 words total per position (sum of all phrases at that position)
+       c) If only 1-6 words total in scene: use "bottom" only
+       d) If 7-12 words: distribute between "top" and "bottom" (max 6 each)
+       e) If more than 12 words needed: MUST create new scene
+       
+       DISTRIBUTION STRATEGY:
+       - Each scene can have maximum 6 words at top AND 6 words at bottom
+       - When adding phrases to a position, count existing words first
+       - If adding a phrase would exceed 6 words at that position, either:
+         1. Put it at the other position (if space available)
+         2. Create a new scene (increment appearance_index)
        
        EXAMPLES:
-       Scene with 2 phrases:
-       - "Yes," → position: "top"
-       - "AI created new math" → position: "bottom"
+       Scene with 5 words total:
+       - "AI created new math" (4 words) → position: "bottom" (only one position needed)
        
-       Scene with 4 phrases:
-       - "Would you be" → position: "top" (first half)
-       - "surprised if" → position: "top" (first half)
-       - "AI" → position: "bottom" (second half)
-       - "invented" → position: "bottom" (second half)
+       Scene with 8 words total:
+       - "Would you be surprised" (4 words) → position: "top"
+       - "if AI invented calculus" (4 words) → position: "bottom"
        
-       IMPORTANT: Phrases at the same position will appear side-by-side with different colors/sizes based on importance.
+       WRONG - Scene exceeding limits (17 words):
+       - "on top of the derivative" (5 words) → position: "top"
+       - "and the integral" (3 words) → position: "top"  
+       TOTAL AT TOP: 8 words - EXCEEDS 6 WORD LIMIT!
+       
+       CORRECT - Split into proper scenes:
+       Scene 1 (max 12 words):
+       - "on top of" (3 words) → position: "top"
+       - "the derivative" (2 words) → position: "top"
+       TOTAL AT TOP: 5 words ✓
+       - "and the integral" (3 words) → position: "bottom"
+       - "to improve" (2 words) → position: "bottom"
+       TOTAL AT BOTTOM: 5 words ✓
+       
+       Scene 2 (remaining words):
+       - "its engine performance" (3 words) → position: "bottom"
+       - "by up to 20%" (4 words) → position: "bottom"
+       TOTAL AT BOTTOM: 7 words - STILL TOO MANY!
+       
+       Scene 2 (fixed):
+       - "its engine performance" (3 words) → position: "top"
+       - "by up to 20%" (4 words) → position: "bottom"
+       
+       IMPORTANT: 
+       - Words at same position appear side-by-side with different colors/sizes
+       - NEVER put more than 6 words at any single position
+       - Create new scenes rather than overcrowding
 
     Return JSON array with precise segmentation:
     [

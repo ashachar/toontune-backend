@@ -65,15 +65,13 @@ class CachedRobustVideoMatting:
         project_folder = video_path.parent / video_name
         project_folder.mkdir(exist_ok=True)
         
-        # Generate cache filename
-        video_hash = self.get_video_hash(video_path, duration)
-        duration_str = f"_{int(duration)}s" if duration else "_full"
-        
+        # Simple standard naming - no hash, no duration suffix
+        # The mask IS the green screen, so we only need one file
         cache_info = {
             'project_folder': project_folder,
-            'green_screen': project_folder / f"{video_name}_rvm_green{duration_str}_{video_hash}.mp4",
-            'mask': project_folder / f"{video_name}_rvm_mask{duration_str}_{video_hash}.mp4",
-            'metadata': project_folder / f"{video_name}_rvm_meta{duration_str}_{video_hash}.json"
+            'mask': project_folder / f"{video_name}_rvm_mask.mp4",
+            'green_screen': project_folder / f"{video_name}_rvm_mask.mp4",  # Same file
+            'metadata': project_folder / f"{video_name}_rvm_metadata.json"
         }
         
         return cache_info
@@ -140,33 +138,55 @@ class CachedRobustVideoMatting:
         else:
             processing_input = video_path
         
-        # Process with Replicate
+        # Process with Replicate - request green screen output
         print("Uploading to Replicate...")
         with open(processing_input, 'rb') as f:
             output = replicate.run(
                 "arielreplicate/robust_video_matting:73d2128a371922d5d1abf0712a1d974be0e4e2358cc1218e4e34714767232bac",
-                input={"input_video": f}
+                input={
+                    "input_video": f,
+                    "output_type": "green-screen"  # Get green screen output
+                }
             )
         
         output_url = str(output)
         print(f"✓ Processing complete: {output_url}")
         
-        # Download result
+        # Download result (getting green screen)
         print("Downloading green screen output...")
         response = requests.get(output_url, stream=True)
         response.raise_for_status()
         
-        # Save to cache
+        # Save green screen to cache with H.264 encoding
         cache_info['project_folder'].mkdir(exist_ok=True)
-        with open(cache_info['green_screen'], 'wb') as f:
+        
+        # First save the raw download
+        temp_mask = cache_info['mask'].parent / f"temp_{cache_info['mask'].name}"
+        with open(temp_mask, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         
-        print(f"✓ Saved to cache: {cache_info['green_screen']}")
+        # Re-encode with proper H.264 settings
+        print("Re-encoding green screen with H.264...")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(temp_mask),
+            "-c:v", "libx264", 
+            "-preset", "fast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(cache_info['mask'])
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        temp_mask.unlink()  # Remove temp file
         
-        # Generate mask from green screen
-        print("Generating mask...")
-        self.generate_mask(cache_info['green_screen'], cache_info['mask'])
+        print(f"✓ Mask saved to cache: {cache_info['mask']}")
+        
+        # For backward compatibility, also save as green_screen path
+        # (other code may expect this path to exist)
+        import shutil
+        shutil.copy2(cache_info['mask'], cache_info['green_screen'])
         
         # Save metadata
         metadata = {
@@ -195,11 +215,16 @@ class CachedRobustVideoMatting:
             green_screen_path: Path to green screen video
             mask_output_path: Path to save mask video
         """
+        # Use proper H.264 encoding as per claude.md requirements
         cmd = [
             "ffmpeg", "-y",
             "-i", str(green_screen_path),
             "-vf", "chromakey=green:0.1:0.1,format=gray",
-            "-c:v", "libx264", "-crf", "0",
+            "-c:v", "libx264", 
+            "-preset", "fast",
+            "-crf", "23",  # Standard quality instead of lossless
+            "-pix_fmt", "yuv420p",  # Maximum compatibility
+            "-movflags", "+faststart",  # Web streaming optimization
             str(mask_output_path)
         ]
         subprocess.run(cmd, check=True, capture_output=True)

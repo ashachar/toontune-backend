@@ -111,6 +111,24 @@ class WordFactory:
             print(f"         ERROR: Mismatch! {len(words)} words but {len(word_timings)} timings for '{text}'")
             return []
         
+        # CRITICAL FIX: Align words by their BASELINES, not their tops
+        # Find the tallest word in the phrase to establish baseline
+        max_height = max(h for w, h in word_measurements)
+        
+        # The stripe layout manager returns Y as the CENTER of the stripe
+        center_y = placement.position[1]
+        
+        # Calculate the baseline position for the entire phrase
+        # The baseline should be at: center_y + (max_height // 2)
+        # This ensures all words sit on the same baseline
+        baseline_y = center_y + (max_height // 2)
+        
+        if "AI created new math" in text:
+            print(f"         BASELINE DEBUG for '{text}':")
+            print(f"           Center Y from layout: {center_y}")
+            print(f"           Max word height: {max_height}")
+            print(f"           Baseline Y: {baseline_y}")
+        
         for i, (word, timing) in enumerate(zip(words, word_timings)):
             width, height = word_measurements[i]
             
@@ -118,11 +136,20 @@ class WordFactory:
             if text == "surprised if" and word in ["surprised", "if"]:
                 print(f"         DEBUG: Placing '{word}' - width={width}, current_x={current_x}")
             
-            # Create word object with placement info
+            # CRITICAL: Calculate Y position so that the BOTTOM of the word aligns with the baseline
+            # The word's Y position (top) = baseline - word height
+            top_y = baseline_y - height
+            
+            if "AI created new math" in text:
+                print(f"           Word '{word}': height={height}, top_y={top_y}, bottom={top_y + height} (should equal baseline={baseline_y})")
+            
+            if text == "surprised if" and word in ["surprised", "if"]:
+                print(f"         DEBUG: Baseline alignment for '{word}': baseline={baseline_y}, height={height}, top_y={top_y}")
+            
             word_obj = WordObject(
                 text=word,
                 x=current_x,
-                y=placement.position[1],  # Use Y position from placement
+                y=top_y,  # Y position where bottom aligns with baseline
                 width=width,
                 height=height,
                 start_time=timing['start'],

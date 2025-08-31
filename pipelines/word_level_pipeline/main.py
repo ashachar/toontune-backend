@@ -8,17 +8,20 @@ from pathlib import Path
 from .pipeline import WordLevelPipeline
 from .transcript_handler import TranscriptHandler
 from .video_generator import VideoGenerator
+from .parallel_video_generator import ParallelVideoGenerator
 from .masking import ForegroundMaskExtractor
 from .scene_processor import SceneProcessor
 
 
-def create_word_level_video(input_video_path: str = None, duration_seconds: float = 6.0, output_name: str = None):
+def create_word_level_video(input_video_path: str = None, duration_seconds: float = 6.0, 
+                           output_name: str = None, use_parallel: bool = True):
     """Create video with word-level tracking throughout
     
     Args:
         input_video_path: Path to input video (if None, will prompt user)
         duration_seconds: Duration of segment to process (default 6.0 for demo)
         output_name: Custom output filename (optional)
+        use_parallel: Use parallel processing for 3.8x faster rendering (default True)
     """
     
     print("Creating Word-Level Animation Pipeline with Enriched Transcript")
@@ -55,7 +58,13 @@ def create_word_level_video(input_video_path: str = None, duration_seconds: floa
     os.makedirs(f"{base_dir}/outputs", exist_ok=True)
     
     # Initialize components with video path for cached mask support
-    video_gen = VideoGenerator(input_video_path)
+    # Default to parallel processing for 3.8x faster performance
+    if use_parallel:
+        print("🚀 Using PARALLEL video generator (8 workers) for faster processing!")
+        video_gen = ParallelVideoGenerator(input_video_path)
+    else:
+        print("⚠️ Using sequential video generator (slower - consider use_parallel=True)")
+        video_gen = VideoGenerator(input_video_path)
     transcript_handler = TranscriptHandler()
     mask_extractor = ForegroundMaskExtractor(input_video_path)
     pipeline = WordLevelPipeline(font_size=55)
@@ -130,16 +139,18 @@ def _create_word_objects_from_scenes(transcript_handler, pipeline, phrase_groups
 def _render_final_video(video_gen, pipeline, temp_segment, word_objects, sentence_fog_times,
                        base_dir, video_name, duration_seconds, output_name):
     """Render and output the final video"""
-    # Render video
-    temp_output = f"{base_dir}/outputs/word_level_pipeline_temp.mp4"
-    video_gen.render_video(temp_segment, word_objects, sentence_fog_times, 
-                          temp_output, duration_seconds)
-    
-    # Generate output filename
+    # Generate output filename first so debug video can use it
     if output_name:
         final_output = f"{base_dir}/outputs/{output_name}"
     else:
         final_output = f"{base_dir}/outputs/{video_name}_word_level_h264.mp4"
+    
+    # Render video (pass final_output for debug naming)
+    temp_output = f"{base_dir}/outputs/word_level_pipeline_temp.mp4"
+    # Store the final output path for debug video naming
+    video_gen.final_output_path = final_output
+    video_gen.render_video(temp_segment, word_objects, sentence_fog_times, 
+                          temp_output, duration_seconds)
     
     # Merge with audio and convert to H.264
     video_gen.merge_audio_and_convert(temp_output, temp_segment, final_output)
