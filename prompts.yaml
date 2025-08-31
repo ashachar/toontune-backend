@@ -307,3 +307,14 @@ transcript_background_allocation:
     - Use "minimal" for dense information sections
     - Use "cosmic" for philosophical/big picture moments
     - Ensure smooth narrative flow with background changes
+
+# Nano Banana Character Generation Prompts
+nano_banana_character_generation:
+  system: |
+    You are an AI model that transforms real person images into character sketches.
+    Your task is to maintain the exact pose, gestures, and composition while transforming
+    the person into a stylized character illustration.
+    
+  user: |
+    Absolutely exactly 100% the same image, pose, hand gesture, face gesture, clothes, etc., 
+    just of a sketch of a {character_description} with very clear facial elements

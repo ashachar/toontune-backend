@@ -246,10 +246,10 @@ class TwoPositionLayoutManager:
             # Base font size
             font_size = self._get_font_size(importance)
             
-            # If overlapping with head, make 20% larger and put behind
+            # If overlapping with head, make 50% larger and put behind
             is_behind = False
             if will_overlap_head:
-                font_size = int(font_size * 1.2)  # 20% larger for behind text
+                font_size = int(font_size * 1.5)  # 50% larger for behind text (matching word_factory.py)
                 is_behind = True
             
             # CRITICAL: Ensure text fits within screen boundaries

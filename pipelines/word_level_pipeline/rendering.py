@@ -278,107 +278,72 @@ class WordRenderer:
     def render_word_with_masking(self, word_obj: WordObject, frame: np.ndarray, 
                                  time_seconds: float, fog_progress: float = 0.0, 
                                  is_dissolved: bool = False) -> np.ndarray:
-        """Render word with foreground/background masking based on is_behind flag"""
+        """Render word with consistent animation, apply masking as post-processing"""
         
-        # Debug print for "be" word
-        if word_obj.text == "be" and 3.3 <= time_seconds <= 3.5:
-            print(f"\n🔍 RENDERING 'be' at {time_seconds:.2f}s:")
-            print(f"   is_behind: {word_obj.is_behind}")
-            print(f"   position: ({word_obj.x}, {word_obj.y})")
-            print(f"   font_size: {word_obj.font_size if hasattr(word_obj, 'font_size') else 'N/A'}")
-        
-        # Don't render if dissolved or not started yet
-        # Note: We allow rendering even if previous scene is dissolving to enable crossfade
-        # CRITICAL DEBUG: Track "operator" and "surprised" words throughout their lifetime
-        is_operator = word_obj.text == "operator"
-        is_surprised = word_obj.text == "surprised"
-        if is_operator or is_surprised:
-            print(f"\n🔴 DEBUG '{word_obj.text}' at t={time_seconds:.3f}s, frame={self.current_frame_number}:")
-            print(f"   Word position: x={word_obj.x}, y={word_obj.y}")
-            print(f"   Word dimensions: width={word_obj.width}, height={word_obj.height}")
-            print(f"   Frame dimensions: {frame.shape[1]}x{frame.shape[0]}")
-        
-        # Words should FINISH their animation at start_time, so begin at start_time - rise_duration
+        # Early exit if word shouldn't be visible yet
         animation_start = word_obj.start_time - word_obj.rise_duration
         if is_dissolved or time_seconds < animation_start:
             return frame
         
-        # Calculate rise animation progress
-        # Animation runs from (start_time - rise_duration) to start_time
+        # Step 1: Calculate animation parameters (same for ALL words)
         rise_progress = 1.0
         if time_seconds < word_obj.start_time:
             rise_progress = (time_seconds - animation_start) / word_obj.rise_duration
         
-        if is_operator or is_surprised:
-            print(f"   Rise progress: {rise_progress:.3f}")
-            print(f"   Animation active: {rise_progress < 1.0}")
-        
-        # Create word image with padding for effects
-        padding = 100
-        # CRITICAL: Add extra padding for descenders and animation movement
-        # This ensures letters like 'p', 'g', 'y' don't get clipped
-        descender_padding = 50  # Extra space for descenders and animation
-        # CRITICAL FIX: Add extra padding for the 3-pixel outlines we draw
-        outline_padding = 10  # For the 3-pixel outlines in all directions
-        canvas_width = word_obj.width + padding * 2 + outline_padding * 2
-        canvas_height = word_obj.height + padding * 2 + descender_padding + outline_padding * 2
-        
-        if is_operator or is_surprised:
-            print(f"   Canvas: {canvas_width}x{canvas_height} (pad={padding}, desc_pad={descender_padding}, outline_pad={outline_padding})")
-            print(f"   Original word dimensions: {word_obj.width}x{word_obj.height}")
-            print(f"   HEIGHT CHECK #1: Original word height = {word_obj.height}")
-            print(f"   HEIGHT CHECK #2: Canvas height = {canvas_height}")
-        
-        word_img = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(word_img)
-        
-        # Calculate rise offset (only during rise animation)
         y_offset = 0
         opacity = 1.0
         if rise_progress < 1.0:
-            # Smooth easing - gentle sine curve
+            # Smooth easing
             eased_progress = (1 - np.cos(rise_progress * np.pi)) / 2
             opacity = eased_progress
-            
-            # Rise from below or above
+            # Rise animation direction
             if word_obj.from_below:
                 y_offset = int((1 - eased_progress) * 50)
             else:
                 y_offset = int((eased_progress - 1) * 50)
         
-        if is_operator or is_surprised:
-            print(f"   Y offset: {y_offset} (from_below={word_obj.from_below})")
-            print(f"   Opacity: {opacity:.3f}")
+        # Step 2: Create word sprite (same for ALL words)
+        sprite = self._create_word_sprite(word_obj, opacity, fog_progress)
         
-        # Draw word with opacity using the word's specific font size and color
+        # Step 3: Composite sprite onto frame with masking if needed
+        # Pass apply_mask=True for behind words to handle masking during compositing
+        frame = self._composite_sprite(sprite, frame, word_obj.x, word_obj.y + y_offset, 
+                                      apply_mask=word_obj.is_behind)
+        
+        return frame
+    
+    def _create_word_sprite(self, word_obj: WordObject, opacity: float, fog_progress: float) -> np.ndarray:
+        """Create the word sprite with consistent rendering for all words"""
+        # Padding for effects
+        padding = 100
+        descender_padding = 50
+        outline_padding = 10
+        canvas_width = word_obj.width + padding * 2 + outline_padding * 2
+        canvas_height = word_obj.height + padding * 2 + descender_padding + outline_padding * 2
+        
+        # Create canvas
+        word_img = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(word_img)
+        
+        # Get font
         try:
             font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', word_obj.font_size)
         except:
             font = ImageFont.load_default()
         
-        # Draw text with multi-layer outline effect for visibility
-        # CRITICAL: Draw at padding + outline_padding to account for the 3-pixel outlines
+        # Draw text at consistent position
         draw_x = padding + outline_padding
         draw_y = padding + outline_padding
-        if is_operator or is_surprised:
-            print(f"   Drawing text at canvas position: ({draw_x}, {draw_y})")
-            print(f"   Font size: {word_obj.font_size}")
+        self._draw_text_with_outline(draw, (draw_x, draw_y), word_obj.text, font, opacity,
+                                    is_behind=word_obj.is_behind, 
+                                    base_color=word_obj.color if hasattr(word_obj, 'color') else None)
         
-        self._draw_text_with_outline(draw, (draw_x, draw_y), word_obj.text, font, opacity, 
-                                    is_behind=False, base_color=word_obj.color if hasattr(word_obj, 'color') else None)
-        
-        # Convert to numpy
+        # Convert to numpy array
         word_array = np.array(word_img)
         
-        if is_operator or is_surprised:
-            print(f"   HEIGHT CHECK #3: After drawing, image array shape = {word_array.shape}")
-            print(f"   HEIGHT CHECK #4: Image height after conversion = {word_array.shape[0]}")
-        
-        # Apply fog effect if needed (but NOT position change!)
+        # Apply fog if needed
         if fog_progress > 0:
             word_array = self._apply_fog_to_word(word_array, word_obj, fog_progress)
-            if is_operator or is_surprised:
-                print(f"   HEIGHT CHECK #5: After fog, array shape = {word_array.shape}")
         
         # Convert RGBA to BGRA for OpenCV
         word_bgr = np.zeros_like(word_array)
@@ -387,228 +352,69 @@ class WordRenderer:
         word_bgr[:, :, 2] = word_array[:, :, 0]  # R = B
         word_bgr[:, :, 3] = word_array[:, :, 3]  # A = A
         
-        if is_operator or is_surprised:
-            print(f"   HEIGHT CHECK #6: word_bgr shape = {word_bgr.shape}")
+        return word_bgr
+    
+    def _composite_sprite(self, sprite: np.ndarray, frame: np.ndarray, x: int, y: int, 
+                         apply_mask: bool = False) -> np.ndarray:
+        """Composite sprite onto frame at given position with optional masking"""
+        # Account for padding in sprite
+        padding = 100
+        outline_padding = 10
+        actual_x = x - padding - outline_padding
+        actual_y = y - padding - outline_padding
         
-        # Apply to frame at FIXED position (only y_offset during rise)
-        # CRITICAL: Account for both padding and outline_padding
-        actual_x = word_obj.x - padding - outline_padding
-        actual_y = word_obj.y + y_offset - padding - outline_padding
-        
-        if is_operator or is_surprised:
-            print(f"   Actual position: x={actual_x}, y={actual_y}")
-            print(f"   After padding adjustment: word.y={word_obj.y}, y_offset={y_offset}, padding={padding}, outline={outline_padding}")
-            print(f"   Word sprite shape: {word_bgr.shape}")
-            print(f"   Text should appear at frame position: ({word_obj.x}, {word_obj.y + y_offset})")
-            print(f"   ALIGNMENT CHECK: Word top={word_obj.y}, bottom={word_obj.y + word_obj.height}")
-            print(f"   With the y-position fix, text should now be bottom-aligned within its stripe")
-        
-        # CRITICAL FIX: Calculate regions properly to avoid clipping
-        # Frame region - where on the frame we'll place the text
+        # Calculate frame boundaries
         frame_y_start = max(0, actual_y)
-        frame_y_end = min(frame.shape[0], actual_y + word_bgr.shape[0])
+        frame_y_end = min(frame.shape[0], actual_y + sprite.shape[0])
         frame_x_start = max(0, actual_x)
-        frame_x_end = min(frame.shape[1], actual_x + word_bgr.shape[1])
+        frame_x_end = min(frame.shape[1], actual_x + sprite.shape[1])
         
-        if is_operator or is_surprised:
-            print(f"   HEIGHT CHECK #6.5: Calculating frame boundaries:")
-            print(f"     actual_y={actual_y}, word_bgr height={word_bgr.shape[0]}")
-            print(f"     frame_y_start={frame_y_start}, frame_y_end={frame_y_end}")
-            print(f"     Frame visible height: {frame_y_end - frame_y_start}")
+        if frame_y_end <= frame_y_start or frame_x_end <= frame_x_start:
+            return frame  # Sprite is completely out of frame
         
-        # Sprite region - which part of the word sprite to use
-        # CRITICAL FIX: ALWAYS use the entire sprite, starting from 0
-        # The text is drawn at a specific position on the canvas with padding,
-        # so we need the WHOLE sprite to show the complete text
-        sprite_y_start = 0  # Always start from top of sprite
-        sprite_x_start = 0  # Always start from left of sprite
-        sprite_y_end = word_bgr.shape[0]  # Full height of sprite
-        sprite_x_end = word_bgr.shape[1]  # Full width of sprite
+        # Calculate sprite region to use
+        sprite_y_start = max(0, -actual_y) if actual_y < 0 else 0
+        sprite_x_start = max(0, -actual_x) if actual_x < 0 else 0
+        sprite_y_end = sprite_y_start + (frame_y_end - frame_y_start)
+        sprite_x_end = sprite_x_start + (frame_x_end - frame_x_start)
         
-        if is_operator or is_surprised:
-            print(f"   Frame region: y=[{frame_y_start}:{frame_y_end}], x=[{frame_x_start}:{frame_x_end}]")
-            print(f"   Sprite region: y=[{sprite_y_start}:{sprite_y_end}], x=[{sprite_x_start}:{sprite_x_end}]")
-            print(f"   Using ENTIRE sprite: {word_bgr.shape}")
-            print(f"   actual_y={actual_y}, actual_x={actual_x}")
-            print(f"   HEIGHT CHECK #7: Before sprite extraction, word_bgr height = {word_bgr.shape[0]}")
-        
-        if frame_y_end > frame_y_start and frame_x_end > frame_x_start:
-            # Extract the full sprite - no clipping!
-            sprite_region = word_bgr
+        # Extract sprite region and alpha
+        sprite_region = sprite[sprite_y_start:sprite_y_end, sprite_x_start:sprite_x_end]
+        if sprite_region.shape[2] != 4:
+            return frame  # No alpha channel
             
-            if is_operator or is_surprised:
-                print(f"   Actual sprite shape: {sprite_region.shape}")
-                print(f"   HEIGHT CHECK #8: sprite_region height = {sprite_region.shape[0]}")
-            
-            if sprite_region.shape[2] == 4:
-                alpha = sprite_region[:, :, 3].astype(np.float32) / 255.0
+        alpha = sprite_region[:, :, 3].astype(np.float32) / 255.0
+        
+        # If masking is requested, modify alpha based on foreground mask
+        if apply_mask:
+            foreground_mask = self.mask_extractor.get_mask_for_frame(frame, self.current_frame_number)
+            if foreground_mask is not None:
+                # Extract mask for this region
+                mask_region = foreground_mask[frame_y_start:frame_y_end, frame_x_start:frame_x_end]
                 
-                # If rendering behind, extract mask and apply only to background
-                if word_obj.is_behind:
-                    foreground_mask = self.mask_extractor.get_mask_for_frame(frame, self.current_frame_number)
+                # Process green screen mask
+                if len(mask_region.shape) == 3:  # Color mask (green screen)
+                    # Green = background (show text), Non-green = foreground (hide text)
+                    TARGET_GREEN_BGR = np.array([154, 254, 119], dtype=np.float32)
+                    diff = mask_region.astype(np.float32) - TARGET_GREEN_BGR
+                    distance = np.sqrt(np.sum(diff * diff, axis=2))
+                    is_background = (distance < 50).astype(np.float32)
                     
-                    # CRITICAL DEBUG: Check mask application for 'be' and other behind words
-                    if word_obj.text in ["Would", "you", "be", "surprised", "if"] and time_seconds >= 2.9 and time_seconds <= 4.5:
-                        print(f"\n🔴 CRITICAL DEBUG for '{word_obj.text}' at {time_seconds:.2f}s, frame {self.current_frame_number}:")
-                        print(f"   is_behind: {word_obj.is_behind}")
-                        print(f"   Position: ({word_obj.x}, {word_obj.y})")
-                        print(f"   Mask loaded: {foreground_mask is not None}")
-                        if foreground_mask is not None:
-                            print(f"   Mask shape: {foreground_mask.shape}")
+                    # Apply dilation to foreground to handle edges
+                    kernel = np.ones((3, 3), np.uint8)
+                    is_foreground = (1.0 - is_background).astype(np.uint8)
+                    is_foreground = cv2.dilate(is_foreground, kernel, iterations=1)
+                    is_background = 1.0 - is_foreground.astype(np.float32)
                     
-                    # Debug: Check if mask is loaded and what values it contains
-                    if foreground_mask is not None:
-                        # Get the mask region for this text
-                        mask_region = foreground_mask[frame_y_start:frame_y_end, frame_x_start:frame_x_end]
-                        
-                        # Debug: Print mask statistics for "Would" word at specific times
-                        if word_obj.text in ["Would", "you", "be"] and time_seconds >= 2.96 and time_seconds <= 3.6:
-                            if not hasattr(self, '_debug_printed'):
-                                self._debug_printed = set()
-                            
-                            debug_key = f"{word_obj.text}_{self.current_frame_number}"
-                            if debug_key not in self._debug_printed:
-                                self._debug_printed.add(debug_key)
-                                print(f"\n🔍 DEBUG Mask for '{word_obj.text}' at frame {self.current_frame_number}, time {time_seconds:.2f}s:")
-                                print(f"   Mask shape: {mask_region.shape}")
-                                print(f"   Mask min: {mask_region.min()}, max: {mask_region.max()}, mean: {mask_region.mean():.1f}")
-                                unique_vals = np.unique(mask_region)
-                                if len(unique_vals) < 20:
-                                    print(f"   Unique values: {unique_vals}")
-                                
-                                # Check how much is foreground vs background with different thresholds
-                                for threshold in [150, 180, 200, 220]:
-                                    fg_pixels = (mask_region < threshold).sum()
-                                    bg_pixels = (mask_region >= threshold).sum()
-                                    print(f"   Threshold {threshold}: FG={fg_pixels}, BG={bg_pixels} ({bg_pixels/(fg_pixels+bg_pixels)*100:.1f}% background)")
-                        
-                        # Green screen detection
-                        # The mask is now a green screen video where green = background
-                        if len(mask_region.shape) == 3:  # Color image (BGR format in OpenCV)
-                            # HARD-CODED GREEN SCREEN COLOR from actual analysis:
-                            # BGR: [154, 254, 119] - this is the exact green used by Replicate RVM
-                            TARGET_GREEN_BGR = np.array([154, 254, 119], dtype=np.float32)
-                            
-                            # Calculate distance from target green for each pixel
-                            # Using L2 distance in color space
-                            diff = mask_region.astype(np.float32) - TARGET_GREEN_BGR
-                            distance = np.sqrt(np.sum(diff * diff, axis=2))
-                            
-                            # Pixels within tolerance of target green are background
-                            # Tolerance of 50 allows for compression artifacts
-                            TOLERANCE = 50
-                            is_green = (distance < TOLERANCE)
-                            
-                            bg_mask = is_green.astype(np.float32)
-                            
-                            if word_obj.text == "be" and 3.3 <= time_seconds <= 3.5:
-                                green_pixels = is_green.sum()
-                                total_pixels = mask_region.shape[0] * mask_region.shape[1]
-                                non_green_pixels = total_pixels - green_pixels
-                                print(f"   GREEN SCREEN MASK: Green(BG)={green_pixels}, Person(FG)={non_green_pixels}")
-                                print(f"   {green_pixels/total_pixels*100:.1f}% is background (green)")
-                                # Debug: show some pixel values
-                                if mask_region.shape[0] > 0 and mask_region.shape[1] > 0:
-                                    sample = mask_region[0, 0]
-                                    print(f"   Sample pixel BGR: {sample}")
-                        else:
-                            # Fallback for grayscale (shouldn't happen with green screen)
-                            if mask_region.size > 0:
-                                MASK_THRESHOLD = 100
-                                bg_mask = (mask_region >= MASK_THRESHOLD).astype(np.float32)
-                            else:
-                                bg_mask = np.zeros_like(mask_region, dtype=np.float32)
-                        
-                        # Fix edge artifacts: dilate the foreground (inverted mask)
-                        # This expands the person area to cover green edge artifacts
-                        if len(mask_region.shape) == 3:  # Only for green screen
-                            # Invert to get foreground mask (1=person, 0=background)
-                            fg_mask = 1.0 - bg_mask
-                            # Dilate foreground to expand person area by 2-3 pixels
-                            kernel = np.ones((5, 5), np.uint8)
-                            fg_mask_binary = (fg_mask * 255).astype(np.uint8)
-                            fg_mask_binary = cv2.dilate(fg_mask_binary, kernel, iterations=1)
-                            # Convert back to background mask
-                            bg_mask = 1.0 - (fg_mask_binary.astype(np.float32) / 255.0)
-                        
-                        # Apply the mask to the alpha channel
-                        # CRITICAL FIX: Ensure mask and alpha have same shape
-                        # They may differ if we extended sprite region for descenders
-                        if bg_mask.shape != alpha.shape:
-                            if is_operator or is_surprised:
-                                print(f"   ⚠️ Shape mismatch: mask {bg_mask.shape} vs alpha {alpha.shape}")
-                            # Crop or pad mask to match alpha shape
-                            min_h = min(bg_mask.shape[0], alpha.shape[0])
-                            min_w = min(bg_mask.shape[1], alpha.shape[1])
-                            # Use only the overlapping region
-                            bg_mask_cropped = bg_mask[:min_h, :min_w]
-                            alpha_cropped = alpha[:min_h, :min_w]
-                            # Apply mask to the cropped alpha
-                            alpha[:min_h, :min_w] = alpha_cropped * bg_mask_cropped
-                            # Leave the rest of alpha unchanged (for descenders beyond frame)
-                        else:
-                            # DEBUG: Check actual masking for problematic words
-                            if word_obj.text == "be" and time_seconds >= 3.3 and time_seconds <= 3.5:
-                                print(f"     🎯 Applying mask to alpha:")
-                                print(f"        Alpha before: min={alpha.min():.2f}, max={alpha.max():.2f}, mean={alpha.mean():.2f}")
-                                print(f"        bg_mask: min={bg_mask.min():.2f}, max={bg_mask.max():.2f}, mean={bg_mask.mean():.2f}")
-                            
-                            alpha = alpha * bg_mask
-                        
-                        if word_obj.text == "be" and time_seconds >= 3.3 and time_seconds <= 3.5:
-                            print(f"        Alpha after: min={alpha.min():.2f}, max={alpha.max():.2f}, mean={alpha.mean():.2f}")
-                            visible_pixels = (alpha > 0.1).sum()
-                            total_pixels = alpha.size
-                            print(f"        Visible pixels: {visible_pixels}/{total_pixels} ({visible_pixels/total_pixels*100:.1f}%)")
-                            print(f"        Text should be {100 - visible_pixels/total_pixels*100:.1f}% hidden")
-                    else:
-                        print(f"⚠️ WARNING: No mask available for frame {self.current_frame_number}")
-                
-                # CRITICAL FIX: Don't skip ANY part of the sprite based on position
-                # The text is drawn at a specific location on the canvas (padding + outline_padding)
-                # We need to show that part regardless of where the sprite is positioned
-                
-                # Calculate the visible frame region dimensions
-                frame_h = frame_y_end - frame_y_start
-                frame_w = frame_x_end - frame_x_start
-                
-                # For negative positions, we start from within the sprite
-                # but we DON'T skip the text content - we show it all
-                if actual_y < 0:
-                    # Sprite extends above frame - we need to show the bottom part
-                    # But we show FROM THE TOP of the sprite to preserve text
-                    sprite_y_offset = 0  # Start from top of sprite to show all text
-                    available_h = min(sprite_region.shape[0], frame_h)
-                else:
-                    sprite_y_offset = 0
-                    available_h = min(sprite_region.shape[0], frame_h)
-                
-                if actual_x < 0:
-                    # Sprite extends left of frame
-                    sprite_x_offset = 0  # Start from left of sprite to show all text
-                    available_w = min(sprite_region.shape[1], frame_w) 
-                else:
-                    sprite_x_offset = 0
-                    available_w = min(sprite_region.shape[1], frame_w)
-                
-                # Use the full sprite content that fits in the frame region
-                sprite_to_use = sprite_region[:available_h, :available_w]
-                alpha_to_use = alpha[:available_h, :available_w]
-                
-                if is_operator or is_surprised:
-                    print(f"   Sprite shape: {sprite_region.shape}, Using: {sprite_to_use.shape}")
-                    print(f"   Frame region: {frame_h}x{frame_w} at ({frame_y_start}, {frame_x_start})")
-                    print(f"   Available size: {available_h}x{available_w}")
-                    print(f"   HEIGHT CHECK #9: sprite_to_use height = {sprite_to_use.shape[0]}")
-                    print(f"   HEIGHT CHECK #10: available_h = {available_h}, frame_h = {frame_h}")
-                    print(f"   HEIGHT CHECK #11: FINAL compositing height = {min(sprite_to_use.shape[0], frame_h)}")
-                
-                # Composite the sprite onto the frame
-                for c in range(3):
-                    frame[frame_y_start:frame_y_start+available_h, frame_x_start:frame_x_start+available_w, c] = (
-                        frame[frame_y_start:frame_y_start+available_h, frame_x_start:frame_x_start+available_w, c].astype(np.float32) * (1.0 - alpha_to_use) +
-                        sprite_to_use[:, :, c].astype(np.float32) * alpha_to_use
-                    ).astype(np.uint8)
+                    # Multiply alpha by background mask
+                    alpha = alpha * is_background
+        
+        # Composite onto frame
+        for c in range(3):
+            frame[frame_y_start:frame_y_end, frame_x_start:frame_x_end, c] = (
+                frame[frame_y_start:frame_y_end, frame_x_start:frame_x_end, c].astype(np.float32) * (1.0 - alpha) +
+                sprite_region[:, :, c].astype(np.float32) * alpha
+            ).astype(np.uint8)
         
         return frame
     
@@ -624,8 +430,8 @@ class WordRenderer:
         adjusted_progress = min(1.0, progress * word_obj.dissolve_speed)
         
         # Phase 1: Progressive blur
-        if adjusted_progress > 0:
-            blur_amount = adjusted_progress * 15
+        if 0.2 <= adjusted_progress <= 0.8:
+            blur_amount = int(adjusted_progress * 15)
             blur_x = blur_amount * word_obj.blur_x
             blur_y = blur_amount * word_obj.blur_y
             

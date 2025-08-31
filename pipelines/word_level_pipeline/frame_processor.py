@@ -74,50 +74,30 @@ class FrameProcessor:
                 if scene_words:
                     print(f"   Scene {scene_idx}: {' '.join(scene_words[:10])}")  # Show first 10 words
         
-        # GROUP BEHIND WORDS BY Y POSITION AND SCENE for phrase rendering
-        # CRITICAL FIX: Group words that are CLOSE in Y position (within 50 pixels)
-        # because baseline alignment means words have slightly different Y values
-        behind_phrases = {}
-        y_tolerance = 50  # Words within 50 pixels vertically are considered same phrase
-        
+        # FIXED: Render behind words INDIVIDUALLY for word-by-word animation
+        # First render all behind words (they should appear behind foreground)
         for word_obj in behind_words:
-            # Find an existing group with similar Y position
-            found_group = None
-            for (y_pos, scene_idx) in behind_phrases.keys():
-                if scene_idx == word_obj.scene_index and abs(y_pos - word_obj.y) <= y_tolerance:
-                    found_group = (y_pos, scene_idx)
-                    break
+            # Determine which sentence/scene this word belongs to
+            sentence_index = self._get_sentence_index(word_obj, sentence_fog_times)
             
-            if found_group:
-                # Add to existing group
-                behind_phrases[found_group].append(word_obj)
-            else:
-                # Create new group using this word's Y as reference
-                group_key = (word_obj.y, word_obj.scene_index)
-                behind_phrases[group_key] = [word_obj]
-        
-        # Sort each phrase by X position to ensure correct word order
-        for key in behind_phrases:
-            behind_phrases[key].sort(key=lambda w: w.x)
-        
-        # Render each behind phrase as a complete unit
-        for (y_pos, scene_idx), phrase_words in behind_phrases.items():
-            # Check if any word in the phrase is dissolved
             fog_progress = 0.0
             is_dissolved = False
-            if 0 <= scene_idx < len(fog_progress_by_sentence):
-                fog_progress = fog_progress_by_sentence[scene_idx]
-                is_dissolved = dissolved_by_sentence[scene_idx]
+            if 0 <= sentence_index < len(fog_progress_by_sentence):
+                fog_progress = fog_progress_by_sentence[sentence_index]
+                is_dissolved = dissolved_by_sentence[sentence_index]
             
-            # Skip if dissolved
-            if not is_dissolved:
-                # Debug output for the "Would you be surprised if" phrase
-                if any(w.text in ["Would", "be", "surprised"] for w in phrase_words):
-                    words_text = " ".join(w.text for w in phrase_words)
-                    print(f"   🎨 Rendering behind phrase at y={y_pos}: '{words_text}'")
-                
-                # Render the entire phrase at once
-                result = self.renderer.render_phrase_behind(result, phrase_words, time_seconds)
+            # Debug output for behind words in the "Would you be surprised if" phrase
+            if word_obj.text in ["Would", "you", "be", "surprised", "if"]:
+                animation_start = word_obj.start_time - word_obj.rise_duration
+                is_visible = time_seconds >= animation_start and not is_dissolved
+                print(f"   🎨 Behind word '{word_obj.text}': start={word_obj.start_time:.3f}, " + 
+                      f"anim_start={animation_start:.3f}, current={time_seconds:.3f}, " +
+                      f"visible={is_visible}, dissolved={is_dissolved}")
+            
+            # Render the word with masking (will handle timing internally)
+            # Note: is_behind flag in word_obj will ensure proper masking
+            result = self.renderer.render_word_with_masking(word_obj, result, time_seconds, 
+                                                          fog_progress, is_dissolved)
         
         # Then render front words
         for word_obj in front_words:
