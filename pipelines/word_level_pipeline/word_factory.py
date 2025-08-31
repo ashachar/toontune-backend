@@ -27,10 +27,8 @@ class WordFactory:
         temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
         draw = ImageDraw.Draw(temp_img)
         
-        # Use font size from placement, increase by 50% if behind
+        # Use font size from placement (already adjusted in layout manager if behind)
         actual_font_size = placement.font_size
-        if placement.is_behind:
-            actual_font_size = int(actual_font_size * 1.5)
         
         try:
             font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', actual_font_size)
@@ -111,40 +109,105 @@ class WordFactory:
             print(f"         ERROR: Mismatch! {len(words)} words but {len(word_timings)} timings for '{text}'")
             return []
         
-        # CRITICAL FIX: Align words by their BASELINES, not their tops
-        # Find the tallest word in the phrase to establish baseline
-        max_height = max(h for w, h in word_measurements)
+        # CRITICAL FIX: Measure the FULL PHRASE and extract individual word positions
+        # All words in a phrase should align exactly as they would when rendered together
         
         # The stripe layout manager returns Y as the CENTER of the stripe
         center_y = placement.position[1]
         
-        # Calculate the baseline position for the entire phrase
-        # The baseline should be at: center_y + (max_height // 2)
-        # This ensures all words sit on the same baseline
-        baseline_y = center_y + (max_height // 2)
+        # Measure the complete phrase as one text string to get proper bounds
+        full_phrase_bbox = draw.textbbox((0, 0), text, font=font)
+        phrase_height = full_phrase_bbox[3] - full_phrase_bbox[1]
+        phrase_top = full_phrase_bbox[1]  # Top offset of the full phrase
         
-        if "AI created new math" in text:
-            print(f"         BASELINE DEBUG for '{text}':")
+        # Calculate where the TOP of the phrase should be so it's centered at center_y
+        phrase_top_y = center_y - (phrase_height // 2)
+        
+        # Debug output for all phrases - EXPANDED
+        if text in ["AI created new math", "Would you be", "surprised if"]:
+            print(f"\n         🔍 BASELINE ALIGNMENT FIX for '{text}':")
             print(f"           Center Y from layout: {center_y}")
-            print(f"           Max word height: {max_height}")
-            print(f"           Baseline Y: {baseline_y}")
+            print(f"           Full phrase bbox: {full_phrase_bbox}")
+            print(f"           Phrase top offset: {phrase_top} (this is the reference)")
+            print(f"           Phrase height: {phrase_height}")
+            print(f"           Base phrase top Y: {phrase_top_y}")
+            
+            # Test: Measure each word separately to see their natural bounds
+            print(f"           Individual word measurements:")
+            for word in words:
+                word_bbox = draw.textbbox((0, 0), word, font=font)
+                print(f"             '{word}': bbox={word_bbox}, height={word_bbox[3]-word_bbox[1]}")
+            
+            # Create a comprehensive debug image showing the alignment issue and solution
+            debug_img = Image.new('RGBA', (1200, 400), (255, 255, 255, 255))
+            debug_draw = ImageDraw.Draw(debug_img)
+            
+            # Row 1: Full phrase as reference
+            debug_draw.text((50, 50), "Full phrase:", font=font, fill=(128, 128, 128, 255), anchor="lt")
+            debug_draw.text((250, 50), text, font=font, fill=(0, 0, 0, 255), anchor="lt")
+            debug_draw.line([(0, 50), (1200, 50)], fill=(255, 0, 0, 64), width=1)  # Top line
+            
+            # Row 2: Individual words at SAME Y (broken - shows the problem)
+            debug_draw.text((50, 150), "Same Y (broken):", font=font, fill=(128, 128, 128, 255), anchor="lt")
+            x_offset = 250
+            for word in words:
+                debug_draw.text((x_offset, 150), word, font=font, fill=(255, 0, 0, 255), anchor="lt")
+                word_width = draw.textbbox((0, 0), word + " ", font=font)[2]
+                x_offset += word_width
+            debug_draw.line([(0, 150), (1200, 150)], fill=(255, 0, 0, 64), width=1)
+            
+            # Row 3: Individual words with CORRECTED Y positions
+            debug_draw.text((50, 250), "Adjusted Y (fixed):", font=font, fill=(128, 128, 128, 255), anchor="lt")
+            x_offset = 250
+            for word in words:
+                word_bbox = draw.textbbox((0, 0), word, font=font)
+                word_top_offset = word_bbox[1]
+                # Adjust Y: words with larger top offset need to be moved up
+                adjusted_y = 250 + (phrase_top - word_top_offset)
+                debug_draw.text((x_offset, adjusted_y), word, font=font, fill=(0, 128, 0, 255), anchor="lt")
+                word_width = draw.textbbox((0, 0), word + " ", font=font)[2]
+                x_offset += word_width
+                
+                # Draw a line showing the adjustment
+                if word_top_offset != phrase_top:
+                    debug_draw.line([(x_offset - word_width//2, 250), 
+                                   (x_offset - word_width//2, adjusted_y)], 
+                                  fill=(0, 0, 255, 128), width=2)
+            debug_draw.line([(0, 250), (1200, 250)], fill=(255, 0, 0, 64), width=1)
+            
+            # Row 4: Show the top offsets for each word
+            debug_draw.text((50, 350), "Top offsets:", font=font, fill=(128, 128, 128, 255), anchor="lt")
+            x_offset = 250
+            for word in words:
+                word_bbox = draw.textbbox((0, 0), word, font=font)
+                word_top_offset = word_bbox[1]
+                offset_text = f"{word}:{word_top_offset}"
+                debug_draw.text((x_offset, 350), offset_text, font=font, fill=(0, 0, 255, 255), anchor="lt")
+                x_offset += 150
+            
+            # Save debug image
+            debug_path = f"outputs/baseline_debug_{text.replace(' ', '_')}.png"
+            debug_img.save(debug_path)
+            print(f"           💾 Saved debug image: {debug_path}")
         
         for i, (word, timing) in enumerate(zip(words, word_timings)):
             width, height = word_measurements[i]
             
-            # Debug for "surprised if" phrase
-            if text == "surprised if" and word in ["surprised", "if"]:
-                print(f"         DEBUG: Placing '{word}' - width={width}, current_x={current_x}")
+            # CRITICAL FIX: Adjust each word's Y position based on its top offset
+            # Different words have different distances from their top edge to baseline
             
-            # CRITICAL: Calculate Y position so that the BOTTOM of the word aligns with the baseline
-            # The word's Y position (top) = baseline - word height
-            top_y = baseline_y - height
+            # Get this word's natural top offset when drawn at origin
+            word_bbox = draw.textbbox((0, 0), word, font=font)
+            word_top_offset = word_bbox[1]  # How far from origin the top of this word is
             
-            if "AI created new math" in text:
-                print(f"           Word '{word}': height={height}, top_y={top_y}, bottom={top_y + height} (should equal baseline={baseline_y})")
+            # Calculate adjusted Y position for proper baseline alignment
+            # The phrase has top offset 'phrase_top', this word has 'word_top_offset'
+            # We need to adjust Y so all words align at the same baseline
+            top_y = phrase_top_y + (phrase_top - word_top_offset)
             
-            if text == "surprised if" and word in ["surprised", "if"]:
-                print(f"         DEBUG: Baseline alignment for '{word}': baseline={baseline_y}, height={height}, top_y={top_y}")
+            # Debug for problematic phrases
+            if text in ["AI created new math", "surprised if"]:
+                print(f"           Word '{word}': top_offset={word_top_offset}, adjustment={(phrase_top - word_top_offset)}, final top_y={top_y}")
             
             word_obj = WordObject(
                 text=word,

@@ -334,6 +334,19 @@ class WordRenderer:
         # Draw text at consistent position
         draw_x = padding + outline_padding
         draw_y = padding + outline_padding
+        
+        # Debug: Log what we're about to draw
+        if word_obj.text in ["AI", "created", "new", "math"]:
+            print(f"\n         🎨 RENDERING '{word_obj.text}':")
+            print(f"           Word Y position: {word_obj.y}")
+            print(f"           Canvas draw position: ({draw_x}, {draw_y})")
+            print(f"           Font size: {word_obj.font_size}")
+            
+            # Measure the actual text bounds when drawn
+            test_bbox = draw.textbbox((draw_x, draw_y), word_obj.text, font=font, anchor="lt")
+            print(f"           Actual drawn bbox would be: {test_bbox}")
+            print(f"           Text height when drawn: {test_bbox[3] - test_bbox[1]}")
+        
         self._draw_text_with_outline(draw, (draw_x, draw_y), word_obj.text, font, opacity,
                                     is_behind=word_obj.is_behind, 
                                     base_color=word_obj.color if hasattr(word_obj, 'color') else None)
