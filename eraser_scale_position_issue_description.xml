@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Video processing pipeline using FFmpeg filters</project_type>
+    <language>Python 3.x</language>
+    <framework>FFmpeg 7.1.1 filter complex chains</framework>
+    <os>macOS</os>
+    <domain>Animation overlay effects for video transitions</domain>
+    <previous_fix>Successfully implemented vertical pivot to show hand/arm instead of just palm</previous_fix>
+  </context>
+
+  <problem_statement>
+    After fixing the vertical pivot issue (which now correctly shows the hand and arm), a new problem emerged:
+    The eraser image appears too large in the frame, causing the eraser/marker itself to be positioned 
+    above the video frame and thus hidden. The hand and arm are visible but the actual eraser that should 
+    be the focal point of the animation is cut off at the top of the frame.
+  </problem_statement>
+
+  <technical_specifications>
+    <video_specs>
+      <width>1280</width>
+      <height>720</height>
+      <fps>25</fps>
+    </video_specs>
+    <eraser_image_specs>
+      <original_width>768</original_width>
+      <original_height>1344</original_height>
+      <description>Hand holding blue eraser/marker with arm extending downward</description>
+      <structure>Eraser at top of image, hand in middle, arm extending to bottom</structure>
+    </eraser_image_specs>
+    <motion_path>
+      <type>elliptical</type>
+      <center_x>640</center_x>
+      <center_y>360</center_y>
+      <radius_x>200</radius_x>
+      <radius_y>120</radius_y>
+      <duration_seconds>0.6</duration_seconds>
+    </motion_path>
+  </technical_specifications>
+
+  <current_implementation>
+    <file_path>/utils/animations/masked_eraser_wipe.py</file_path>
+    <working_code>
+      <filter_setup><![CDATA[
+# CRITICAL: Keep eraser at full size with alpha preserved
+# Format as RGBA to maintain transparency, no scaling needed (already 1344px tall)
+filter_parts.append(f"[2:v]format=rgba,setsar=1[eraser];")  # Preserve full 768x1344 size
+      ]]></filter_setup>
+      
+      <pivot_calculation><![CDATA[
+# Add the moving eraser on top with VERTICAL PIVOT FIX
+# CRITICAL: Use vertical pivot to show the middle portion of the eraser
+# The eraser is 1344px tall, frame is 720px tall
+
+# X-position: centered with horizontal pivot (150/768 ≈ 0.1953)
+pivot_x_ratio = 0.1953
+
+# Y-position: VERTICAL PIVOT at wrist/hand position (about 62% down the image)
+# This makes the wrist follow the ellipse, not the top-left corner
+pivot_y_ratio = 0.62  # Adjust between 0.58-0.66 to show more/less arm
+
+# Raw elliptical Y with vertical pivot
+y_raw = f"{center_y}+{radius_y*0.8}*sin(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_h*{pivot_y_ratio}"
+
+# Bottom-off-screen guard: y >= main_h - overlay_h + safety
+# With 720px height and 1344px eraser: y >= 720 - 1344 + 2 = -622
+bottom_safety = 2
+min_y = f"main_h - overlay_h + {bottom_safety}"  # Ensures bottom never enters frame
+      ]]></pivot_calculation>
+      
+      <overlay_command><![CDATA[
+eraser_motion = (f"overlay="
+                f"x='{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_w*{pivot_x_ratio}':"
+                f"y='max({y_raw},{min_y})':"  # Clamp to show hand but keep bottom off-screen
+                f"eval=frame:"  # Per-frame evaluation for accurate motion
+                f"enable='between(t,{wipe_start},{wipe_start + wipe_duration + 0.02})'")  # Slight extension
+
+filter_parts.append(f"[{current}][eraser]{eraser_motion}[with_eraser];")
+filter_parts.append(f"[with_eraser]format=yuv420p")
+      ]]></overlay_command>
+    </working_code>
+  </current_implementation>
+
+  <observed_behavior>
+    <current_result>
+      - Hand and arm are now visible (vertical pivot fix worked)
+      - Hand appears too large in the frame
+      - Eraser/marker itself is positioned above the frame top and is hidden
+      - The focal point of the animation (the eraser) is not visible
+    </current_result>
+    <visual_analysis>
+      At frame 88 (timestamp 3520ms):
+      - Expected: Eraser visible at top of frame, hand holding it, arm extending down
+      - Actual: Only hand and arm visible, eraser is above frame boundary
+      - The image appears to be positioned too low or scaled too large
+    </visual_analysis>
+  </observed_behavior>
+
+  <mathematical_context>
+    <coordinate_system>
+      - FFmpeg overlay uses top-left corner as anchor point
+      - Y-coordinate is distance from top of base frame
+      - Positive Y moves overlay down, negative Y moves it up
+    </coordinate_system>
+    <current_positioning>
+      - Vertical pivot at 62% of 1344px = 833px from top of eraser image
+      - This pivot point follows the elliptical path
+      - Y-position formula: center_y + radius_y*sin(t) - 833
+      - At highest point: 360 + (-120*0.8) - 833 = 360 - 96 - 833 = -569
+      - This places the top of the eraser image at Y=-569
+      - Visible portion: from Y=0 to Y=720 in frame coordinates
+      - This corresponds to pixels 569 to 1289 of the eraser image
+      - The eraser itself (at top of PNG) is in pixels 0-200 approximately, thus hidden
+    </current_positioning>
+  </mathematical_context>
+
+  <potential_solutions>
+    <solution_1>
+      <approach>Scale down the eraser image before overlaying</approach>
+      <method>Add scale filter to reduce size while maintaining aspect ratio</method>
+      <example>scale=iw*0.6:ih*0.6 would make it 461x806 pixels</example>
+    </solution_1>
+    <solution_2>
+      <approach>Adjust the vertical pivot ratio</approach>
+      <method>Move pivot point higher up in the image (reduce pivot_y_ratio)</method>
+      <example>pivot_y_ratio=0.3 would pivot around the eraser itself rather than wrist</example>
+    </solution_2>
+    <solution_3>
+      <approach>Add vertical offset to shift entire image up</approach>
+      <method>Add constant to Y-position to move everything upward</method>
+      <example>y_raw + 200 would shift everything up by 200 pixels</example>
+    </solution_3>
+    <solution_4>
+      <approach>Combination of scaling and pivot adjustment</approach>
+      <method>Scale to 70-80% and fine-tune pivot for optimal visibility</method>
+    </solution_4>
+  </potential_solutions>
+
+  <constraints>
+    <requirement>Eraser/marker must be visible and prominent in frame</requirement>
+    <requirement>Hand should be holding the eraser naturally</requirement>
+    <requirement>Bottom of image must never enter frame (no green beneath)</requirement>
+    <requirement>Animation should show erasing motion convincingly</requirement>
+    <requirement>Maintain elliptical motion path</requirement>
+  </constraints>
+
+  <questions_for_solver>
+    <question priority="critical">
+      What's the optimal scale factor for the eraser image to ensure both the eraser 
+      and hand are visible while maintaining proper proportions for the animation?
+    </question>
+    <question priority="high">
+      Should we scale the image uniformly or would non-uniform scaling (different X/Y factors)
+      provide better results for fitting the eraser in frame?
+    </question>
+    <question priority="high">
+      How do we calculate the correct pivot_y_ratio after scaling? Does the ratio need
+      to be adjusted based on the new scaled height?
+    </question>
+    <question priority="medium">
+      Would it be better to crop the eraser image to remove excess arm length, then
+      scale the cropped version for better control?
+    </question>
+    <question priority="medium">
+      Is there a way to dynamically calculate the scale based on the desired visible
+      portion (e.g., "show 500px of the image in the 720px frame")?
+    </question>
+  </questions_for_solver>
+
+  <debugging_suggestions>
+    <suggestion_1>
+      Add scale parameter and test with different values (0.5, 0.6, 0.7, 0.8)
+      to find optimal size where eraser is visible but hand isn't too small
+    </suggestion_1>
+    <suggestion_2>
+      Create debug overlay showing the exact Y-coordinate and which pixels
+      of the eraser image are currently in frame
+    </suggestion_2>
+    <suggestion_3>
+      Test with pivot_y_ratio values from 0.2 to 0.5 to see effect on eraser visibility
+    </suggestion_3>
+    <suggestion_4>
+      Export frames at different points in elliptical motion to verify eraser
+      remains visible throughout entire animation
+    </suggestion_4>
+  </debugging_suggestions>
+
+  <scale_calculation_example>
+    <scenario>
+      If we want approximately 500px of the eraser image visible in the 720px frame:
+      - Original height: 1344px
+      - Desired visible portion: 500px
+      - Scale factor: 500/720 ≈ 0.69 (if we want to fill most of frame)
+      - New dimensions: 530x927 pixels (maintaining aspect ratio)
+      - Adjust pivot_y_ratio accordingly for new height
+    </scenario>
+  </scale_calculation_example>
+
+  <ffmpeg_scale_syntax>
+    <uniform_scale><![CDATA[
+# Scale to 60% of original size
+[2:v]format=rgba,setsar=1,scale=iw*0.6:ih*0.6[eraser]
+    ]]></uniform_scale>
+    <exact_height><![CDATA[
+# Scale to specific height, maintain aspect ratio
+[2:v]format=rgba,setsar=1,scale=-2:900[eraser]
+    ]]></exact_height>
+    <width_based><![CDATA[
+# Scale based on width requirement
+[2:v]format=rgba,setsar=1,scale=400:-2[eraser]
+    ]]></width_based>
+  </ffmpeg_scale_syntax>
+
+  <expected_solution>
+    <requirement>Eraser/marker clearly visible at appropriate size</requirement>
+    <requirement>Hand holding eraser at natural proportions</requirement>
+    <requirement>Smooth elliptical motion maintained</requirement>
+    <requirement>No green background visible at bottom</requirement>
+    <requirement>Solution should be parameterizable for fine-tuning</requirement>
+  </expected_solution>
+
+  <test_command>
+    <description>Quick test to visualize different scales</description>
+    <bash><![CDATA[
+# Test with 60% scale
+ffmpeg -f lavfi -i "color=green:s=1280x720:d=1" \
+  -i uploads/assets/images/eraser.png \
+  -filter_complex "[1:v]format=rgba,scale=iw*0.6:ih*0.6[s];[0:v][s]overlay=x=500:y=100" \
+  -vframes 1 test_scale_60.png
+
+# Test with 70% scale  
+ffmpeg -f lavfi -i "color=green:s=1280x720:d=1" \
+  -i uploads/assets/images/eraser.png \
+  -filter_complex "[1:v]format=rgba,scale=iw*0.7:ih*0.7[s];[0:v][s]overlay=x=500:y=100" \
+  -vframes 1 test_scale_70.png
+    ]]></bash>
+  </test_command>
+</prompt>

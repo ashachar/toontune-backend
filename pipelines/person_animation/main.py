@@ -957,8 +957,8 @@ class PersonAnimationPipeline:
                 intermediate_duration = float(result.stdout.strip())
                 
                 # Step 4: Apply eraser wipe for exit
-                # Import the masked eraser wipe function (no chromakey)
-                from utils.animations.masked_eraser_wipe import create_masked_eraser_wipe
+                # Import the unified eraser wipe function
+                from utils.animations.eraser_wipe import create_eraser_wipe
                 
                 eraser_path = os.path.join(project_root, "uploads", "assets", "images", "eraser.png")
                 
@@ -984,13 +984,16 @@ class PersonAnimationPipeline:
                     eraser_with_effect = os.path.join(self.output_dir, "temp_eraser_effect.mp4")
                     
                     try:
-                        success = create_masked_eraser_wipe(
+                        success = create_eraser_wipe(
                             eraser_source,
                             original_video,
                             eraser_path,
                             eraser_with_effect,
                             wipe_start=0,
-                            wipe_duration=eraser_duration
+                            wipe_duration=eraser_duration,
+                            mode="true_erase",  # Use true erase mode
+                            erase_radius=120,   # Radius of erase effect in pixels
+                            sample_points=25    # More samples for smoother trail
                         )
                         
                         if success:

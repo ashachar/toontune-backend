@@ -4,6 +4,12 @@
 SAM2 head-aware sandwich compositing for ASS captions.
 Uses SAM2 video tracking to detect head throughout video.
 Text ALWAYS goes behind if it touches the head, even by 1 pixel.
+
+New merging logic:
+- If 2+ subsentences at same position (top/bottom) go behind face,
+  they are merged into a single line with scaled-down font to fit
+- Single behind-face phrases are enlarged up to 1.8x
+- Merged behind-face phrases are scaled down as needed (down to 0.3x)
 """
 
 import cv2
@@ -54,10 +60,13 @@ class PhraseRenderer:
     
     def render_phrase(self, phrase: Dict, current_time: float, frame_shape: Tuple[int, int], 
                      scene_end_time: float = None, y_override: int = None, 
-                     size_multiplier: float = 1.0) -> Optional[np.ndarray]:
+                     size_multiplier: float = 1.0, merged_text: str = None) -> Optional[np.ndarray]:
         """
         Render a phrase with fade-in and slide-from-above animation.
         Returns RGBA image with transparent background.
+        
+        Args:
+            merged_text: If provided, render this text instead of phrase["text"]
         """
         # Use scene end time if provided, otherwise use phrase end time
         actual_end_time = scene_end_time if scene_end_time else phrase["end_time"]
@@ -87,7 +96,7 @@ class PhraseRenderer:
             y_offset = 0
         
         # Get text properties
-        text = phrase["text"]
+        text = merged_text if merged_text else phrase["text"]
         # When enlarging text that goes behind, we want it to be 1.5x the BASE size,
         # not 1.5x the already-reduced size. So if size_multiplier > 1, we ignore
         # the visual_style multiplier and use our target size directly.
@@ -259,6 +268,31 @@ def generate_sam2_head_mask(video_path: str, output_mask_path: str) -> bool:
         return False
 
 
+def find_head_bounds(head_mask: np.ndarray) -> Tuple[int, int, int, int]:
+    """
+    Find the bounding box of the head in the mask.
+    
+    Args:
+        head_mask: Binary mask where 255 = head, 0 = background
+        
+    Returns:
+        (x_min, y_min, x_max, y_max) of head bounds, or None if no head found
+    """
+    # Find all non-zero pixels
+    head_pixels = np.where(head_mask > 0)
+    
+    if len(head_pixels[0]) == 0:
+        return None
+    
+    # Get bounding box
+    y_min = np.min(head_pixels[0])
+    y_max = np.max(head_pixels[0])
+    x_min = np.min(head_pixels[1])
+    x_max = np.max(head_pixels[1])
+    
+    return (x_min, y_min, x_max, y_max)
+
+
 def extract_head_mask_from_sam2(sam2_mask_frame: np.ndarray) -> np.ndarray:
     """
     Extract head mask from SAM2 green screen output.
@@ -354,21 +388,32 @@ def calculate_text_visibility(text_bbox: Tuple[int, int, int, int],
 
 
 def calculate_optimal_text_size(text: str, base_font_size: int, frame_width: int, 
-                                max_multiplier: float = 1.5) -> float:
+                                max_multiplier: float = 1.5, min_multiplier: float = 0.3,
+                                margin_pixels: int = 30) -> float:
     """
     Calculate optimal size multiplier for text that goes behind.
-    Returns multiplier between 1.0 and max_multiplier that keeps text within frame.
+    Returns the LARGEST multiplier that keeps text within frame margins.
+    
+    Args:
+        text: Text to measure
+        base_font_size: Base font size
+        frame_width: Width of video frame
+        max_multiplier: Maximum size multiplier (for enlarging)
+        min_multiplier: Minimum size multiplier (for shrinking if needed)
+        margin_pixels: Margin to leave on each side (default 30px)
     """
     # Create temporary font to measure text
     temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
     draw = ImageDraw.Draw(temp_img)
     
-    # Binary search for optimal multiplier
-    left, right = 1.0, max_multiplier
-    optimal = 1.0
-    margin = 40  # Leave some margin from edges
+    # Available width is frame width minus margins on both sides
+    available_width = frame_width - (2 * margin_pixels)
     
-    for _ in range(10):  # 10 iterations should be enough
+    # Binary search for the LARGEST multiplier that fits
+    left, right = min_multiplier, max_multiplier
+    optimal = 1.0
+    
+    for _ in range(15):  # More iterations for precision
         mid = (left + right) / 2
         test_size = int(base_font_size * mid)
         
@@ -380,63 +425,80 @@ def calculate_optimal_text_size(text: str, base_font_size: int, frame_width: int
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         
-        if text_width + margin <= frame_width:
+        if text_width <= available_width:
+            # Text fits, try to make it larger
             optimal = mid
             left = mid
         else:
+            # Text too wide, make it smaller
             right = mid
     
     return optimal
 
 
-def find_optimal_y_position(phrase_start: float, phrase_end: float, fps: float,
-                           cap_mask, cap_head, position: str, 
-                           text_height: int, frame_height: int, frame_width: int) -> int:
+def find_optimal_y_position_for_behind_text(merged_text: str, font_size: int, 
+                                           phrase_start: float, phrase_end: float, 
+                                           fps: float, cap_mask, position: str, 
+                                           frame_width: int) -> int:
     """
-    Find Y position with least accumulated foreground occlusion.
+    Find Y position with least accumulated foreground occlusion for text that goes behind.
+    Tests positions from default up to 100px higher in 5px increments.
     
     Args:
+        merged_text: Text to display
+        font_size: Font size in pixels
         phrase_start: Start time in seconds
         phrase_end: End time in seconds
         fps: Video FPS
         cap_mask: Person mask video capture
-        cap_head: Head mask video capture
         position: "top" or "bottom"
-        text_height: Height of text in pixels
-        frame_height: Frame height
         frame_width: Frame width
         
     Returns:
         Optimal Y position
     """
+    # Calculate text dimensions
+    temp_img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(temp_img)
+    try:
+        font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', font_size)
+    except:
+        font = ImageFont.load_default()
+    
+    bbox = draw.textbbox((0, 0), merged_text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1] + 10  # Add some padding
+    
+    # Calculate centered X position
+    x_pos = (frame_width - text_width) // 2
+    
+    # Define search range
+    if position == "top":
+        default_y = 180
+        # Test from 100px above default to default position
+        min_y = max(text_height + 20, default_y - 100)  # Don't go too high
+        max_y = default_y
+    else:
+        default_y = 540
+        # For bottom, test from default to 100px above
+        min_y = default_y - 100
+        max_y = default_y
+    
     start_frame = int(phrase_start * fps)
     end_frame = int(phrase_end * fps)
     
-    # Define search range based on position
-    if position == "top":
-        # Search from top to middle
-        min_y = 50  # Leave some margin
-        max_y = frame_height // 2 - text_height
-        step = 20
-    else:
-        # Search from middle to bottom
-        min_y = frame_height // 2
-        max_y = frame_height - text_height - 50
-        step = 20
-    
-    best_y = min_y
+    best_y = default_y
     min_occlusion = float('inf')
     
-    # Save current positions
+    # Save current position
     orig_mask_pos = cap_mask.get(cv2.CAP_PROP_POS_FRAMES)
-    orig_head_pos = cap_head.get(cv2.CAP_PROP_POS_FRAMES) if cap_head else 0
     
-    # Test each Y position
-    for test_y in range(min_y, max_y, step):
+    # Test every 5 pixels
+    for test_y in range(min_y, max_y + 1, 5):
         total_occlusion = 0
         
-        # Sample frames throughout phrase duration
-        sample_frames = range(start_frame, min(end_frame + 1, int(cap_mask.get(cv2.CAP_PROP_FRAME_COUNT))), 5)
+        # Sample frames throughout phrase duration (every 10 frames)
+        sample_frames = range(start_frame, min(end_frame + 1, int(cap_mask.get(cv2.CAP_PROP_FRAME_COUNT))), 10)
         
         for frame_idx in sample_frames:
             # Read mask frame
@@ -452,33 +514,30 @@ def find_optimal_y_position(phrase_start: float, phrase_end: float, fps: float,
             is_green_screen = np.all(diff <= tolerance, axis=2)
             person_mask = (~is_green_screen).astype(np.uint8)
             
-            # Add head mask if available
-            if cap_head:
-                cap_head.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret_head, head_frame = cap_head.read()
-                if ret_head:
-                    head_mask = extract_head_mask_from_sam2(head_frame)
-                    # Combine person and head masks
-                    combined_mask = np.maximum(person_mask, head_mask // 255)
-                else:
-                    combined_mask = person_mask
-            else:
-                combined_mask = person_mask
+            # Calculate occlusion in text bounding box
+            # Note: test_y is the TOP of the text (FFmpeg convention)
+            y1 = max(0, test_y)
+            y2 = min(mask_frame.shape[0], test_y + text_height)
+            x1 = max(0, x_pos)
+            x2 = min(mask_frame.shape[1], x_pos + text_width)
             
-            # Calculate occlusion in text region
-            text_region = combined_mask[test_y:test_y + text_height, :]
-            occlusion = np.sum(text_region)
-            total_occlusion += occlusion
+            if y2 > y1 and x2 > x1:
+                text_region = person_mask[y1:y2, x1:x2]
+                occlusion = np.sum(text_region)
+                total_occlusion += occlusion
         
         # Update best position if less occluded
         if total_occlusion < min_occlusion:
             min_occlusion = total_occlusion
             best_y = test_y
     
-    # Restore original positions
+    # Restore original position
     cap_mask.set(cv2.CAP_PROP_POS_FRAMES, orig_mask_pos)
-    if cap_head:
-        cap_head.set(cv2.CAP_PROP_POS_FRAMES, orig_head_pos)
+    
+    # Log the optimization result
+    if best_y != default_y:
+        shift = default_y - best_y
+        print(f"      Y position optimized: shifted up {shift}px for less occlusion")
     
     return best_y
 
@@ -602,6 +661,7 @@ def apply_sam2_head_aware_sandwich(
     print("\n🔍 Pre-analyzing phrases for optimal placement...")
     phrase_optimizations = {}  # Store size multiplier and Y position for each phrase
     
+    # First pass: determine which phrases go behind
     for phrase in transcript_data.get("phrases", []):
         phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
         scene_end = scene_end_times.get(phrase_key, phrase["end_time"])
@@ -649,25 +709,169 @@ def apply_sam2_head_aware_sandwich(
                 if visibility > visibility_threshold:
                     will_go_behind = True
         
-        # If phrase will go behind, calculate optimizations
-        if will_go_behind:
-            # Calculate optimal size multiplier
-            # We want text that goes behind to be up to 80% larger (1.8x)
-            # This provides good readability without being too overwhelming
-            base_font_size = 48  # Use base size, not reduced size
-            size_multiplier = calculate_optimal_text_size(phrase["text"], base_font_size, width, 1.8)
+        # Store initial decision
+        phrase_optimizations[phrase_key] = {
+            "goes_behind": will_go_behind,
+            "size_multiplier": 1.0,  # Will be updated
+            "merged_group": None,  # Will be set if part of merged group
+            "is_primary": False  # True for the main phrase in merged group
+        }
+    
+    # Second pass: group consecutive behind-face phrases by position
+    # We need to find consecutive phrases that:
+    # 1. Have the same position (top/bottom)
+    # 2. Both go behind the face
+    # 3. Are temporally adjacent (one ends when the other starts, or overlapping)
+    
+    # Build a list of all phrases with their optimization info
+    all_phrases_with_opt = []
+    for phrase in transcript_data.get("phrases", []):
+        phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+        all_phrases_with_opt.append((phrase, phrase_key, phrase_optimizations[phrase_key]))
+    
+    # Sort by start time to ensure we process in temporal order
+    all_phrases_with_opt.sort(key=lambda x: x[0]["start_time"])
+    
+    # Group consecutive behind-face phrases
+    merged_groups = []
+    current_group = []
+    current_position = None
+    
+    for phrase, phrase_key, opt in all_phrases_with_opt:
+        if opt["goes_behind"]:
+            position = phrase.get("position", "bottom")
             
-            phrase_optimizations[phrase_key] = {
-                "size_multiplier": size_multiplier,
-                "goes_behind": True
-            }
-            
-            print(f"  '{phrase['text'][:30]}...': enlarged {size_multiplier:.2f}x")
+            # Check if this phrase can be added to current group
+            if current_group and current_position == position:
+                # Check temporal adjacency (within 0.5 seconds gap)
+                last_phrase = current_group[-1][0]
+                last_end = scene_end_times.get(current_group[-1][1], last_phrase["end_time"])
+                time_gap = phrase["start_time"] - last_end
+                
+                if time_gap <= 0.5:  # Allow up to 0.5 second gap
+                    current_group.append((phrase, phrase_key))
+                else:
+                    # Gap too large, finalize current group and start new one
+                    if len(current_group) >= 2:
+                        merged_groups.append((current_position, current_group))
+                    current_group = [(phrase, phrase_key)]
+                    current_position = position
+            else:
+                # Start new group
+                if current_group and len(current_group) >= 2:
+                    merged_groups.append((current_position, current_group))
+                current_group = [(phrase, phrase_key)]
+                current_position = position
         else:
-            phrase_optimizations[phrase_key] = {
-                "size_multiplier": 1.0,
-                "goes_behind": False
-            }
+            # Not a behind phrase, finalize any current group
+            if current_group and len(current_group) >= 2:
+                merged_groups.append((current_position, current_group))
+            current_group = []
+            current_position = None
+    
+    # Don't forget the last group
+    if current_group and len(current_group) >= 2:
+        merged_groups.append((current_position, current_group))
+    
+    # Process single behind-face phrases (not in any group)
+    single_behind_phrases = []
+    merged_phrase_keys = set()
+    for position, group in merged_groups:
+        for phrase, phrase_key in group:
+            merged_phrase_keys.add(phrase_key)
+    
+    for phrase, phrase_key, opt in all_phrases_with_opt:
+        if opt["goes_behind"] and phrase_key not in merged_phrase_keys:
+            single_behind_phrases.append((phrase, phrase_key))
+    
+    # Create merged groups where 2+ consecutive phrases go behind
+    for position, behind_phrases in merged_groups:
+        if len(behind_phrases) >= 2:
+            # Merge these phrases
+            merged_texts = []
+            phrase_keys = []
+            merged_word_timings = []  # Collect all word timings
+            earliest_start = float('inf')
+            latest_end = 0
+            
+            for phrase, phrase_key in behind_phrases:
+                merged_texts.append(phrase["text"])
+                phrase_keys.append(phrase_key)
+                scene_end = scene_end_times.get(phrase_key, phrase["end_time"])
+                earliest_start = min(earliest_start, phrase["start_time"])
+                latest_end = max(latest_end, scene_end)
+                
+                # Collect word timings if available
+                if "word_timings" in phrase and phrase["word_timings"]:
+                    merged_word_timings.extend(phrase["word_timings"])
+            
+            merged_text = " ".join(merged_texts)
+            
+            # Calculate optimal size for merged text - ENLARGE as much as possible!
+            base_font_size = 48
+            size_multiplier = calculate_optimal_text_size(
+                merged_text, base_font_size, width,
+                max_multiplier=2.5,  # Allow enlarging up to 2.5x for maximum visibility
+                min_multiplier=0.3,  # Can shrink if absolutely necessary
+                margin_pixels=30     # 30px margin on each side
+            )
+            
+            # Create merged group ID
+            merged_group_id = f"merged_{position}_{earliest_start:.2f}"
+            
+            # Calculate optimal Y position for merged text
+            actual_font_size = int(48 * size_multiplier)
+            optimal_y = find_optimal_y_position_for_behind_text(
+                merged_text, actual_font_size, 
+                earliest_start, latest_end,
+                fps, cap_mask, position, width
+            )
+            
+            # Update all phrases in the group
+            for i, phrase_key in enumerate(phrase_keys):
+                phrase_optimizations[phrase_key]["merged_group"] = merged_group_id
+                phrase_optimizations[phrase_key]["is_primary"] = (i == 0)  # First phrase is primary
+                phrase_optimizations[phrase_key]["size_multiplier"] = size_multiplier
+                phrase_optimizations[phrase_key]["merged_text"] = merged_text
+                phrase_optimizations[phrase_key]["merged_start"] = earliest_start
+                phrase_optimizations[phrase_key]["merged_end"] = latest_end
+                phrase_optimizations[phrase_key]["merged_word_timings"] = merged_word_timings
+                phrase_optimizations[phrase_key]["optimal_y"] = optimal_y
+            
+            print(f"  Merging {len(phrase_keys)} {position} phrases: font scaled to {size_multiplier:.2f}x")
+            print(f"    Merged text: '{merged_text[:50]}...'")
+    
+    # Process single behind-face phrases
+    for phrase, phrase_key in single_behind_phrases:
+        # Check if phrase is very short (less than 7 characters)
+        if len(phrase["text"]) < 7:
+            # Short phrase - will track to the left of head instead of going behind
+            phrase_optimizations[phrase_key]["track_head"] = True
+            phrase_optimizations[phrase_key]["goes_behind"] = False  # Override - don't go behind
+            phrase_optimizations[phrase_key]["size_multiplier"] = 1.2  # Slightly larger but not huge
+            print(f"  '{phrase['text']}': will track head (35px gap from face)")
+        else:
+            # Normal behind-face processing for longer phrases
+            base_font_size = 48
+            size_multiplier = calculate_optimal_text_size(
+                phrase["text"], base_font_size, width, 
+                max_multiplier=2.5,  # Allow enlarging up to 2.5x
+                min_multiplier=0.3,  # Can shrink if needed
+                margin_pixels=30     # 30px margin on each side
+            )
+            
+            # Calculate optimal Y position for single phrase
+            actual_font_size = int(48 * size_multiplier)
+            scene_end = scene_end_times.get(phrase_key, phrase["end_time"])
+            optimal_y = find_optimal_y_position_for_behind_text(
+                phrase["text"], actual_font_size,
+                phrase["start_time"], scene_end,
+                fps, cap_mask, phrase.get("position", "bottom"), width
+            )
+            
+            phrase_optimizations[phrase_key]["size_multiplier"] = size_multiplier
+            phrase_optimizations[phrase_key]["optimal_y"] = optimal_y
+            print(f"  '{phrase['text'][:30]}...': enlarged {size_multiplier:.2f}x")
     
     # Reset video positions
     cap_mask.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -736,40 +940,64 @@ def apply_sam2_head_aware_sandwich(
         kernel = np.ones((2,2), np.uint8)
         person_mask = cv2.erode(person_mask, kernel, iterations=1)
         
-        # Calculate Y positions for stacking
+        # Calculate Y positions for stacking with pre-computed merging decisions
         top_y_positions = []
         bottom_y_positions = []
+        processed_groups = set()  # Track which merged groups we've already handled
         
         # Stack top phrases (starting at y=180, going down)
-        # Account for enlarged text if it goes behind
         current_y = 180
-        for phrase, phrase_key, _ in top_phrases:
+        for i, (phrase, phrase_key, _) in enumerate(top_phrases):
             optimization = phrase_optimizations.get(phrase_key, {})
-            size_mult = optimization.get("size_multiplier", 1.0)
+            merged_group = optimization.get("merged_group")
             
-            # Use enlarged size for stacking if text goes behind
-            if size_mult > 1.0:
+            if merged_group and merged_group not in processed_groups:
+                # This is the first phrase in a merged group
+                processed_groups.add(merged_group)
+                size_mult = optimization.get("size_multiplier", 1.0)
                 font_size = int(48 * size_mult)
+                top_y_positions.append(current_y)
+                current_y += int(font_size * 1.5)
+            elif merged_group:
+                # This phrase is part of an already-processed merged group
+                top_y_positions.append(None)  # Skip it
             else:
-                font_size = int(48 * phrase["visual_style"]["font_size_multiplier"])
-            
-            top_y_positions.append(current_y)
-            current_y += int(font_size * 1.5)  # Add spacing between lines
+                # Normal phrase (not merged)
+                size_mult = optimization.get("size_multiplier", 1.0)
+                if optimization.get("goes_behind", False) and size_mult > 1.0:
+                    font_size = int(48 * size_mult)
+                else:
+                    font_size = int(48 * phrase["visual_style"]["font_size_multiplier"])
+                
+                top_y_positions.append(current_y)
+                current_y += int(font_size * 1.5)
         
         # Stack bottom phrases (starting at y=540, going down)
         current_y = 540
-        for phrase, phrase_key, _ in bottom_phrases:
+        for i, (phrase, phrase_key, _) in enumerate(bottom_phrases):
             optimization = phrase_optimizations.get(phrase_key, {})
-            size_mult = optimization.get("size_multiplier", 1.0)
+            merged_group = optimization.get("merged_group")
             
-            # Use enlarged size for stacking if text goes behind
-            if size_mult > 1.0:
+            if merged_group and merged_group not in processed_groups:
+                # This is the first phrase in a merged group
+                processed_groups.add(merged_group)
+                size_mult = optimization.get("size_multiplier", 1.0)
                 font_size = int(48 * size_mult)
+                bottom_y_positions.append(current_y)
+                current_y += int(font_size * 1.5)
+            elif merged_group:
+                # This phrase is part of an already-processed merged group
+                bottom_y_positions.append(None)  # Skip it
             else:
-                font_size = int(48 * phrase["visual_style"]["font_size_multiplier"])
-            
-            bottom_y_positions.append(current_y)
-            current_y += int(font_size * 1.5)  # Add spacing between lines
+                # Normal phrase (not merged)
+                size_mult = optimization.get("size_multiplier", 1.0)
+                if optimization.get("goes_behind", False) and size_mult > 1.0:
+                    font_size = int(48 * size_mult)
+                else:
+                    font_size = int(48 * phrase["visual_style"]["font_size_multiplier"])
+                
+                bottom_y_positions.append(current_y)
+                current_y += int(font_size * 1.5)
         
         # Check if we need to shift stacks due to heavy occlusion
         occlusion_threshold = 0.1  # 10% visibility = 90% occluded
@@ -815,36 +1043,153 @@ def apply_sam2_head_aware_sandwich(
                 
                 temp_top_renders.append((phrase_img, phrase, phrase_key, scene_end, i))
         
-        # Re-render top phrases with shift if needed
+        # Re-render phrases with shift if needed
         phrases_to_render = []
         
+        # Render top phrases
         for i, (phrase, phrase_key, scene_end) in enumerate(top_phrases):
             optimization = phrase_optimizations.get(phrase_key, {})
-            size_mult = optimization.get("size_multiplier", 1.0)
             
-            # Apply shift if needed
+            # Skip if Y position is None (non-primary merged phrase)
+            if top_y_positions[i] is None:
+                continue
+            
+            # Check if this phrase tracks the head
+            if optimization.get("track_head", False):
+                # Check if phrase is visible at current time
+                if not (phrase["start_time"] <= current_time <= scene_end):
+                    continue
+                    
+                # Find head position in current frame
+                if head_mask is not None:
+                    head_bounds = find_head_bounds(head_mask)
+                    if head_bounds:
+                        x_min, y_min, x_max, y_max = head_bounds
+                        
+                        # Render with custom position
+                        size_mult = optimization.get("size_multiplier", 1.2)
+                        
+                        # Create custom render with absolute positioning
+                        temp_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+                        draw = ImageDraw.Draw(temp_img)
+                        font_size = int(48 * size_mult)
+                        
+                        try:
+                            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', font_size)
+                        except:
+                            font = ImageFont.load_default()
+                        
+                        # Get text dimensions
+                        text = phrase["text"]
+                        bbox = draw.textbbox((0, 0), text, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        text_height_pixels = bbox[3] - bbox[1]
+                        
+                        # Calculate animation progress (slide from behind face + fade in)
+                        time_since_start = current_time - phrase["start_time"]
+                        animation_duration = 0.5  # 500ms for slide + fade
+                        
+                        if time_since_start < animation_duration:
+                            # Animation in progress
+                            progress = time_since_start / animation_duration
+                            # Ease-out cubic for smooth deceleration
+                            eased_progress = 1 - pow(1 - progress, 3)
+                            
+                            # Opacity: fade in from 0 to 1
+                            opacity = int(255 * progress)
+                            
+                            # Position: slide from behind face to final position
+                            gap_from_face = 35  # Final gap
+                            final_x = x_min - gap_from_face - text_width
+                            
+                            # Start position: behind the face (right edge at face center)
+                            start_x = (x_min + x_max) // 2 - text_width
+                            
+                            # Interpolate X position
+                            text_x = start_x + (final_x - start_x) * eased_progress
+                            text_x = max(10, text_x)  # Keep at least 10px from left edge
+                        else:
+                            # Animation complete - final position
+                            opacity = 255
+                            gap_from_face = 35
+                            text_x = x_min - gap_from_face - text_width
+                            text_x = max(10, text_x)
+                        
+                        # Y: vertically centered with head (no animation)
+                        text_y = (y_min + y_max) // 2 - text_height_pixels // 2
+                        
+                        # Black outline with opacity
+                        outline_alpha = opacity
+                        for dx in [-2, -1, 0, 1, 2]:
+                            for dy in [-2, -1, 0, 1, 2]:
+                                if dx != 0 or dy != 0:
+                                    draw.text((text_x + dx, text_y + dy), text, 
+                                             font=font, fill=(0, 0, 0, outline_alpha))
+                        
+                        # White text with opacity
+                        draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255, opacity))
+                        
+                        phrase_img = np.array(temp_img)
+                        
+                        if phrase_img is not None:
+                            # Head-tracking phrases go in front
+                            phrases_to_render.append((phrase_img, False, phrase["text"], "head-track"))
+                
+                # Skip normal rendering for head-tracking phrases
+                continue
+            
+            # Apply shift if needed (for non-head-tracking phrases)
             y_pos = top_y_positions[i] - shift_amount if top_needs_shift else top_y_positions[i]
             
-            phrase_img = phrase_renderer.render_phrase(
-                phrase, current_time, (height, width), scene_end, y_pos, size_mult
-            )
-            if phrase_img is not None and "_render_bbox" in phrase:
-                # Check head overlap FIRST (priority)
-                head_overlap = False
-                if head_mask is not None:
-                    head_overlap = check_text_head_overlap(phrase["_render_bbox"], head_mask)
+            # Check if this is a merged phrase (primary only)
+            if optimization.get("is_primary", False) and optimization.get("merged_group"):
+                # Render merged text
+                merged_text = optimization.get("merged_text", phrase["text"])
+                merged_start = optimization.get("merged_start", phrase["start_time"])
+                merged_end = optimization.get("merged_end", scene_end)
+                merged_word_timings = optimization.get("merged_word_timings", [])
                 
-                # If overlaps with head, ALWAYS go behind
-                if head_overlap:
-                    should_be_behind = True
-                    reason = "head"
-                else:
-                    # Otherwise check visibility for body
-                    visibility = calculate_text_visibility(phrase["_render_bbox"], person_mask)
-                    should_be_behind = visibility > visibility_threshold
-                    reason = "visibility" if should_be_behind else "none"
+                # Use optimal Y if available (for behind-face text)
+                if "optimal_y" in optimization:
+                    y_pos = optimization["optimal_y"] - shift_amount if top_needs_shift else optimization["optimal_y"]
                 
-                phrases_to_render.append((phrase_img, should_be_behind, phrase["text"][:20], reason))
+                # Check if merged phrase is visible
+                if merged_start <= current_time <= merged_end:
+                    # Create a modified phrase with merged word timings
+                    merged_phrase = phrase.copy()
+                    if merged_word_timings:
+                        merged_phrase["word_timings"] = merged_word_timings
+                    
+                    phrase_img = phrase_renderer.render_phrase(
+                        merged_phrase, 
+                        current_time, 
+                        (height, width), 
+                        merged_end, 
+                        y_pos, 
+                        optimization["size_multiplier"],
+                        merged_text=merged_text
+                    )
+                    
+                    if phrase_img is not None:
+                        # Merged phrases always go behind (that's why we merged them)
+                        phrases_to_render.append((phrase_img, True, f"[MERGED]", "merged"))
+            else:
+                # Normal phrase rendering
+                size_mult = optimization.get("size_multiplier", 1.0)
+                
+                # Use optimal Y if available (for single behind-face phrases)
+                if optimization.get("goes_behind", False) and "optimal_y" in optimization:
+                    y_pos = optimization["optimal_y"] - shift_amount if top_needs_shift else optimization["optimal_y"]
+                
+                phrase_img = phrase_renderer.render_phrase(
+                    phrase, current_time, (height, width), scene_end, y_pos, size_mult
+                )
+                
+                if phrase_img is not None:
+                    # Use pre-computed decision about behind/front
+                    should_be_behind = optimization.get("goes_behind", False)
+                    reason = "pre-computed"
+                    phrases_to_render.append((phrase_img, should_be_behind, phrase["text"][:20], reason))
         
         # Check bottom phrases for occlusion
         bottom_needs_shift = False
@@ -877,34 +1222,150 @@ def apply_sam2_head_aware_sandwich(
                             bottom_shift_amount = shift_try * 20
                             break
         
-        # Render bottom phrases with shift if needed
+        # Render bottom phrases
         for i, (phrase, phrase_key, scene_end) in enumerate(bottom_phrases):
             optimization = phrase_optimizations.get(phrase_key, {})
-            size_mult = optimization.get("size_multiplier", 1.0)
             
-            # Apply shift if needed
+            # Skip if Y position is None (non-primary merged phrase)
+            if bottom_y_positions[i] is None:
+                continue
+            
+            # Check if this phrase tracks the head
+            if optimization.get("track_head", False):
+                # Check if phrase is visible at current time
+                if not (phrase["start_time"] <= current_time <= scene_end):
+                    continue
+                    
+                # Find head position in current frame
+                if head_mask is not None:
+                    head_bounds = find_head_bounds(head_mask)
+                    if head_bounds:
+                        x_min, y_min, x_max, y_max = head_bounds
+                        
+                        # Render with custom position
+                        size_mult = optimization.get("size_multiplier", 1.2)
+                        
+                        # Create custom render with absolute positioning
+                        temp_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+                        draw = ImageDraw.Draw(temp_img)
+                        font_size = int(48 * size_mult)
+                        
+                        try:
+                            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', font_size)
+                        except:
+                            font = ImageFont.load_default()
+                        
+                        # Get text dimensions
+                        text = phrase["text"]
+                        bbox = draw.textbbox((0, 0), text, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        text_height_pixels = bbox[3] - bbox[1]
+                        
+                        # Calculate animation progress (slide from behind face + fade in)
+                        time_since_start = current_time - phrase["start_time"]
+                        animation_duration = 0.5  # 500ms for slide + fade
+                        
+                        if time_since_start < animation_duration:
+                            # Animation in progress
+                            progress = time_since_start / animation_duration
+                            # Ease-out cubic for smooth deceleration
+                            eased_progress = 1 - pow(1 - progress, 3)
+                            
+                            # Opacity: fade in from 0 to 1
+                            opacity = int(255 * progress)
+                            
+                            # Position: slide from behind face to final position
+                            gap_from_face = 35  # Final gap
+                            final_x = x_min - gap_from_face - text_width
+                            
+                            # Start position: behind the face (right edge at face center)
+                            start_x = (x_min + x_max) // 2 - text_width
+                            
+                            # Interpolate X position
+                            text_x = start_x + (final_x - start_x) * eased_progress
+                            text_x = max(10, text_x)  # Keep at least 10px from left edge
+                        else:
+                            # Animation complete - final position
+                            opacity = 255
+                            gap_from_face = 35
+                            text_x = x_min - gap_from_face - text_width
+                            text_x = max(10, text_x)
+                        
+                        # Y: vertically centered with head (no animation)
+                        text_y = (y_min + y_max) // 2 - text_height_pixels // 2
+                        
+                        # Black outline with opacity
+                        outline_alpha = opacity
+                        for dx in [-2, -1, 0, 1, 2]:
+                            for dy in [-2, -1, 0, 1, 2]:
+                                if dx != 0 or dy != 0:
+                                    draw.text((text_x + dx, text_y + dy), text, 
+                                             font=font, fill=(0, 0, 0, outline_alpha))
+                        
+                        # White text with opacity
+                        draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255, opacity))
+                        
+                        phrase_img = np.array(temp_img)
+                        
+                        if phrase_img is not None:
+                            # Head-tracking phrases go in front
+                            phrases_to_render.append((phrase_img, False, phrase["text"], "head-track"))
+                
+                # Skip normal rendering for head-tracking phrases
+                continue
+            
+            # Apply shift if needed (for non-head-tracking phrases)
             y_pos = bottom_y_positions[i] + bottom_shift_amount if bottom_needs_shift else bottom_y_positions[i]
             
-            phrase_img = phrase_renderer.render_phrase(
-                phrase, current_time, (height, width), scene_end, y_pos, size_mult
-            )
-            if phrase_img is not None and "_render_bbox" in phrase:
-                # Check head overlap FIRST (priority)
-                head_overlap = False
-                if head_mask is not None:
-                    head_overlap = check_text_head_overlap(phrase["_render_bbox"], head_mask)
+            # Check if this is a merged phrase (primary only)
+            if optimization.get("is_primary", False) and optimization.get("merged_group"):
+                # Render merged text
+                merged_text = optimization.get("merged_text", phrase["text"])
+                merged_start = optimization.get("merged_start", phrase["start_time"])
+                merged_end = optimization.get("merged_end", scene_end)
+                merged_word_timings = optimization.get("merged_word_timings", [])
                 
-                # If overlaps with head, ALWAYS go behind
-                if head_overlap:
-                    should_be_behind = True
-                    reason = "head"
-                else:
-                    # Otherwise check visibility for body
-                    visibility = calculate_text_visibility(phrase["_render_bbox"], person_mask)
-                    should_be_behind = visibility > visibility_threshold
-                    reason = "visibility" if should_be_behind else "none"
+                # Use optimal Y if available (for behind-face text)
+                if "optimal_y" in optimization:
+                    y_pos = optimization["optimal_y"] + bottom_shift_amount if bottom_needs_shift else optimization["optimal_y"]
                 
-                phrases_to_render.append((phrase_img, should_be_behind, phrase["text"][:20], reason))
+                # Check if merged phrase is visible
+                if merged_start <= current_time <= merged_end:
+                    # Create a modified phrase with merged word timings
+                    merged_phrase = phrase.copy()
+                    if merged_word_timings:
+                        merged_phrase["word_timings"] = merged_word_timings
+                    
+                    phrase_img = phrase_renderer.render_phrase(
+                        merged_phrase, 
+                        current_time, 
+                        (height, width), 
+                        merged_end, 
+                        y_pos, 
+                        optimization["size_multiplier"],
+                        merged_text=merged_text
+                    )
+                    
+                    if phrase_img is not None:
+                        # Merged phrases always go behind (that's why we merged them)
+                        phrases_to_render.append((phrase_img, True, f"[MERGED]", "merged"))
+            else:
+                # Normal phrase rendering
+                size_mult = optimization.get("size_multiplier", 1.0)
+                
+                # Use optimal Y if available (for single behind-face phrases)
+                if optimization.get("goes_behind", False) and "optimal_y" in optimization:
+                    y_pos = optimization["optimal_y"] + bottom_shift_amount if bottom_needs_shift else optimization["optimal_y"]
+                
+                phrase_img = phrase_renderer.render_phrase(
+                    phrase, current_time, (height, width), scene_end, y_pos, size_mult
+                )
+                
+                if phrase_img is not None:
+                    # Use pre-computed decision about behind/front
+                    should_be_behind = optimization.get("goes_behind", False)
+                    reason = "pre-computed"
+                    phrases_to_render.append((phrase_img, should_be_behind, phrase["text"][:20], reason))
         
         # Process phrases in two passes: behind first, then in front
         
@@ -991,6 +1452,7 @@ def main():
     print("  • Otherwise uses visibility threshold for body")
     print("  • Per-phrase independent decisions")
     print("  • Vertical stacking for same-position phrases")
+    print("  • Auto-merges 2+ behind-face phrases into single line with scaled font")
     
     final_video = apply_sam2_head_aware_sandwich(
         input_video,

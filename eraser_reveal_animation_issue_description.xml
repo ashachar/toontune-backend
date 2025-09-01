@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Video processing pipeline using FFmpeg filters</project_type>
+    <language>Python 3.x</language>
+    <framework>FFmpeg 7.1.1 filter complex chains</framework>
+    <os>macOS</os>
+    <domain>Animation overlay effects - eraser wipe transition</domain>
+    <current_state>
+      <working_parts>
+        - Eraser moves in correct elliptical path
+        - Hand/eraser properly scaled and positioned
+        - Eraser appears to move over character
+      </working_parts>
+      <broken_parts>
+        - Video freezes after eraser animation completes (audio continues)
+        - Reveal effect uses ugly rectangular patches
+        - Reveals don't follow eraser movement smoothly
+      </broken_parts>
+    </current_state>
+  </context>
+
+  <problem_statement>
+    The eraser wipe animation has two critical issues:
+    1. VIDEO FREEZE: After the 0.6-second eraser animation completes, the video freezes 
+       (showing the last frame) while audio continues playing normally.
+    2. UGLY REVEAL: The current reveal mechanism uses discrete rectangular patches that 
+       appear at fixed intervals, creating a blocky, unnatural effect instead of a smooth 
+       erasing motion that follows the eraser's path.
+  </problem_statement>
+
+  <current_implementation>
+    <file_path>/utils/animations/masked_eraser_wipe.py</file_path>
+    <reveal_mechanism><![CDATA[
+# Build progressive reveal masks - synchronized with eraser contact point
+for i in range(num_steps):  # num_steps = 8
+    progress = i / (num_steps - 1) if num_steps > 1 else 0
+    angle = 2 * math.pi * progress
+    
+    # Calculate contact point position (where eraser tip actually is)
+    x_contact = int(center_x + radius_x * math.cos(angle) + contact_dx)
+    
+    # Y position with vertical calculations (matching eraser tip)
+    sin_val = math.sin(angle)
+    y_top_raw = center_y + amplitude * sin_val - scaled_height * pivot_y_ratio + \
+               (top_margin - (center_y - amplitude) + scaled_height * (pivot_y_ratio - tip_ratio))
+    y_top = max(y_top_raw, height - scaled_height + bottom_safety)
+    y_tip = int(y_top + scaled_height * tip_ratio)
+    
+    # Time when this reveal happens
+    reveal_time = wipe_start + (progress * wipe_duration)
+    
+    # Create a circular reveal at this position
+    if i == 0:
+        current = "char"
+    
+    # Crop a circle from the original and overlay it - centered on contact point
+    circle_size = 150
+    crop_x = max(0, x_contact - circle_size // 2)
+    crop_y = max(0, y_tip - circle_size // 2)
+    
+    filter_parts.append(
+        f"[orig]crop={circle_size}:{circle_size}:{crop_x}:{crop_y}[crop{i}];"
+        f"[{current}][crop{i}]overlay={crop_x}:{crop_y}:"
+        f"enable='gte(t,{reveal_time})'[step{i}];"
+    )
+    current = f"step{i}"
+    ]]></reveal_mechanism>
+    
+    <eraser_overlay><![CDATA[
+# Add the moving eraser with VERTICAL PIVOT + FEATURE-AWARE OFFSET
+eraser_motion = (f"overlay="
+                f"x='{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_w*{pivot_x_ratio}':"
+                f"y='max({y_raw},{min_y})':"
+                f"eval=frame:"
+                f"enable='between(t,{wipe_start},{wipe_start + wipe_duration + 0.02})'")
+
+filter_parts.append(f"[{current}][eraser]{eraser_motion}[with_eraser];")
+filter_parts.append(f"[with_eraser]format=yuv420p")
+    ]]></eraser_overlay>
+    
+    <ffmpeg_command><![CDATA[
+cmd = [
+    'ffmpeg', '-y',
+    '-i', temp_composite,  # Character (fully opaque)
+    '-i', original_video,  # Original to reveal
+    '-i', eraser_image,    # Eraser PNG
+    '-filter_complex', filter_complex,
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', '18',
+    '-pix_fmt', 'yuv420p',
+    output_video
+]
+    ]]></ffmpeg_command>
+  </current_implementation>
+
+  <observed_behavior>
+    <issue_1_freeze>
+      <symptom>Video playback freezes at approximately 0.6 seconds (end of eraser animation)</symptom>
+      <details>
+        - Last frame remains visible
+        - Audio continues playing normally
+        - Duration of output video is correct but video stream stops updating
+      </details>
+      <likely_cause>
+        The filter chain might be incomplete after the eraser animation ends.
+        The 'enable' clause ends at wipe_start + wipe_duration + 0.02, after which
+        there might be no valid video stream to display.
+      </likely_cause>
+    </issue_1_freeze>
+    
+    <issue_2_blocky_reveal>
+      <symptom>Rectangular/circular patches appear at discrete positions</symptom>
+      <details>
+        - Only 8 reveal patches for entire animation
+        - Each patch appears suddenly at fixed time intervals
+        - Patches are static circles/rectangles, not following eraser motion
+        - Creates a stuttering, blocky effect instead of smooth erasing
+      </details>
+      <current_approach>
+        Pre-calculates 8 positions along ellipse and reveals patches at those positions
+      </current_approach>
+    </issue_2_blocky_reveal>
+  </observed_behavior>
+
+  <desired_behavior>
+    <smooth_reveal>
+      The reveal should follow the eraser's path continuously, creating a trail
+      effect where the original video is revealed smoothly behind the moving eraser,
+      similar to how a real eraser would work on a whiteboard.
+    </smooth_reveal>
+    <continuous_playback>
+      After the eraser animation completes, the video should continue playing
+      normally, showing either the fully revealed original video or maintaining
+      the last state without freezing.
+    </continuous_playback>
+  </desired_behavior>
+
+  <potential_solutions>
+    <solution_1_mask_accumulation>
+      <approach>Use an accumulating mask that grows over time</approach>
+      <description>
+        Instead of discrete patches, create a continuously growing mask that
+        follows the eraser's path, accumulating the revealed areas over time.
+      </description>
+      <technique>Could use drawbox or geq filters to build up a mask</technique>
+    </solution_1_mask_accumulation>
+    
+    <solution_2_blend_trails>
+      <approach>Create motion blur/trail effect</approach>
+      <description>
+        Use blend filters with decay to create a trail behind the eraser
+        that gradually reveals the underlying video.
+      </description>
+    </solution_2_blend_trails>
+    
+    <solution_3_animated_mask>
+      <approach>Generate frame-by-frame masks</approach>
+      <description>
+        Create a video stream of masks that follows the eraser path,
+        then use it with alphamerge to reveal the original video smoothly.
+      </description>
+    </solution_3_animated_mask>
+    
+    <solution_4_fix_freeze>
+      <approach>Ensure continuous video stream after animation</approach>
+      <description>
+        After the eraser animation ends, ensure the filter chain continues
+        to output the fully revealed original video or final composite state.
+      </description>
+      <method>
+        Remove the 'enable' time limit or add a final overlay that takes over
+        after the animation completes.
+      </method>
+    </solution_4_fix_freeze>
+  </potential_solutions>
+
+  <questions_for_solver>
+    <question priority="critical">
+      How can we create a smooth, continuous reveal effect that follows the 
+      eraser's path in real-time rather than using discrete patches?
+    </question>
+    <question priority="critical">
+      Why does the video freeze after the eraser animation ends, and how do we
+      ensure continuous playback through the entire video duration?
+    </question>
+    <question priority="high">
+      Should we use an accumulating mask approach or a trail-based effect for
+      the smoothest visual result?
+    </question>
+    <question priority="high">
+      Can FFmpeg's 'geq' or 'blend' filters create a dynamic mask that follows
+      a mathematical path over time?
+    </question>
+    <question priority="medium">
+      Would it be better to pre-generate a mask video and use it with alphamerge,
+      or compute the mask dynamically in the filter chain?
+    </question>
+  </questions_for_solver>
+
+  <technical_constraints>
+    <constraint>Must work within a single FFmpeg filter_complex chain</constraint>
+    <constraint>Should maintain real-time or near-real-time processing</constraint>
+    <constraint>Output must be H.264 encoded MP4</constraint>
+    <constraint>Must preserve audio from original video</constraint>
+    <constraint>Eraser motion is elliptical with specific parameters</constraint>
+  </technical_constraints>
+
+  <ffmpeg_filter_references>
+    <filter name="geq">
+      Generic equation filter - can create dynamic masks based on time and position
+    </filter>
+    <filter name="blend">
+      Can create trail effects by blending frames over time
+    </filter>
+    <filter name="alphamerge">
+      Merges alpha channel from one stream into another
+    </filter>
+    <filter name="tblend">
+      Temporal blend - blends successive frames
+    </filter>
+    <filter name="maskedmerge">
+      Merges two videos using a mask video
+    </filter>
+    <filter name="loop">
+      Can loop/freeze frames if needed for continuous output
+    </filter>
+  </ffmpeg_filter_references>
+
+  <expected_solution>
+    <requirement>Smooth, continuous reveal following eraser path</requirement>
+    <requirement>No video freeze - continuous playback through entire duration</requirement>
+    <requirement>Natural erasing effect similar to real eraser on whiteboard</requirement>
+    <requirement>Reveal should accumulate (once revealed, stays revealed)</requirement>
+    <requirement>Compatible with existing eraser motion parameters</requirement>
+  </expected_solution>
+
+  <debugging_info>
+    <video_duration>6 seconds total</video_duration>
+    <eraser_animation_duration>0.6 seconds</eraser_animation_duration>
+    <freeze_occurs_at>Approximately 0.6-0.65 seconds</eraser_freeze_occurs_at>
+    <number_of_patches>8 discrete reveal patches</number_of_patches>
+    <patch_size>150x150 pixels</patch_size>
+  </debugging_info>
+
+  <example_commands>
+    <smooth_mask_concept><![CDATA[
+# Conceptual example of smooth reveal using geq
+geq='lum=if(hypot(X-{x_center}*sin(T*{speed}), Y-{y_center}*cos(T*{speed})) < {radius}*T, 255, 0)'
+    ]]></smooth_mask_concept>
+    
+    <trail_effect_concept><![CDATA[
+# Conceptual example using blend for trails
+[prev][current]blend=all_mode=addition:all_opacity=0.1[accumulated]
+    ]]></trail_effect_concept>
+  </example_commands>
+</prompt>

@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Video processing pipeline using FFmpeg filters</project_type>
+    <language>Python 3.x</language>
+    <framework>FFmpeg 7.1.1 filter complex chains</framework>
+    <os>macOS</os>
+    <domain>Animation overlay effects for video transitions - eraser wipe effect</domain>
+    <previous_fixes>
+      <fix_1>Implemented vertical pivot to show hand/arm instead of just palm</fix_1>
+      <fix_2>Added uniform scaling (70%) to make hand/eraser proportional to frame</fix_2>
+      <fix_3>Added feature-aware vertical offset to position eraser tip correctly</fix_3>
+    </previous_fixes>
+  </context>
+
+  <problem_statement>
+    The eraser animation's Y-position and scale are now perfect - the hand is the right size and 
+    the eraser is visible. However, the X-position is misaligned. The eraser should appear to be 
+    "erasing" the character overlay (a meerkat character), but it's not positioned over the character. 
+    The eraser needs to move horizontally across the character to create a convincing erasing effect, 
+    but currently it appears to be erasing empty space or the wrong part of the frame.
+  </problem_statement>
+
+  <animation_purpose>
+    <goal>Create illusion of someone erasing an animated character from the video</goal>
+    <effect_type>Progressive reveal/wipe transition</effect_type>
+    <description>
+      The eraser should move in an elliptical path while progressively revealing the original 
+      video underneath the character overlay. The eraser motion should align with areas being 
+      revealed to create a convincing "erasing" effect.
+    </description>
+  </animation_purpose>
+
+  <technical_specifications>
+    <video_specs>
+      <width>1280</width>
+      <height>720</height>
+      <fps>25</fps>
+    </video_specs>
+    <eraser_image_specs>
+      <original_width>768</original_width>
+      <original_height>1344</original_height>
+      <scaled_width>538</scaled_width>  <!-- 768 * 0.70 -->
+      <scaled_height>941</scaled_height> <!-- 1344 * 0.70 -->
+      <description>Hand holding blue eraser with arm extending downward</description>
+    </eraser_image_specs>
+    <character_overlay>
+      <description>Animated meerkat character in business attire</description>
+      <position>Centered in frame, occupying middle portion</position>
+      <approximate_bounds>Character roughly between x=400-880, y=100-600</approximate_bounds>
+    </character_overlay>
+    <motion_path>
+      <type>elliptical</type>
+      <center_x>640</center_x>  <!-- Center of 1280px wide frame -->
+      <center_y>360</center_y>  <!-- Center of 720px tall frame -->
+      <radius_x>200</radius_x>
+      <radius_y>120</radius_y>
+      <vertical_factor>0.8</vertical_factor>
+      <duration_seconds>0.6</duration_seconds>
+    </motion_path>
+  </technical_specifications>
+
+  <current_implementation>
+    <file_path>/utils/animations/masked_eraser_wipe.py</file_path>
+    <x_positioning_code><![CDATA[
+# X-position: centered with horizontal pivot (150/768 ≈ 0.1953)
+pivot_x_ratio = 0.1953
+
+# X-position formula in overlay filter
+x_expr = f"{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_w*{pivot_x_ratio}"
+
+# Expands to:
+# x = 640 + 200*cos(2*PI*(t-0)/0.6) - overlay_w*0.1953
+# With scaled overlay_w = 538:
+# x = 640 + 200*cos(...) - 105
+# x ranges from approximately 640-200-105=335 to 640+200-105=735
+    ]]></x_positioning_code>
+    
+    <y_positioning_code><![CDATA[
+# Y-position with vertical pivot and feature-aware offset (WORKING CORRECTLY)
+pivot_y_ratio = 0.62
+tip_ratio = 0.12
+top_margin = 20
+amplitude = radius_y * 0.8  # 120 * 0.8 = 96
+
+y_offset = f"{top_margin} - ({center_y} - {amplitude}) + overlay_h*({pivot_y_ratio} - {tip_ratio})"
+y_raw = f"{center_y}+{amplitude}*sin(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_h*{pivot_y_ratio}+({y_offset})"
+    ]]></y_positioning_code>
+
+    <reveal_mechanism><![CDATA[
+# Progressive reveal using circular crops
+for i in range(num_steps):
+    progress = i / (num_steps - 1) if num_steps > 1 else 0
+    angle = 2 * math.pi * progress
+    
+    x = int(center_x + radius_x * math.cos(angle))
+    y = int(center_y + radius_y * 0.8 * math.sin(angle))
+    
+    reveal_time = wipe_start + (progress * wipe_duration)
+    
+    # Create circular reveal at this position
+    circle_size = 150
+    crop_x = max(0, x - circle_size // 2)
+    crop_y = max(0, y - circle_size // 2)
+    
+    filter_parts.append(
+        f"[orig]crop={circle_size}:{circle_size}:{crop_x}:{crop_y}[crop{i}];"
+        f"[{current}][crop{i}]overlay={crop_x}:{crop_y}:"
+        f"enable='gte(t,{reveal_time})'[step{i}];"
+    )
+    ]]></reveal_mechanism>
+  </current_implementation>
+
+  <observed_behavior>
+    <current_result>
+      - Eraser hand moves in elliptical path as intended
+      - Y-position is correct - eraser visible at top, hand natural size
+      - X-position appears misaligned with character being erased
+      - Eraser seems to be erasing empty space rather than the character
+      - The reveal effect happens but doesn't align with eraser position
+    </current_result>
+    <visual_analysis>
+      The eraser's horizontal range (approximately x=335 to x=735) may not properly 
+      overlap with the character's position (roughly x=400-880). The horizontal pivot 
+      offset (-overlay_w*0.1953 ≈ -105px) might be shifting the eraser too far left.
+    </visual_analysis>
+  </observed_behavior>
+
+  <synchronization_issue>
+    <problem>
+      The circular reveal positions are calculated independently from the eraser position.
+      The reveals happen at fixed elliptical positions while the eraser has its own 
+      positioning with pivot offsets. These two systems need to be synchronized.
+    </problem>
+    <current_reveal_positions>
+      Reveals occur at: x = center_x + radius_x * cos(angle) = 640 ± 200
+      Range: x = 440 to 840
+    </current_reveal_positions>
+    <current_eraser_positions>
+      Eraser appears at: x = 640 + 200*cos(...) - 105
+      Range: x = 335 to 735
+    </current_eraser_positions>
+    <offset_difference>
+      There's approximately a 105-pixel horizontal offset between reveal and eraser
+    </offset_difference>
+  </synchronization_issue>
+
+  <potential_solutions>
+    <solution_1>
+      <approach>Adjust horizontal pivot ratio</approach>
+      <method>Reduce pivot_x_ratio to shift eraser right</method>
+      <example>pivot_x_ratio = 0.10 would shift right by ~50px</example>
+    </solution_1>
+    <solution_2>
+      <approach>Add horizontal offset to center eraser on character</approach>
+      <method>Add constant to X formula to shift entire path</method>
+      <example>x = center_x + radius_x*cos(...) - overlay_w*pivot_x_ratio + 100</example>
+    </solution_2>
+    <solution_3>
+      <approach>Synchronize reveal positions with eraser position</approach>
+      <method>Calculate reveal positions based on actual eraser position</method>
+      <details>Use same X formula for both eraser and reveal centers</details>
+    </solution_3>
+    <solution_4>
+      <approach>Adjust ellipse center_x to better align with character</approach>
+      <method>Move entire elliptical path horizontally</method>
+      <example>center_x = 690 instead of 640</example>
+    </solution_4>
+    <solution_5>
+      <approach>Make eraser position follow reveal positions</approach>
+      <method>Remove or adjust pivot offset to match reveal locations</method>
+    </solution_5>
+  </potential_solutions>
+
+  <questions_for_solver>
+    <question priority="critical">
+      Should the eraser position exactly match the reveal positions, or should there 
+      be an intentional offset to account for the eraser's width and the fact that 
+      erasing happens at the eraser's edge, not its center?
+    </question>
+    <question priority="high">
+      What's the correct horizontal pivot point for the eraser? Should it be at the 
+      eraser tip (left edge), center, or somewhere else to create the most convincing effect?
+    </question>
+    <question priority="high">
+      Should we calculate the reveal positions based on where the eraser actually is, 
+      rather than using independent elliptical positions?
+    </question>
+    <question priority="medium">
+      Would it be better to shift the entire elliptical path to the right, or just 
+      adjust the eraser's position within the existing path?
+    </question>
+    <question priority="medium">
+      Should the reveal size (circle_size = 150) be adjusted based on the eraser's 
+      visual size after scaling?
+    </question>
+  </questions_for_solver>
+
+  <mathematical_analysis>
+    <eraser_tip_position>
+      If pivot_x_ratio represents distance from left edge to pivot point,
+      and we want the eraser tip to align with reveals:
+      - Current: pivot at ~20% from left (0.1953)
+      - Eraser tip would be at: x_eraser - (pivot_x_ratio * overlay_w)
+      - For alignment: x_eraser_tip should equal x_reveal
+    </eraser_tip_position>
+    <required_offset>
+      To align eraser with reveals:
+      x_reveal = 640 + 200*cos(t)
+      x_eraser = 640 + 200*cos(t) - 105
+      Difference = 105 pixels
+      Need to add 105 to x_eraser or subtract 105 from x_reveal
+    </required_offset>
+  </mathematical_analysis>
+
+  <expected_solution>
+    <requirement>Eraser motion should visually align with areas being revealed</requirement>
+    <requirement>The eraser should appear to be erasing the character, not empty space</requirement>
+    <requirement>Synchronization between eraser position and reveal effect</requirement>
+    <requirement>Maintain smooth elliptical motion</requirement>
+    <requirement>Keep Y-position and scale fixes intact</requirement>
+  </expected_solution>
+
+  <debugging_suggestions>
+    <suggestion_1>
+      Add visual markers at reveal positions and eraser position to see the offset
+    </suggestion_1>
+    <suggestion_2>
+      Test with different pivot_x_ratio values (0.0, 0.1, 0.2, 0.3) to find optimal alignment
+    </suggestion_2>
+    <suggestion_3>
+      Overlay both the calculated reveal positions and actual eraser position as text
+    </suggestion_3>
+    <suggestion_4>
+      Try setting pivot_x_ratio = 0 to see if eraser aligns with reveals
+    </suggestion_4>
+  </debugging_suggestions>
+
+  <test_commands>
+    <test_alignment><![CDATA[
+# Test with no horizontal pivot to check alignment
+ffmpeg -f lavfi -i "color=green:s=1280x720:d=1" \
+  -i uploads/assets/images/eraser.png \
+  -filter_complex "[1:v]format=rgba,scale=iw*0.7:ih*0.7[s];
+    [0:v][s]overlay=x='640+200*cos(2*PI*t/0.6)':y=200" \
+  -t 0.6 test_no_pivot.mp4
+
+# Test with current pivot
+ffmpeg -f lavfi -i "color=green:s=1280x720:d=1" \
+  -i uploads/assets/images/eraser.png \
+  -filter_complex "[1:v]format=rgba,scale=iw*0.7:ih*0.7[s];
+    [0:v][s]overlay=x='640+200*cos(2*PI*t/0.6)-overlay_w*0.1953':y=200" \
+  -t 0.6 test_with_pivot.mp4
+    ]]></test_alignment>
+  </test_commands>
+
+  <complete_overlay_filter><![CDATA[
+eraser_motion = (f"overlay="
+                f"x='{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_w*{pivot_x_ratio}':"
+                f"y='max({y_raw},{min_y})':"
+                f"eval=frame:"
+                f"enable='between(t,{wipe_start},{wipe_start + wipe_duration + 0.02})'")
+  ]]></complete_overlay_filter>
+</prompt>

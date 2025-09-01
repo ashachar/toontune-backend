@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <system_description>
+      We have a video captioning system that places text overlays on videos using a "sandwich" compositing technique.
+      The system can place text either in front of or behind a person in the video.
+      When text goes behind a person's head, it becomes partially occluded and harder to read.
+    </system_description>
+    
+    <key_features>
+      - Text phrases can have position "top" or "bottom"
+      - Multiple phrases with same position should stack vertically
+      - Text that overlaps with a person's head goes BEHIND the person
+      - Text behind the head is enlarged by 1.8x for better readability
+      - When any phrase in a stack is heavily occluded (>60% hidden), the entire stack should shift up (for top) or down (for bottom)
+    </key_features>
+    
+    <technical_stack>
+      - Python with OpenCV for video processing
+      - SAM2 (Segment Anything 2) for head detection
+      - Frame-by-frame processing at 25 FPS
+      - Green screen mask videos for person/background separation
+    </technical_stack>
+  </context>
+
+  <problem_description>
+    <issue_summary>
+      Text positioning and shifting logic is malfunctioning. When multiple phrases with position="top" appear together (e.g., "Would you be" and "surprised if"), they should:
+      1. Stack vertically with proper spacing
+      2. If any phrase becomes heavily occluded behind the head, shift the entire stack up together
+      3. Maintain their relative positions after shifting
+      
+      Currently, the text appears to shift multiple times per frame or shifts when it shouldn't, causing unstable positioning.
+    </issue_summary>
+    
+    <observed_behavior>
+      - "Would you be" appears to shift position AFTER it was already placed
+      - Text repositioning happens every frame instead of maintaining consistent position
+      - The stack shifting logic triggers too frequently or incorrectly
+    </observed_behavior>
+    
+    <expected_behavior>
+      - Calculate stack positions ONCE per frame
+      - Check if any phrase in the stack is heavily occluded
+      - If yes, shift the ENTIRE stack ONCE to a better position
+      - Maintain that position for the duration of the phrases
+    </expected_behavior>
+  </problem_description>
+
+  <code_flow>
+    <step_1>
+      <description>For each frame, collect visible phrases and group by position (top/bottom)</description>
+      <code_snippet><![CDATA[
+# Collect visible phrases at current time
+top_phrases = []
+bottom_phrases = []
+for phrase in transcript_data.get("phrases", []):
+    phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+    scene_end = scene_end_times.get(phrase_key, phrase["end_time"])
+    
+    if phrase["start_time"] <= current_time <= scene_end:
+        if phrase.get("position") == "top":
+            top_phrases.append((phrase, phrase_key, scene_end))
+        else:
+            bottom_phrases.append((phrase, phrase_key, scene_end))
+      ]]></code_snippet>
+    </step_1>
+    
+    <step_2>
+      <description>Calculate initial Y positions for stacking</description>
+      <code_snippet><![CDATA[
+# Stack top phrases (starting at y=180, going down)
+current_y = 180
+for phrase, phrase_key, _ in top_phrases:
+    optimization = phrase_optimizations.get(phrase_key, {})
+    size_mult = optimization.get("size_multiplier", 1.0)
+    
+    if size_mult > 1.0:
+        font_size = int(48 * size_mult)  # Enlarged text
+    else:
+        font_size = int(48 * phrase["visual_style"]["font_size_multiplier"])
+    
+    top_y_positions.append(current_y)
+    current_y += int(font_size * 1.5)  # Add spacing between lines
+      ]]></code_snippet>
+    </step_2>
+    
+    <step_3>
+      <description>Check if stack needs shifting due to occlusion</description>
+      <code_snippet><![CDATA[
+# First pass: render phrases and check occlusion
+occlusion_threshold = 0.4  # 40% visibility threshold
+top_needs_shift = False
+shift_amount = 0
+
+for i, (phrase, phrase_key, scene_end) in enumerate(top_phrases):
+    optimization = phrase_optimizations.get(phrase_key, {})
+    size_mult = optimization.get("size_multiplier", 1.0)
+    y_pos = top_y_positions[i]
+    
+    phrase_img = phrase_renderer.render_phrase(
+        phrase, current_time, (height, width), scene_end, y_pos, size_mult
+    )
+    
+    if phrase_img is not None and "_render_bbox" in phrase:
+        # Check if text will go behind head
+        will_go_behind = False
+        if head_mask is not None:
+            will_go_behind = check_text_head_overlap(phrase["_render_bbox"], head_mask)
+        
+        # Check visibility
+        visibility = calculate_text_visibility(phrase["_render_bbox"], person_mask)
+        
+        # If text goes behind AND is heavily occluded, shift stack
+        if will_go_behind and visibility < occlusion_threshold and not top_needs_shift:
+            top_needs_shift = True
+            # Calculate shift amount...
+      ]]></code_snippet>
+    </step_3>
+    
+    <step_4>
+      <description>Re-render all phrases with or without shift</description>
+      <code_snippet><![CDATA[
+# Second pass: render phrases with shift if needed
+phrases_to_render = []
+
+for i, (phrase, phrase_key, scene_end) in enumerate(top_phrases):
+    optimization = phrase_optimizations.get(phrase_key, {})
+    size_mult = optimization.get("size_multiplier", 1.0)
+    
+    # Apply shift if needed
+    y_pos = top_y_positions[i] - shift_amount if top_needs_shift else top_y_positions[i]
+    
+    phrase_img = phrase_renderer.render_phrase(
+        phrase, current_time, (height, width), scene_end, y_pos, size_mult
+    )
+    # ... check head overlap and visibility for sandwich compositing
+      ]]></code_snippet>
+    </step_4>
+  </code_flow>
+
+  <potential_issues>
+    <issue_1>
+      <title>Double Rendering Problem</title>
+      <description>
+        The code renders phrases TWICE:
+        1. First pass: To check occlusion and determine if shifting is needed
+        2. Second pass: To render with the final position
+        
+        This might cause the phrase renderer to update internal state twice, leading to position instability.
+      </description>
+    </issue_1>
+    
+    <issue_2>
+      <title>Per-Frame Shift Recalculation</title>
+      <description>
+        The shift amount is recalculated EVERY FRAME. If the person moves slightly, the visibility changes,
+        potentially triggering different shift amounts each frame, causing text to jump around.
+      </description>
+    </issue_2>
+    
+    <issue_3>
+      <title>Phrase Renderer State</title>
+      <description>
+        The phrase_renderer.render_phrase() method stores "_render_bbox" in the phrase dict.
+        This might persist across frames or get overwritten incorrectly during double rendering.
+      </description>
+    </issue_3>
+    
+    <issue_4>
+      <title>Stack Position Calculation</title>
+      <description>
+        The top_y_positions list is rebuilt every frame. If phrases appear/disappear or if the
+        optimization settings change, the positions might shift unexpectedly.
+      </description>
+    </issue_4>
+  </potential_issues>
+
+  <debugging_output>
+    <visibility_data>
+      Frame 90: 'surprised if' behind head, visibility=37.8%
+      Frame 91: 'surprised if' behind head, visibility=28.6%
+      Frame 92: 'surprised if' behind head, visibility=22.4%
+      Frame 93: 'surprised if' behind head, visibility=18.8%
+      Frame 120: 'surprised if' behind head, visibility=16.5%
+    </visibility_data>
+    
+    <shift_events>
+      Shifting top stack UP by 100px (visibility 27.8% -> 52.1%)
+      Shifting top stack UP by 20px (visibility 37.8% -> 66.8%)
+    </shift_events>
+  </debugging_output>
+
+  <questions_to_consider>
+    1. Should the shift amount be calculated once and cached for the duration of the phrase appearance?
+    2. Should we avoid double-rendering by calculating positions without actually rendering first?
+    3. How can we ensure consistent stacking when phrases appear/disappear?
+    4. Should the visibility check use a different approach that doesn't require rendering?
+    5. Is the phrase renderer maintaining state that causes position drift?
+  </questions_to_consider>
+
+  <task_request>
+    Please analyze this video text positioning system and identify why the text positioning is unstable.
+    Specifically:
+    1. Why would "Would you be" shift position after initial placement?
+    2. How can we ensure the stack shift is calculated once and maintained?
+    3. What's the best way to handle the double-rendering issue?
+    4. How can we make the positioning stable across frames?
+    
+    Please provide specific code modifications or architectural changes to fix these issues.
+  </task_request>
+</prompt>
