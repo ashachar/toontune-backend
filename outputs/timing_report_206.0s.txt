@@ -1,9 +1,0 @@
-Pipeline Timing Report
-==================================================
-Video: uploads/assets/videos/ai_math1.mp4
-Duration: 206.0 seconds
-Start: 2025-08-30 17:32:59.032503
-End: 2025-08-30 17:35:16.795854
-Total time: 2m 17s
-Processing speed: 37.4 fps
-Realtime factor: 1.50x

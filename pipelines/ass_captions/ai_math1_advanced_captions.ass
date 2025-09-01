@@ -1,0 +1,20 @@
+[Script Info]
+Title: Advanced Captions
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H7F000000,0,0,0,0,100,100,0,0,1,3,2,5,30,30,30,1
+Style: Important,Arial,55,&H00FFFFFF,&H00FFFFFF,&H00000000,&H7F000000,-1,0,0,0,100,100,0,0,1,3,2,5,30,30,30,1
+Style: Critical,Arial,62,&H009999FF,&H009999FF,&H00000000,&H7F000000,-1,0,0,0,100,100,0,0,1,4,3,5,30,30,30,1
+Style: MegaTitle,Arial,86,&H0000D7FF,&H0000D7FF,&H00000000,&H7F000000,-1,0,0,0,100,100,0,0,1,5,4,5,30,30,30,1
+Style: Masked,Arial,72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,3,0,0,5,30,30,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 2,0:00:00.14,0:00:02.92,Masked,,0,0,0,,{\an5 \fs129 \b1 \c&H00D7FF& \fad(300,200) \move(233,500,233,540,0,300) \alpha&H80&}AI created new math.
+Dialogue: 2,0:00:02.96,0:00:07.36,Masked,,0,0,0,,{\an5 \fs93 \fad(300,200) \move(149,500,149,540,0,300) \alpha&H80&}Would you be

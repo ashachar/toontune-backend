@@ -1,183 +1,123 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Generate word-by-word ASS animations with proper two-line layout.
-Words appear sequentially in their correct positions within sentences.
+Generate sophisticated ASS animations from enriched transcripts.
+Word-by-word animation with slide-from-above, scene-based timing,
+dynamic positioning, importance-based styling, and head detection.
 """
 
-import os
+import json
 import subprocess
-from PIL import ImageFont
-from typing import List, Dict, Tuple
+from typing import Optional
+from collections import defaultdict
+from utils import SubPhrase, get_ass_header, split_text_into_lines
+from layout import extract_mask_frame, optimize_layout
+from word_animator import animate_words_in_phrase
 
-def ass_time(ms: int) -> str:
-    """Convert milliseconds to ASS time format."""
-    s = ms / 1000.0
-    h = int(s // 3600)
-    m = int((s % 3600) // 60)
-    sec = int(s % 60)
-    cs = int(round((s - int(s)) * 100))
-    return f"{h}:{m:02d}:{sec:02d}.{cs:02d}"
-
-def measure_text(text: str, font: ImageFont.FreeTypeFont) -> int:
-    """Measure text width."""
-    try:
-        bbox = font.getbbox(text)
-        return bbox[2] - bbox[0]
-    except:
-        # Fallback estimation: ~30 pixels per character for 48pt font
-        return len(text) * 30
-
-def split_into_lines(segments: List[Dict], max_words_per_line: int = 7) -> List[List[Dict]]:
-    """Split segments into lines for better readability."""
-    lines = []
-    current_line = []
+def create_ass_file(
+    transcript_path: str,
+    video_path: str,
+    mask_video_path: Optional[str] = None,
+    output_ass_path: str = "output_captions.ass"
+):
+    """Create ASS file with word-by-word animation and advanced features."""
     
-    # First line: "Yes, AI created new math."
-    lines.append(segments[0:5])  # First 5 words
+    # Load enriched transcript
+    with open(transcript_path, 'r') as f:
+        data = json.load(f)
     
-    # Second line: "Would you be surprised if AI invented a new"
-    lines.append(segments[5:14])  # Remaining words
+    phrases = [
+        SubPhrase(
+            text=p["text"],
+            words=p["words"],
+            start_time=p["start_time"],
+            end_time=p["end_time"],
+            importance=p["importance"],
+            emphasis_type=p["emphasis_type"],
+            font_size_multiplier=p["visual_style"]["font_size_multiplier"],
+            bold=p["visual_style"]["bold"],
+            color_tint=p["visual_style"]["color_tint"],
+            position=p["position"],
+            appearance_index=p["appearance_index"],
+            opacity_boost=p["visual_style"]["opacity_boost"]
+        )
+        for p in data["phrases"]
+    ]
     
-    return lines
-
-def calculate_line_positions(line_segments: List[Dict], font, W: int, spacing: int = 15) -> List[Tuple[int, int]]:
-    """Calculate x,y positions for each word in a line."""
-    positions = []
-    
-    # Calculate total line width
-    total_width = 0
-    for seg in line_segments:
-        total_width += measure_text(seg["text"], font)
-        if seg != line_segments[-1]:  # Add spacing except for last word
-            total_width += spacing
-    
-    # Center the line
-    start_x = (W - total_width) // 2
-    current_x = start_x
-    
-    # Calculate position for each word
-    for seg in line_segments:
-        positions.append(current_x)
-        word_width = measure_text(seg["text"], font)
-        current_x += word_width + spacing
-    
-    return positions
-
-def create_ass_file():
-    """Create ASS file with proper two-line word-by-word animations."""
+    # Group phrases by appearance_index (scenes)
+    scenes = defaultdict(list)
+    for i, phrase in enumerate(phrases):
+        scenes[phrase.appearance_index].append((i, phrase))
     
     # Video parameters
     W, H = 1280, 720
-    font_size = 48
-    font_name = "Arial"
-    spacing = 15  # Space between words
-    line_height = 70  # Vertical space between lines
-    y_line1 = 550  # First line Y position
-    y_line2 = y_line1 + line_height  # Second line Y position
     
-    # Words and timings from transcript (first 6 seconds)
-    segments = [
-        {"text": "Yes,", "start_ms": 0, "end_ms": 500},
-        {"text": "AI", "start_ms": 500, "end_ms": 1000},
-        {"text": "created", "start_ms": 1000, "end_ms": 1500},
-        {"text": "new", "start_ms": 1500, "end_ms": 2000},
-        {"text": "math.", "start_ms": 2000, "end_ms": 2800},
-        {"text": "Would", "start_ms": 2800, "end_ms": 3200},
-        {"text": "you", "start_ms": 3200, "end_ms": 3400},
-        {"text": "be", "start_ms": 3400, "end_ms": 3600},
-        {"text": "surprised", "start_ms": 3600, "end_ms": 4200},
-        {"text": "if", "start_ms": 4200, "end_ms": 4400},
-        {"text": "AI", "start_ms": 4400, "end_ms": 4800},
-        {"text": "invented", "start_ms": 4800, "end_ms": 5400},
-        {"text": "a", "start_ms": 5400, "end_ms": 5500},
-        {"text": "new", "start_ms": 5500, "end_ms": 5800}
-    ]
-    
-    # ASS header
-    header = f"""[Script Info]
-ScriptType: v4.00+
-PlayResX: {W}
-PlayResY: {H}
-ScaledBorderAndShadow: yes
-WrapStyle: 2
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
-Style: Word,{font_name},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H7F000000,-1,0,0,0,100,100,0,0,1,3,2,7,0,0,0
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    
+    # Get ASS header
+    header = get_ass_header(W, H)
     events = []
     
-    # Load font for measurements
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
-    except:
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", font_size)
-        except:
-            # Fallback font object for estimation
-            class FallbackFont:
-                def getbbox(self, text):
-                    width = len(text) * 30
-                    return (0, 0, width, font_size)
-            font = FallbackFont()
-    
-    # Split into lines
-    lines = split_into_lines(segments)
-    
-    # Process each line
-    for line_idx, line_segments in enumerate(lines):
-        # Determine Y position for this line
-        y_pos = y_line1 if line_idx == 0 else y_line2
+    # Process each scene
+    for scene_idx, scene_phrases in scenes.items():
+        # Find scene timing (all words disappear together at scene end)
+        scene_start = min(p.start_time for _, p in scene_phrases)
+        scene_end = max(p.end_time for _, p in scene_phrases)
         
-        # Calculate X positions for words in this line
-        x_positions = calculate_line_positions(line_segments, font, W, spacing)
+        # Get mask for mid-point of scene
+        mask = None
+        if mask_video_path:
+            mid_time = (scene_start + scene_end) / 2
+            mask = extract_mask_frame(mask_video_path, int(mid_time * 1000))
         
-        # Create dialogue entries for each word
-        for word_idx, seg in enumerate(line_segments):
-            start = seg["start_ms"]
-            # Words stay visible until end of video
-            end = 6000
-            word = seg["text"]
-            x = x_positions[word_idx]
+        # Optimize layout for this scene
+        # Create a list of just phrases for layout optimization
+        scene_phrase_list = [p for _, p in scene_phrases]
+        layout = optimize_layout(
+            scene_phrase_list,
+            (scene_start + scene_end) / 2,
+            W, H, mask
+        )
+        
+        # Process each phrase word-by-word
+        for scene_local_idx, (phrase_idx, phrase) in enumerate(scene_phrases):
+            if scene_local_idx not in layout:
+                continue
+                
+            x_base, y_base, font_size, use_mask = layout[scene_local_idx]
             
-            # Animation duration should match the word's duration in transcript
-            word_duration = seg["end_ms"] - seg["start_ms"]
-            # Cap the animation duration to be reasonable (max 300ms)
-            animation_duration = min(word_duration, 300)
+            # Choose style based on emphasis
+            style_map = {
+                "minor": "Default",
+                "normal": "Default", 
+                "important": "Important",
+                "critical": "Critical",
+                "mega_title": "MegaTitle"
+            }
+            style = style_map.get(phrase.emphasis_type, "Default")
             
-            # Animation effects
-            slide_px = 40
+            # Use masked style if needed
+            if use_mask:
+                style = "Masked"
             
-            # Build the dialogue line with fade and slide from above effects
-            # Use \move WITHOUT \pos to avoid conflicts - move handles positioning
-            dialogue = (
-                f"Dialogue: 1,{ass_time(start)},{ass_time(end)},Word,,0,0,0,,"
-                f"{{\\an7"
-                f"\\fad({animation_duration},0)"
-                f"\\move({x},{y_pos - slide_px},{x},{y_pos},0,{animation_duration})}}"
-                f"{word}"
+            # Check if we need to split into multiple lines
+            lines = split_text_into_lines(phrase.words)
+            
+            # Animate words in this phrase
+            phrase_events = animate_words_in_phrase(
+                phrase, x_base, y_base, font_size, use_mask,
+                scene_end, W, style, lines
             )
-            
-            events.append(dialogue)
+            events.extend(phrase_events)
     
     # Write ASS file
     ass_content = header + "\n".join(events) + "\n"
     
-    ass_file = "ai_math1_6sec_captions.ass"
-    with open(ass_file, "w", encoding="utf-8") as f:
+    with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_content)
     
-    print(f"Created ASS file: {ass_file}")
-    print(f"Line 1: {' '.join([s['text'] for s in lines[0]])}")
-    print(f"Line 2: {' '.join([s['text'] for s in lines[1]])}")
-    return ass_file
+    print(f"Created ASS file: {output_ass_path}")
+    return output_ass_path
 
-def burn_subtitles(input_video, ass_file, output_video):
+def burn_subtitles(input_video: str, ass_file: str, output_video: str):
     """Burn ASS subtitles into video using FFmpeg."""
     cmd = [
         "ffmpeg", "-y",
@@ -197,11 +137,15 @@ def burn_subtitles(input_video, ass_file, output_video):
     print(f"Created final video: {output_video}")
 
 if __name__ == "__main__":
+    # Paths
+    transcript_path = "../../uploads/assets/videos/ai_math1/transcript_enriched_partial.json"
+    video_path = "ai_math1_6sec.mp4"
+    mask_video_path = "../../uploads/assets/videos/ai_math1/ai_math1_rvm_mask.mp4"
+    ass_file = "ai_math1_wordbyword_captions.ass"
+    output_video = "ai_math1_wordbyword_with_captions.mp4"
+    
     # Create ASS file
-    ass_file = create_ass_file()
+    create_ass_file(transcript_path, video_path, mask_video_path, ass_file)
     
     # Burn subtitles into video
-    input_video = "ai_math1_6sec.mp4"
-    output_video = "ai_math1_6sec_with_captions.mp4"
-    
-    burn_subtitles(input_video, ass_file, output_video)
+    burn_subtitles(video_path, ass_file, output_video)

@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Video processing pipeline using FFmpeg</project_type>
+    <language>Python 3.x</language>
+    <framework>FFmpeg filter chains</framework>
+    <os>macOS</os>
+    <domain>Animation overlay effects for video transitions</domain>
+  </context>
+
+  <problem_statement>
+    An eraser image (hand holding eraser, 768x1344px) is overlaid on a video (640x360px) with animated motion. 
+    Despite the eraser being 3.7x taller than the video frame, the hand appears "detached" with green background 
+    visible beneath it at certain frames. The bottom of the eraser should NEVER be visible - it must always 
+    extend past the frame bottom to maintain the illusion of being held from outside the frame.
+  </problem_statement>
+
+  <technical_specifications>
+    <video_specs>
+      <width>640</width>
+      <height>360</height>
+      <fps>25</fps>
+    </video_specs>
+    <eraser_image_specs>
+      <original_width>768</original_width>
+      <original_height>1344</original_height>
+      <description>Hand holding blue eraser with arm extending downward</description>
+    </eraser_image_specs>
+    <motion_path>
+      <type>elliptical</type>
+      <center_x>320</center_x>
+      <center_y>180</center_y>
+      <radius_x>200</radius_x>
+      <radius_y>120</radius_y>
+      <highest_y_position>60</highest_y_position>
+      <lowest_y_position>300</lowest_y_position>
+      <duration_seconds>0.6</duration_seconds>
+    </motion_path>
+  </technical_specifications>
+
+  <current_implementation>
+    <file_path>/utils/animations/masked_eraser_wipe.py</file_path>
+    <key_code_sections>
+      <video_properties_extraction>
+        <code><![CDATA[
+probe_cmd = [
+    'ffprobe', '-v', 'error',
+    '-select_streams', 'v:0',
+    '-show_entries', 'stream=width,height,r_frame_rate',
+    '-of', 'csv=s=x:p=0',
+    character_video
+]
+result = subprocess.run(probe_cmd, capture_output=True, text=True)
+parts = result.stdout.strip().split('x')
+width = int(parts[0])  # 640
+height = int(parts[1])  # 360
+        ]]></code>
+      </video_properties_extraction>
+      
+      <eraser_scaling>
+        <code><![CDATA[
+# Current attempt - preserves original height since 1344 > 1000
+filter_parts.append(f"[2:v]scale=-2:'max(1000,ih)'[eraser];")  # Should keep 1344px height
+        ]]></code>
+        <explanation>
+          Using FFmpeg scale filter with expression to maintain minimum 1000px height.
+          Since original is 1344px, this should preserve full height.
+        </explanation>
+      </eraser_scaling>
+      
+      <eraser_positioning>
+        <code><![CDATA[
+# Motion with 500px downward offset
+y_offset = 500
+eraser_motion = (f"overlay=x='{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-150':"
+                f"y='{center_y}+{radius_y*0.8}*sin(2*PI*(t-{wipe_start})/{wipe_duration})+{y_offset}':"
+                f"enable='between(t,{wipe_start},{wipe_start + wipe_duration})'")
+        ]]></code>
+        <explanation>
+          Overlay filter positions eraser with elliptical motion.
+          Y-coordinate ranges from 60+500=560 to 300+500=800 pixels.
+        </explanation>
+      </eraser_positioning>
+      
+      <ffmpeg_command>
+        <code><![CDATA[
+cmd = [
+    'ffmpeg', '-y',
+    '-i', temp_composite,  # Character video
+    '-i', original_video,  # Original video
+    '-i', eraser_image,    # Eraser PNG (768x1344)
+    '-filter_complex', filter_complex,
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', '18',
+    '-pix_fmt', 'yuv420p',
+    output_video
+]
+        ]]></code>
+      </ffmpeg_command>
+    </key_code_sections>
+  </current_implementation>
+
+  <attempted_solutions>
+    <attempt number="1">
+      <approach>Scale to fixed width 300px</approach>
+      <code>scale=300:-1</code>
+      <result>Hand detached, green visible beneath</result>
+    </attempt>
+    
+    <attempt number="2">
+      <approach>Double scale with calculated minimum height</approach>
+      <code>scale=300:-1,scale=w=iw:h='max(ih,{calculated_height})'</code>
+      <result>Filter didn't work properly, hand still detached</result>
+    </attempt>
+    
+    <attempt number="3">
+      <approach>Fixed height 700px</approach>
+      <code>scale=-2:700</code>
+      <result>Actually shrank image (original 1344px), hand detached</result>
+    </attempt>
+    
+    <attempt number="4">
+      <approach>Preserve original with minimum 1000px</approach>
+      <code>scale=-2:'max(1000,ih)'</code>
+      <result>Should keep 1344px but hand STILL detached</result>
+    </attempt>
+    
+    <attempt number="5">
+      <approach>Add 500px Y-offset to push eraser down</approach>
+      <code>y position + 500</code>
+      <result>Slightly better but still detached at some frames</result>
+    </attempt>
+  </attempted_solutions>
+
+  <mathematical_analysis>
+    <at_highest_point>
+      <y_position_top>60</y_position_top>
+      <eraser_height>1344</eraser_height>
+      <y_position_bottom>1404</y_position_bottom>
+      <frame_height>360</frame_height>
+      <extension_past_frame>1044</extension_past_frame>
+      <expected>No green visible, hand extends far past frame</expected>
+      <actual>Hand cut off around y=350, green visible beneath</actual>
+    </at_highest_point>
+  </mathematical_analysis>
+
+  <hypotheses>
+    <hypothesis id="1">
+      FFmpeg overlay filter automatically crops overlaid images to base video dimensions (360px height)
+    </hypothesis>
+    <hypothesis id="2">
+      Scale filter syntax is correct but not actually being applied due to filter chain issue
+    </hypothesis>
+    <hypothesis id="3">
+      Eraser image is being pre-processed/scaled before reaching the filter chain
+    </hypothesis>
+    <hypothesis id="4">
+      Overlay filter has undocumented limitation on image sizes larger than base video
+    </hypothesis>
+    <hypothesis id="5">
+      The PNG decoder or input filter is limiting the image size before scaling
+    </hypothesis>
+  </hypotheses>
+
+  <verification_tests>
+    <test id="1">
+      <description>Verify actual eraser dimensions after scale filter</description>
+      <command>ffmpeg -i eraser.png -vf "scale=-2:'max(1000,ih)'" -f null -</command>
+      <expected_output>Should show 768x1344 or scaled proportionally</expected_output>
+    </test>
+    
+    <test id="2">
+      <description>Test overlay with simple tall rectangle</description>
+      <code><![CDATA[
+# Create 100x2000px red rectangle
+ffmpeg -f lavfi -i color=red:s=100x2000 -frames:v 1 tall_rect.png
+# Overlay on video at y=50
+ffmpeg -i video.mp4 -i tall_rect.png -filter_complex "[1:v][0:v]overlay=x=100:y=50" out.mp4
+      ]]></code>
+      <expected>Rectangle should extend past bottom without being cropped</expected>
+    </test>
+  </verification_tests>
+
+  <questions_for_solver>
+    <question priority="high">
+      Does FFmpeg's overlay filter have a built-in limitation that crops overlaid images to the base video's dimensions? If so, what's the workaround?
+    </question>
+    <question priority="high">
+      How can we verify the actual dimensions of the eraser image at each stage of the filter chain (after scale, before overlay)?
+    </question>
+    <question priority="medium">
+      Should we use pad filter to extend the video canvas temporarily during overlay, then crop back?
+    </question>
+    <question priority="medium">
+      Is there an alternative to overlay filter that doesn't crop (e.g., using blend or composite filters)?
+    </question>
+    <question priority="low">
+      Could we pre-compose the eraser at all positions and use a different transition approach?
+    </question>
+  </questions_for_solver>
+
+  <expected_solution>
+    <requirement>Eraser image must remain 1344px tall (or larger) throughout the process</requirement>
+    <requirement>Bottom of eraser must never be visible in any frame</requirement>
+    <requirement>No green background should appear beneath the hand/arm</requirement>
+    <requirement>Solution must work with FFmpeg filter chains</requirement>
+    <requirement>Must maintain video quality and proper encoding</requirement>
+  </expected_solution>
+
+  <reproducibility>
+    <steps>
+      <step>Run: python pipelines/person_animation/main.py</step>
+      <step>Output location: outputs/final_character_video.mp4</step>
+      <step>Problem visible at: timestamps 3520-3600ms (frames 88-90)</step>
+      <step>Look for: detached hand with green beneath at highest point of motion</step>
+    </steps>
+  </reproducibility>
+
+  <file_references>
+    <file>
+      <path>/utils/animations/masked_eraser_wipe.py</path>
+      <description>Main implementation file with the eraser overlay logic</description>
+    </file>
+    <file>
+      <path>/uploads/assets/images/eraser.png</path>
+      <description>Original eraser image (768x1344px)</description>
+    </file>
+    <file>
+      <path>/pipelines/person_animation/main.py</path>
+      <description>Pipeline that calls the eraser function</description>
+    </file>
+  </file_references>
+
+  <success_criteria>
+    <criterion>Hand/arm extends beyond frame bottom at ALL frames during 0.6s animation</criterion>
+    <criterion>No green background visible beneath hand at any point</criterion>
+    <criterion>Maintains illusion of being held from outside the frame</criterion>
+    <criterion>Works consistently across entire elliptical motion path</criterion>
+  </success_criteria>
+</prompt>

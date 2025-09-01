@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Video processing pipeline using FFmpeg filters</project_type>
+    <language>Python 3.x</language>
+    <framework>FFmpeg 7.1.1 filter complex chains</framework>
+    <os>macOS</os>
+    <domain>Animation overlay effects for video transitions</domain>
+  </context>
+
+  <problem_statement>
+    An eraser image (hand holding eraser, 768x1344px) is overlaid on a video (1280x720px) with animated elliptical motion.
+    Despite implementing Y-clamping to prevent the bottom from being visible, only the eraser and palm are shown - the 
+    hand and arm that should be visible are not appearing in the frame. The eraser PNG clearly shows a full hand and arm
+    holding the eraser, but the overlay seems to be cutting off most of the hand/arm portion.
+  </problem_statement>
+
+  <technical_specifications>
+    <video_specs>
+      <width>1280</width>
+      <height>720</height>
+      <fps>25</fps>
+    </video_specs>
+    <eraser_image_specs>
+      <width>768</width>
+      <height>1344</height>
+      <description>Hand holding blue eraser with full arm extending downward</description>
+      <note>The image shows a complete hand and arm, not just palm and eraser</note>
+    </eraser_image_specs>
+    <motion_path>
+      <type>elliptical</type>
+      <center_x>640</center_x>
+      <center_y>360</center_y>
+      <radius_x>200</radius_x>
+      <radius_y>120</radius_y>
+      <duration_seconds>0.6</duration_seconds>
+    </motion_path>
+  </technical_specifications>
+
+  <current_implementation>
+    <file_path>/utils/animations/masked_eraser_wipe.py</file_path>
+    <critical_code>
+      <filter_setup><![CDATA[
+# Keep eraser at full size with alpha preserved
+filter_parts.append(f"[2:v]format=rgba,setsar=1[eraser];")  # Preserve full 768x1344 size
+      ]]></filter_setup>
+      
+      <y_clamping_logic><![CDATA[
+# Y-position: elliptical motion but CLAMPED to keep bottom off-screen
+# Raw elliptical Y (without clamp)
+y_raw = f"{center_y}+{radius_y*0.8}*sin(2*PI*(t-{wipe_start})/{wipe_duration})"
+
+# Clamp: We want to show about 450px of the hand/arm in the frame
+# So the eraser top should never go below: 360 - 450 = -90
+# This ensures bottom (at -90 + 1344 = 1254) is way past frame bottom (360)
+# But we still see a good portion of the hand
+visible_hand_height = 450  # How much of hand/arm we want visible
+min_y = f"main_h - {visible_hand_height}"  # 360 - 450 = -90
+      ]]></y_clamping_logic>
+      
+      <overlay_command><![CDATA[
+eraser_motion = (f"overlay="
+                f"x='{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_w*{pivot_x_ratio}':"
+                f"y='max({y_raw},{min_y})':"  # Clamp to show hand but keep bottom off-screen
+                f"eval=frame:"  # Per-frame evaluation for accurate motion
+                f"enable='between(t,{wipe_start},{wipe_start + wipe_duration + 0.02})'")  # Slight extension
+
+filter_parts.append(f"[{current}][eraser]{eraser_motion}[with_eraser];")
+filter_parts.append(f"[with_eraser]format=yuv420p")
+      ]]></overlay_command>
+      
+      <ffmpeg_execution><![CDATA[
+cmd = [
+    'ffmpeg', '-y',
+    '-i', temp_composite,  # Character (fully opaque)
+    '-i', original_video,  # Original to reveal
+    '-i', eraser_image,    # Eraser PNG (768x1344)
+    '-filter_complex', filter_complex,
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', '18',
+    '-pix_fmt', 'yuv420p',
+    output_video
+]
+      ]]></ffmpeg_execution>
+    </critical_code>
+  </current_implementation>
+
+  <observed_behavior>
+    <frame_88_observation>
+      At frame 88 (timestamp 3520ms), which should be the highest point of the elliptical motion:
+      - Expected: Full hand and part of arm visible holding the eraser
+      - Actual: Only the eraser and palm are visible, hand/arm appears cut off
+      - The eraser PNG contains a full hand and arm, but they're not showing in the overlay
+    </frame_88_observation>
+    <clamping_effect>
+      The Y-clamping formula (y = max(elliptical_y, main_h - 450)) appears to be working to prevent
+      the bottom from showing, but somehow the hand/arm portion of the image is not being rendered
+    </clamping_effect>
+  </observed_behavior>
+
+  <attempted_solutions>
+    <solution_1>
+      <description>Initial attempt without clamping</description>
+      <result>Hand appeared detached with green background visible beneath</result>
+    </solution_1>
+    <solution_2>
+      <description>Added Y-clamping with max() formula to keep bottom off-screen</description>
+      <formula>y='max(elliptical_y, main_h - overlay_h + 2)'</formula>
+      <result>Bottom stayed off-screen but only palm visible, too much of image pushed down</result>
+    </solution_2>
+    <solution_3>
+      <description>Adjusted clamping to show 450px of the eraser image</description>
+      <formula>y='max(elliptical_y, main_h - 450)'</formula>
+      <result>Still only showing eraser and palm, not the full hand/arm</result>
+    </solution_3>
+  </attempted_solutions>
+
+  <ffmpeg_overlay_behavior>
+    <confirmed_facts>
+      - FFmpeg overlay filter clips to base video dimensions (output is 1280x720)
+      - Overlay uses top-left corner as anchor point for x,y coordinates
+      - Anything outside the base frame dimensions is not rendered
+      - The overlay filter outputs same dimensions as the base video
+    </confirmed_facts>
+    <test_results>
+      Created test with 100x2000px red rectangle on 640x360 blue video.
+      Overlay at y=50 showed that FFmpeg does NOT crop the overlay itself,
+      but the output dimensions match the base video.
+    </test_results>
+  </ffmpeg_overlay_behavior>
+
+  <hypotheses>
+    <hypothesis_1>
+      The eraser PNG might have transparent or white pixels in the hand/arm area that
+      aren't being properly preserved through the filter chain
+    </hypothesis_1>
+    <hypothesis_2>
+      The format=rgba conversion might be losing part of the image data
+    </hypothesis_2>
+    <hypothesis_3>
+      The Y-coordinate calculation is correct but the visible portion of the eraser
+      image doesn't contain the hand/arm where expected (perhaps they're positioned
+      differently in the PNG than assumed)
+    </hypothesis_3>
+    <hypothesis_4>
+      The overlay is working correctly but the hand/arm in the PNG is positioned
+      much lower than expected, so when we show 450px from top, we're only getting
+      eraser and palm
+    </hypothesis_4>
+    <hypothesis_5>
+      There might be an issue with how the PNG is being read or scaled before overlay
+    </hypothesis_5>
+  </hypotheses>
+
+  <questions_for_solver>
+    <question priority="critical">
+      How can we verify exactly which portion of the 768x1344 eraser PNG is being shown
+      when we set the overlay Y position? Is there a way to add visual markers or debug
+      output to see the exact pixel range being displayed?
+    </question>
+    <question priority="high">
+      Could the issue be related to the PNG's internal structure or transparency? Should
+      we pre-process the PNG to ensure the hand/arm pixels are fully opaque?
+    </question>
+    <question priority="high">
+      Is the Y-coordinate in the overlay filter definitely measuring from the top of the
+      overlay image? Or could there be some offset or anchor point issue?
+    </question>
+    <question priority="medium">
+      Should we use FFmpeg's crop filter on the eraser first to extract just the portion
+      we want, then overlay that instead of relying on Y-positioning?
+    </question>
+    <question priority="medium">
+      Would using pad on the base video to extend canvas, then overlay without clamping,
+      then crop back help us debug what portion of the eraser is actually being used?
+    </question>
+  </questions_for_solver>
+
+  <debugging_suggestions>
+    <suggestion_1>
+      Extract the eraser PNG and add visible grid lines or markers every 100 pixels
+      to see exactly which portion is being displayed in the overlay
+    </suggestion_1>
+    <suggestion_2>
+      Use ffmpeg -i eraser.png -vf "showinfo" to verify the actual dimensions and
+      pixel format of the input image
+    </suggestion_2>
+    <suggestion_3>
+      Create a test with y=0 to see the top portion of the eraser and verify if
+      the hand is actually in the expected position in the image
+    </suggestion_3>
+    <suggestion_4>
+      Use drawbox or drawtext to overlay the calculated Y values on each frame
+      to verify the positioning math
+    </suggestion_4>
+  </debugging_suggestions>
+
+  <expected_solution>
+    <requirement>Hand and arm must be visible when holding the eraser</requirement>
+    <requirement>Bottom of eraser image must never enter the frame</requirement>
+    <requirement>The overlay should show approximately the middle portion of the eraser PNG</requirement>
+    <requirement>Solution must work with FFmpeg overlay filter</requirement>
+    <constraint>Cannot modify the original eraser PNG file</constraint>
+    <constraint>Must maintain elliptical motion path</constraint>
+  </expected_solution>
+
+  <minimal_reproducible_example>
+    <bash_command><![CDATA[
+# Direct FFmpeg command that should show the issue
+ffmpeg -y \
+  -f lavfi -i "color=green:s=1280x720:d=1" \
+  -i eraser.png \
+  -filter_complex "[0:v][1:v]overlay=x=500:y=-900" \
+  -vframes 1 \
+  test_eraser_position.png
+    ]]></bash_command>
+    <description>
+      This should show which portion of the eraser appears when positioned at y=-900
+      (which is approximately where our clamping puts it)
+    </description>
+  </minimal_reproducible_example>
+
+  <file_references>
+    <file>
+      <path>/utils/animations/masked_eraser_wipe.py</path>
+      <description>Main implementation with Y-clamping logic</description>
+    </file>
+    <file>
+      <path>/uploads/assets/images/eraser.png</path>
+      <description>Original eraser image (768x1344) with hand and arm</description>
+    </file>
+    <file>
+      <path>/pipelines/person_animation/main.py</path>
+      <description>Pipeline that calls the eraser wipe function</description>
+    </file>
+  </file_references>
+
+  <success_criteria>
+    <criterion>Full hand (not just palm) is visible holding the eraser</criterion>
+    <criterion>Part of the arm is visible extending down</criterion>
+    <criterion>Bottom of image never enters frame (no green visible beneath)</criterion>
+    <criterion>Natural elliptical motion is preserved</criterion>
+  </success_criteria>
+</prompt>

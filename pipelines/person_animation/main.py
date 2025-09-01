@@ -10,10 +10,15 @@ import argparse
 from pathlib import Path
 import cv2
 import numpy as np
+from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
+
+# Load environment variables
+load_dotenv()
+IS_DEBUG_MODE = os.getenv('IS_DEBUG_MODE', 'false').lower() == 'true'
 
 # Import from same directory since they're now in pipelines/person_animation/
 from nano_banana import NanoBananaGenerator
@@ -22,6 +27,9 @@ from runway import RunwayActTwo
 # Import the sketch animation module
 sys.path.append(str(project_root / 'utils' / 'draw-euler'))
 from stroke_traversal_closed import extract_lines, create_drawing_animation
+
+# Import animations path
+sys.path.append(str(project_root / 'utils' / 'animations'))
 
 
 class PersonAnimationPipeline:
@@ -34,9 +42,15 @@ class PersonAnimationPipeline:
         Initialize the pipeline
         
         Args:
-            output_dir: Directory to save all outputs (will be set dynamically based on input video)
+            output_dir: Directory to save all outputs (defaults to outputs folder in project root)
         """
-        self.output_dir = output_dir  # Will be set in process_video
+        if output_dir is None:
+            # Get project root (3 levels up from pipelines/person_animation/main.py)
+            self.output_dir = os.path.join(Path(__file__).parent.parent.parent, "outputs")
+            # Create outputs directory if it doesn't exist
+            os.makedirs(self.output_dir, exist_ok=True)
+        else:
+            self.output_dir = output_dir
         
         # Initialize the components
         self.nano_banana = NanoBananaGenerator()
@@ -128,8 +142,14 @@ class PersonAnimationPipeline:
                 # Calculate dissolve progress (0.0 to 1.0)
                 progress = i / max(1, len(frames) - 1)
                 
-                # Create dissolving background (interpolate between start and end)
-                composite = cv2.addWeighted(start_bg, 1 - progress, end_bg, progress, 0)
+                # Create dissolving background: fade from person to character
+                # This happens DURING the sketch animation
+                if progress < 0.95:
+                    # Gradual fade from person to character
+                    composite = cv2.addWeighted(start_bg, 1 - progress, end_bg, progress, 0)
+                else:
+                    # Last 5% of frames: show 100% character (fully opaque)
+                    composite = end_bg.copy()
                 
                 # Convert sketch frame to BGR if needed
                 if len(frame.shape) == 2:
@@ -815,19 +835,35 @@ class PersonAnimationPipeline:
             fps = float(fps_fraction)
         
         # Prepare the replacement video (ensure same format, dimensions, and frame rate)
+        print("\n[DEBUG] Processing replacement video for FULL OPACITY")
+        print(f"[DEBUG] Input video: {replacement_video}")
+        print("[DEBUG] KEEPING green background to ensure character is 100% OPAQUE")
+        
         replacement_processed = os.path.join(self.output_dir, "temp_replacement.mp4")
-        cmd_process_replacement = [
+        
+        # DO NOT REMOVE GREEN SCREEN - Keep it to ensure full opacity!
+        # Just scale the video to match dimensions
+        cmd_scale = [
             'ffmpeg', '-y',
             '-i', replacement_video,
-            '-vf', f'scale={orig_width}:{orig_height}:force_original_aspect_ratio=decrease,pad={orig_width}:{orig_height}:(ow-iw)/2:(oh-ih)/2,fps={fps}',
+            '-vf', f'scale={orig_width}:{orig_height}:force_original_aspect_ratio=decrease,pad={orig_width}:{orig_height}:(ow-iw)/2:(oh-ih)/2:color=green,fps={fps}',
             '-c:v', 'libx264',
-            '-preset', 'fast', 
+            '-preset', 'fast',
             '-crf', '18',
             '-pix_fmt', 'yuv420p',
-            '-an',  # Remove audio from replacement
+            '-an',
             replacement_processed
         ]
-        subprocess.run(cmd_process_replacement, capture_output=True, check=True)
+        
+        print("[DEBUG] Scaling video WITH green background for 100% opacity")
+        result = subprocess.run(cmd_scale, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEBUG] ERROR scaling video: {result.stderr}")
+            raise RuntimeError(f"Failed to scale video: {result.stderr}")
+        
+        print(f"[DEBUG] Successfully created FULLY OPAQUE character video: {replacement_processed}")
+        print(f"[DEBUG] Character will completely cover the person behind it")
         
         # Build the video with transitions
         temp_video_no_audio = os.path.join(self.output_dir, "temp_video_no_audio.mp4")
@@ -920,27 +956,147 @@ class PersonAnimationPipeline:
                 result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
                 intermediate_duration = float(result.stdout.strip())
                 
-                # Step 4: Apply dissolve transition for exit (intermediate1 -> after)
-                offset_time_exit = intermediate_duration - dissolve_duration
+                # Step 4: Apply eraser wipe for exit
+                # Import the masked eraser wipe function (no chromakey)
+                from utils.animations.masked_eraser_wipe import create_masked_eraser_wipe
                 
-                cmd_exit_dissolve = [
-                    'ffmpeg', '-y',
-                    '-i', intermediate1,
-                    '-i', after_with_overlap,
-                    '-filter_complex',
-                    f'[0:v][1:v]xfade=transition=dissolve:duration={dissolve_duration}:offset={offset_time_exit}[v]',
-                    '-map', '[v]',
-                    '-c:v', 'libx264',
-                    '-preset', 'fast',
-                    '-crf', '18',
-                    '-pix_fmt', 'yuv420p',
-                    temp_video_no_audio
-                ]
+                eraser_path = os.path.join(project_root, "uploads", "assets", "images", "eraser.png")
                 
-                result = subprocess.run(cmd_exit_dissolve, capture_output=True, text=True)
-                if result.returncode != 0:
-                    print(f"Error in exit dissolve: {result.stderr}")
-                    raise RuntimeError(f"Failed to apply exit dissolve: {result.stderr}")
+                if os.path.exists(eraser_path):
+                    print("[DEBUG] Creating eraser wipe exit effect...")
+                    
+                    # Apply eraser effect to the end of intermediate1
+                    eraser_duration = 0.6
+                    offset_time_exit = intermediate_duration - eraser_duration
+                    
+                    # Extract the last bit for eraser effect
+                    eraser_source = os.path.join(self.output_dir, "temp_eraser_source.mp4")
+                    cmd_extract = [
+                        'ffmpeg', '-y',
+                        '-sseof', f'-{eraser_duration}',
+                        '-i', intermediate1,
+                        '-c', 'copy',
+                        eraser_source
+                    ]
+                    subprocess.run(cmd_extract, capture_output=True, check=True)
+                    
+                    # Apply eraser effect
+                    eraser_with_effect = os.path.join(self.output_dir, "temp_eraser_effect.mp4")
+                    
+                    try:
+                        success = create_masked_eraser_wipe(
+                            eraser_source,
+                            original_video,
+                            eraser_path,
+                            eraser_with_effect,
+                            wipe_start=0,
+                            wipe_duration=eraser_duration
+                        )
+                        
+                        if success:
+                            print("[DEBUG] Eraser effect created successfully")
+                            
+                            # Trim intermediate1 to remove overlap
+                            character_trimmed = os.path.join(self.output_dir, "temp_character_trimmed.mp4")
+                            trim_duration = intermediate_duration - eraser_duration
+                            cmd_trim = [
+                                'ffmpeg', '-y',
+                                '-i', intermediate1,
+                                '-t', str(trim_duration),
+                                '-c', 'copy',
+                                character_trimmed
+                            ]
+                            subprocess.run(cmd_trim, capture_output=True, check=True)
+                            
+                            # Concatenate: trimmed character + eraser + after
+                            print("[DEBUG] Concatenating: character (with fade) + eraser + after")
+                            final_concat = os.path.join(self.output_dir, "final_concat.txt")
+                            with open(final_concat, 'w') as f:
+                                f.write(f"file '{character_trimmed}'\n")
+                                f.write(f"file '{eraser_with_effect}'\n")
+                                f.write(f"file '{after_with_overlap}'\n")
+                            
+                            cmd_concat = [
+                                'ffmpeg', '-y',
+                                '-f', 'concat',
+                                '-safe', '0',
+                                '-i', final_concat,
+                                '-c', 'copy',
+                                temp_video_no_audio
+                            ]
+                            
+                            result = subprocess.run(cmd_concat, capture_output=True, text=True)
+                            if result.returncode != 0:
+                                print(f"Error in final concat: {result.stderr}")
+                                raise RuntimeError(f"Failed to concatenate: {result.stderr}")
+                        else:
+                            # Fallback to dissolve if eraser fails
+                            print("[DEBUG] Eraser effect failed, falling back to dissolve")
+                            offset_time_exit = intermediate_duration - dissolve_duration
+                            
+                            cmd_exit_dissolve = [
+                                'ffmpeg', '-y',
+                                '-i', intermediate1,
+                                '-i', after_with_overlap,
+                                '-filter_complex',
+                                f'[0:v][1:v]xfade=transition=dissolve:duration={dissolve_duration}:offset={offset_time_exit}[v]',
+                                '-map', '[v]',
+                                '-c:v', 'libx264',
+                                '-preset', 'fast',
+                                '-crf', '18',
+                                '-pix_fmt', 'yuv420p',
+                                temp_video_no_audio
+                            ]
+                            
+                            result = subprocess.run(cmd_exit_dissolve, capture_output=True, text=True)
+                            if result.returncode != 0:
+                                print(f"Error in exit dissolve: {result.stderr}")
+                                raise RuntimeError(f"Failed to apply exit dissolve: {result.stderr}")
+                    except Exception as e:
+                        print(f"Exception with eraser: {e}")
+                        # Fallback to dissolve
+                        offset_time_exit = intermediate_duration - dissolve_duration
+                        
+                        cmd_exit_dissolve = [
+                            'ffmpeg', '-y',
+                            '-i', intermediate1,
+                            '-i', after_with_overlap,
+                            '-filter_complex',
+                            f'[0:v][1:v]xfade=transition=dissolve:duration={dissolve_duration}:offset={offset_time_exit}[v]',
+                            '-map', '[v]',
+                            '-c:v', 'libx264',
+                            '-preset', 'fast',
+                            '-crf', '18',
+                            '-pix_fmt', 'yuv420p',
+                            temp_video_no_audio
+                        ]
+                        
+                        result = subprocess.run(cmd_exit_dissolve, capture_output=True, text=True)
+                        if result.returncode != 0:
+                            print(f"Error in exit dissolve: {result.stderr}")
+                            raise RuntimeError(f"Failed to apply exit dissolve: {result.stderr}")
+                else:
+                    # No eraser image, use dissolve
+                    offset_time_exit = intermediate_duration - dissolve_duration
+                    
+                    cmd_exit_dissolve = [
+                        'ffmpeg', '-y',
+                        '-i', intermediate1,
+                        '-i', after_with_overlap,
+                        '-filter_complex',
+                        f'[0:v][1:v]xfade=transition=dissolve:duration={dissolve_duration}:offset={offset_time_exit}[v]',
+                        '-map', '[v]',
+                        '-c:v', 'libx264',
+                        '-preset', 'fast',
+                        '-crf', '18',
+                        '-pix_fmt', 'yuv420p',
+                        temp_video_no_audio
+                    ]
+                    
+                    result = subprocess.run(cmd_exit_dissolve, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        print(f"Error in exit dissolve: {result.stderr}")
+                        raise RuntimeError(f"Failed to apply exit dissolve: {result.stderr}")
                     
             else:
                 # Original logic with dissolves at both entrance and exit
@@ -1064,7 +1220,9 @@ class PersonAnimationPipeline:
             shutil.copy2(replacement_processed, temp_video_no_audio)
         
         # Check for accompanying MP3 audio file
-        video_dir = os.path.dirname(original_video)
+        video_dir = os.path.dirname(original_video) if original_video else "."
+        if not video_dir:
+            video_dir = "."
         video_name = os.path.splitext(os.path.basename(original_video))[0]
         
         # Try different audio file naming patterns
@@ -1082,7 +1240,7 @@ class PersonAnimationPipeline:
                 break
         
         # If no exact match, look for any MP3 in the same directory
-        if not audio_file:
+        if not audio_file and os.path.exists(video_dir):
             mp3_files = [f for f in os.listdir(video_dir) if f.endswith('.mp3')]
             if mp3_files:
                 audio_file = os.path.join(video_dir, mp3_files[0])
@@ -1142,7 +1300,11 @@ class PersonAnimationPipeline:
             sketch_processed if 'sketch_processed' in locals() else None,
             intermediate1 if 'intermediate1' in locals() else None,
             concat_list1 if 'concat_list1' in locals() else None,
-            before_sketch if 'before_sketch' in locals() else None
+            before_sketch if 'before_sketch' in locals() else None,
+            eraser_source if 'eraser_source' in locals() else None,
+            eraser_with_effect if 'eraser_with_effect' in locals() else None,
+            character_trimmed if 'character_trimmed' in locals() else None,
+            final_concat if 'final_concat' in locals() else None
         ]
         temp_files = [f for f in temp_files if f]  # Remove None values
         
@@ -1151,7 +1313,75 @@ class PersonAnimationPipeline:
                 os.remove(temp_file)
         
         print(f"Final video saved to: {output_path}")
+        
+        # Apply debug overlay if IS_DEBUG_MODE is enabled
+        if IS_DEBUG_MODE:
+            print("[DEBUG] Applying debug overlay with frame numbers and timestamps...")
+            debug_output = self.apply_debug_overlay(output_path)
+            if debug_output:
+                return debug_output
+        
         return output_path
+    
+    def apply_debug_overlay(self, video_path: str) -> str:
+        """
+        Apply debug overlay with frame number and timestamp to video
+        
+        Args:
+            video_path: Path to input video
+            
+        Returns:
+            Path to video with debug overlay
+        """
+        # Get video properties
+        probe_cmd = [
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=r_frame_rate',
+            '-of', 'csv=s=x:p=0',
+            video_path
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        fps_fraction = result.stdout.strip()
+        
+        # Convert frame rate to float
+        if '/' in fps_fraction:
+            num, den = map(float, fps_fraction.split('/'))
+            fps = num / den
+        else:
+            fps = float(fps_fraction)
+        
+        # Create output path with _debug suffix
+        base_name = os.path.splitext(video_path)[0]
+        debug_output = f"{base_name}_debug.mp4"
+        
+        # Apply debug overlay using FFmpeg drawtext filter
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', video_path,
+            '-vf', (
+                # Frame number
+                f"drawtext=text='Frame\: %{{n}}':x=10:y=10:"
+                f"fontcolor=white:fontsize=20:box=1:boxcolor=black@0.7:boxborderw=5,"
+                # Timestamp in milliseconds
+                f"drawtext=text='Time\: %{{expr\:t*1000}}ms':x=10:y=40:"
+                f"fontcolor=white:fontsize=20:box=1:boxcolor=black@0.7:boxborderw=5"
+            ),
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '18',
+            '-c:a', 'copy',
+            debug_output
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEBUG] Error applying debug overlay: {result.stderr}")
+            return None
+        
+        print(f"[DEBUG] Debug video saved to: {debug_output}")
+        return debug_output
     
     def process_video(self, 
                      video_path: str,
@@ -1168,9 +1398,8 @@ class PersonAnimationPipeline:
         Returns:
             Path to final processed video
         """
-        # Set output directory to same folder as input video
-        if self.output_dir is None:
-            self.output_dir = os.path.dirname(os.path.abspath(video_path))
+        # Output directory is already set in __init__ (defaults to outputs folder)
+        # Don't override it unless explicitly passed
         
         print(f"\n{'='*60}")
         print(f"Starting Person Animation Pipeline")
@@ -1193,23 +1422,35 @@ class PersonAnimationPipeline:
         else:
             self.extract_video_segment(video_path, 0.5, 3.55, subvideo_path)  # 3.05 seconds to ensure > 3s
         
-        # Step 3: Generate character image using Nano Banana
-        character_image = os.path.join(self.output_dir, "runway_character.png")
-        if os.path.exists(character_image):
-            print(f"\nCharacter image already exists, skipping generation: {character_image}")
-        else:
-            print(f"\nGenerating character sketch for: {character_description}")
-            character_image = self.nano_banana.generate_character(
-                frame_path,
-                character_description,
-                self.output_dir
-            )
-        
-        # Step 4: Generate character performance using Act-Two
+        # Step 4: Check if Act-Two video already exists
         generated_video = os.path.join(self.output_dir, "runway_act_two_output.mp4")
+        
+        # Step 3: Get character image - extract from existing video or generate new
+        character_image = os.path.join(self.output_dir, "runway_character.png")
+        
         if os.path.exists(generated_video):
-            print(f"\nAct-Two video already exists, skipping generation: {generated_video}")
+            print(f"\nAct-Two video already exists: {generated_video}")
+            # Extract character from EXISTING video for sketch
+            print(f"Extracting character from existing Act-Two video...")
+            cmd_extract = [
+                'ffmpeg', '-y',
+                '-i', generated_video,
+                '-vframes', '1',
+                '-q:v', '2',
+                character_image
+            ]
+            subprocess.run(cmd_extract, capture_output=True, check=True)
+            print(f"Extracted character image: {character_image}")
         else:
+            # Generate new character and video
+            if not os.path.exists(character_image):
+                print(f"\nGenerating character sketch for: {character_description}")
+                character_image = self.nano_banana.generate_character(
+                    frame_path,
+                    character_description,
+                    self.output_dir
+                )
+            
             print(f"\nGenerating character performance with Act-Two...")
             generated_video = self.act_two.generate_character_performance(
                 subvideo_path,
@@ -1284,8 +1525,8 @@ def main():
     parser.add_argument(
         "video",
         nargs="?",
-        default="nano_video_input.mp4",
-        help="Path to input video (default: nano_video_input.mp4)"
+        default="uploads/assets/runway_experiment/runway_demo_input.mp4",
+        help="Path to input video (default: runway_demo_input.mp4)"
     )
     parser.add_argument(
         "--character",

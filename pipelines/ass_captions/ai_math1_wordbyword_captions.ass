@@ -1,0 +1,168 @@
+[Script Info]
+Title: Advanced Captions
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,2,5,30,30,30,1
+Style: Important,Arial,55,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,5,30,30,30,1
+Style: Critical,Arial,62,&H009999FF,&H009999FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,3,5,30,30,30,1
+Style: MegaTitle,Arial,86,&H0000D7FF,&H0000D7FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,4,5,30,30,30,1
+Style: Masked,Arial,72,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,5,30,30,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 1,0:00:00.14,0:00:02.92,Default,,0,0,0,,{\an7 \fs38 \bord3 \fad(300,0) \move(603,140,603,180,0,300)}Yes,
+Dialogue: 2,0:00:01.02,0:00:02.92,Masked,,0,0,0,,{\an7 \fs129 \bord3 \b1 \c&H00D7FF& \fad(237,0) \move(30,500,30,540,0,237)}AI
+Dialogue: 2,0:00:01.50,0:00:02.92,Masked,,0,0,0,,{\an7 \fs129 \bord3 \b1 \c&H00D7FF& \fad(237,0) \move(190,500,190,540,0,237)}created
+Dialogue: 2,0:00:01.97,0:00:02.92,Masked,,0,0,0,,{\an7 \fs129 \bord3 \b1 \c&H00D7FF& \fad(237,0) \move(658,500,658,540,0,237)}new
+Dialogue: 2,0:00:02.44,0:00:02.92,Masked,,0,0,0,,{\an7 \fs129 \bord3 \b1 \c&H00D7FF& \fad(237,0) \move(933,500,933,540,0,237)}math.
+Dialogue: 2,0:00:02.96,0:00:07.36,Masked,,0,0,0,,{\an7 \fs72 \bord3 \fad(100,0) \move(420,140,420,180,0,100)}Would
+Dialogue: 2,0:00:03.16,0:00:07.36,Masked,,0,0,0,,{\an7 \fs72 \bord3 \fad(100,0) \move(644,140,644,180,0,100)}you
+Dialogue: 2,0:00:03.36,0:00:07.36,Masked,,0,0,0,,{\an7 \fs72 \bord3 \fad(100,0) \move(781,140,781,180,0,100)}be
+Dialogue: 2,0:00:03.60,0:00:07.36,Masked,,0,0,0,,{\an7 \fs72 \bord3 \fad(224,0) \move(464,222,464,262,0,224)}surprised
+Dialogue: 2,0:00:04.05,0:00:07.36,Masked,,0,0,0,,{\an7 \fs72 \bord3 \fad(224,0) \move(781,222,781,262,0,224)}if
+Dialogue: 2,0:00:04.60,0:00:07.36,Masked,,0,0,0,,{\an7 \fs93 \bord3 \b1 \c&H9696FF& \fad(230,0) \move(-97,500,-97,540,0,230)}AI
+Dialogue: 2,0:00:05.06,0:00:07.36,Masked,,0,0,0,,{\an7 \fs93 \bord3 \b1 \c&H9696FF& \fad(230,0) \move(18,500,18,540,0,230)}invented
+Dialogue: 2,0:00:05.52,0:00:07.36,Masked,,0,0,0,,{\an7 \fs93 \bord3 \b1 \c&H9696FF& \fad(230,0) \move(397,500,397,540,0,230)}a
+Dialogue: 2,0:00:05.98,0:00:07.36,Masked,,0,0,0,,{\an7 \fs93 \bord3 \b1 \c&H9696FF& \fad(230,0) \move(476,500,476,540,0,230)}new
+Dialogue: 2,0:00:06.44,0:00:07.36,Masked,,0,0,0,,{\an7 \fs93 \bord3 \b1 \c&H9696FF& \fad(230,0) \move(674,500,674,540,0,230)}calculus
+Dialogue: 2,0:00:06.90,0:00:07.36,Masked,,0,0,0,,{\an7 \fs93 \bord3 \b1 \c&H9696FF& \fad(230,0) \move(1037,500,1037,540,0,230)}operator
+Dialogue: 1,0:00:07.42,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(104,0) \move(361,140,361,180,0,104)}on
+Dialogue: 1,0:00:07.63,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(104,0) \move(438,140,438,180,0,104)}top
+Dialogue: 1,0:00:07.84,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(104,0) \move(530,140,530,180,0,104)}of
+Dialogue: 1,0:00:08.04,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(104,0) \move(592,140,592,180,0,104)}the
+Dialogue: 1,0:00:08.25,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(104,0) \move(684,140,684,180,0,104)}derivative
+Dialogue: 1,0:00:08.50,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(129,0) \move(450,231,450,271,0,129)}and
+Dialogue: 1,0:00:08.76,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(129,0) \move(558,231,558,271,0,129)}the
+Dialogue: 1,0:00:09.02,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(129,0) \move(650,231,650,271,0,129)}integral
+Dialogue: 1,0:00:09.76,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(167,0) \move(224,500,224,540,0,167)}to
+Dialogue: 1,0:00:10.10,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(167,0) \move(286,500,286,540,0,167)}improve
+Dialogue: 1,0:00:10.43,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(167,0) \move(498,500,498,540,0,167)}its
+Dialogue: 1,0:00:10.77,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(167,0) \move(569,500,569,540,0,167)}engine
+Dialogue: 1,0:00:11.10,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(167,0) \move(750,500,750,540,0,167)}performance
+Dialogue: 1,0:00:11.50,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(280,0) \move(464,591,464,631,0,280)}by
+Dialogue: 1,0:00:12.06,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(280,0) \move(538,591,538,631,0,280)}up
+Dialogue: 1,0:00:12.62,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(280,0) \move(615,591,615,631,0,280)}to
+Dialogue: 1,0:00:13.18,0:00:13.74,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(280,0) \move(677,591,677,631,0,280)}20%?
+Dialogue: 1,0:00:13.78,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(138,0) \move(498,140,498,180,0,138)}Let's
+Dialogue: 1,0:00:14.06,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(138,0) \move(612,140,612,180,0,138)}find
+Dialogue: 1,0:00:14.33,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(138,0) \move(703,140,703,180,0,138)}out.
+Dialogue: 1,0:00:14.64,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(353,500,353,540,0,225)}Today,
+Dialogue: 1,0:00:15.09,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(505,500,505,540,0,225)}we're
+Dialogue: 1,0:00:15.54,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(632,500,632,540,0,225)}diving
+Dialogue: 1,0:00:15.100,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(771,500,771,540,0,225)}into
+Dialogue: 1,0:00:16.45,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(862,500,862,540,0,225)}the
+Dialogue: 1,0:00:16.90,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(259,562,259,602,0,225)}exciting
+Dialogue: 1,0:00:17.35,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(436,562,436,602,0,225)}topic
+Dialogue: 1,0:00:17.80,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(551,562,551,602,0,225)}of
+Dialogue: 1,0:00:18.26,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(605,562,605,602,0,225)}artificial
+Dialogue: 1,0:00:18.71,0:00:19.16,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(225,0) \move(782,562,782,602,0,225)}intelligence
+Dialogue: 1,0:00:19.18,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(150,0) \move(280,140,280,180,0,150)}and
+Dialogue: 1,0:00:19.48,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(150,0) \move(388,140,388,180,0,150)}its
+Dialogue: 1,0:00:19.78,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(150,0) \move(459,140,459,180,0,150)}potential
+Dialogue: 1,0:00:20.08,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(150,0) \move(683,140,683,180,0,150)}to
+Dialogue: 1,0:00:20.38,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(150,0) \move(745,140,745,180,0,150)}lead
+Dialogue: 1,0:00:20.68,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(150,0) \move(865,140,865,180,0,150)}math,
+Dialogue: 1,0:00:21.00,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(300,0) \move(326,500,326,540,0,300)}engineering,
+Dialogue: 1,0:00:21.73,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(300,0) \move(645,500,645,540,0,300)}and
+Dialogue: 1,0:00:22.45,0:00:23.18,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(300,0) \move(753,500,753,540,0,300)}science.
+Dialogue: 1,0:00:23.24,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(503,140,503,180,0,140)}It's
+Dialogue: 1,0:00:23.52,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(577,140,577,180,0,140)}no
+Dialogue: 1,0:00:23.80,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(644,140,644,180,0,140)}longer
+Dialogue: 1,0:00:24.08,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(484,202,484,242,0,140)}a
+Dialogue: 1,0:00:24.36,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(525,202,525,242,0,140)}question
+Dialogue: 1,0:00:24.64,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(721,202,721,242,0,140)}of
+Dialogue: 1,0:00:24.92,0:00:28.12,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(140,0) \move(775,202,775,242,0,140)}if
+Dialogue: 1,0:00:25.24,0:00:28.12,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(288,0) \move(374,500,374,540,0,288)}AI
+Dialogue: 1,0:00:25.82,0:00:28.12,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(288,0) \move(442,500,442,540,0,288)}will
+Dialogue: 1,0:00:26.39,0:00:28.12,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(288,0) \move(534,500,534,540,0,288)}lead,
+Dialogue: 1,0:00:26.97,0:00:28.12,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(288,0) \move(669,500,669,540,0,288)}but
+Dialogue: 1,0:00:27.54,0:00:28.12,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(288,0) \move(761,500,761,540,0,288)}when.
+Dialogue: 1,0:00:28.16,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(456,140,456,180,0,128)}And
+Dialogue: 1,0:00:28.42,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(555,140,555,180,0,128)}with
+Dialogue: 1,0:00:28.68,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(654,140,654,180,0,128)}the
+Dialogue: 1,0:00:28.93,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(735,140,735,180,0,128)}help
+Dialogue: 1,0:00:29.19,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(370,202,370,242,0,128)}of
+Dialogue: 1,0:00:29.45,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(424,202,424,242,0,128)}large
+Dialogue: 1,0:00:29.70,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(545,202,545,242,0,128)}language
+Dialogue: 1,0:00:29.96,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(128,0) \move(757,202,757,242,0,128)}models
+Dialogue: 1,0:00:30.68,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(493,284,493,324,0,300)}like
+Dialogue: 1,0:00:31.50,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(579,284,579,324,0,300)}ChatGPT,
+Dialogue: 1,0:00:32.44,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(339,500,339,540,0,300)}that
+Dialogue: 1,0:00:33.04,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(433,500,433,540,0,300)}day
+Dialogue: 1,0:00:33.64,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(524,500,524,540,0,300)}is
+Dialogue: 1,0:00:34.24,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(573,500,573,540,0,300)}fast
+Dialogue: 1,0:00:34.84,0:00:35.44,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(300,0) \move(664,500,664,540,0,300)}approaching.
+Dialogue: 1,0:00:35.46,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(377,140,377,180,0,164)}We'll
+Dialogue: 1,0:00:35.79,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(509,140,509,180,0,164)}use
+Dialogue: 1,0:00:36.12,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(614,140,614,180,0,164)}AI
+Dialogue: 1,0:00:36.44,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(682,140,682,180,0,164)}agents
+Dialogue: 1,0:00:36.77,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(863,140,863,180,0,164)}to
+Dialogue: 1,0:00:37.10,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(323,211,323,251,0,164)}create
+Dialogue: 1,0:00:37.43,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(492,211,492,251,0,164)}a
+Dialogue: 1,0:00:37.76,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(539,211,539,251,0,164)}new
+Dialogue: 1,0:00:38.08,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(656,211,656,251,0,164)}calculus
+Dialogue: 1,0:00:38.41,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(164,0) \move(871,211,871,251,0,164)}tool
+Dialogue: 1,0:00:39.22,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(235,0) \move(247,500,247,540,0,235)}that
+Dialogue: 1,0:00:39.69,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(235,0) \move(355,500,355,540,0,235)}in
+Dialogue: 1,0:00:40.16,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(235,0) \move(414,500,414,540,0,235)}turn
+Dialogue: 1,0:00:40.63,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(235,0) \move(525,500,525,540,0,235)}improves
+Dialogue: 1,0:00:41.10,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(235,0) \move(764,500,764,540,0,235)}AI
+Dialogue: 1,0:00:41.57,0:00:42.04,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(235,0) \move(832,500,832,540,0,235)}engines.
+Dialogue: 1,0:00:43.04,0:00:48.98,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(275,0) \move(209,140,209,180,0,275)}Building
+Dialogue: 1,0:00:43.59,0:00:48.98,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(275,0) \move(421,140,421,180,0,275)}math
+Dialogue: 1,0:00:44.14,0:00:48.98,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(275,0) \move(559,140,559,180,0,275)}comprises
+Dialogue: 1,0:00:44.70,0:00:48.98,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(275,0) \move(826,140,826,180,0,275)}four
+Dialogue: 1,0:00:45.25,0:00:48.98,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(275,0) \move(937,140,937,180,0,275)}parts.
+Dialogue: 1,0:00:45.84,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(367,500,367,540,0,174)}Once
+Dialogue: 1,0:00:46.19,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(496,500,496,540,0,174)}we've
+Dialogue: 1,0:00:46.54,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(631,500,631,540,0,174)}established
+Dialogue: 1,0:00:46.89,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(888,500,888,540,0,174)}a
+Dialogue: 1,0:00:47.24,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(350,562,350,602,0,174)}mental
+Dialogue: 1,0:00:47.58,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(508,562,508,602,0,174)}model
+Dialogue: 1,0:00:47.93,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(653,562,653,602,0,174)}or
+Dialogue: 1,0:00:48.28,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(710,562,710,602,0,174)}a
+Dialogue: 1,0:00:48.63,0:00:48.98,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(174,0) \move(751,562,751,602,0,174)}schema,
+Dialogue: 1,0:00:49.48,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(516,140,516,180,0,143)}we
+Dialogue: 1,0:00:49.77,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(591,140,591,180,0,143)}go
+Dialogue: 1,0:00:50.05,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(658,140,658,180,0,143)}on
+Dialogue: 1,0:00:50.34,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(725,140,725,180,0,143)}to
+Dialogue: 1,0:00:50.63,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(405,202,405,242,0,143)}find
+Dialogue: 1,0:00:50.92,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(496,202,496,242,0,143)}the
+Dialogue: 1,0:00:51.20,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(577,202,577,242,0,143)}main
+Dialogue: 1,0:00:51.49,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(143,0) \move(695,202,695,242,0,143)}concept,
+Dialogue: 1,0:00:51.84,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(253,0) \move(306,500,306,540,0,253)}such
+Dialogue: 1,0:00:52.35,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(253,0) \move(421,500,421,540,0,253)}as
+Dialogue: 1,0:00:52.86,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(253,0) \move(486,500,486,540,0,253)}definitions
+Dialogue: 1,0:00:53.36,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(253,0) \move(716,500,716,540,0,253)}and
+Dialogue: 1,0:00:53.87,0:00:54.38,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(253,0) \move(810,500,810,540,0,253)}axioms.
+Dialogue: 1,0:00:54.40,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(337,140,337,180,0,252)}We
+Dialogue: 1,0:00:54.91,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(422,140,422,180,0,252)}then
+Dialogue: 1,0:00:55.41,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(529,140,529,180,0,252)}formulate
+Dialogue: 1,0:00:55.91,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(743,140,743,180,0,252)}theorems
+Dialogue: 1,0:00:56.42,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(398,202,398,242,0,252)}and
+Dialogue: 1,0:00:56.92,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(492,202,492,242,0,252)}finally
+Dialogue: 1,0:00:57.43,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(629,202,629,242,0,252)}prove
+Dialogue: 1,0:00:57.93,0:01:02.20,Default,,0,0,0,,{\an7 \fs48 \bord3 \fad(252,0) \move(763,202,763,242,0,252)}them.
+Dialogue: 1,0:00:58.52,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(294,500,294,540,0,184)}AI
+Dialogue: 1,0:00:58.89,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(362,500,362,540,0,184)}has
+Dialogue: 1,0:00:59.26,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(467,500,467,540,0,184)}been
+Dialogue: 1,0:00:59.62,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(605,500,605,540,0,184)}quite
+Dialogue: 1,0:00:59.99,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(740,500,740,540,0,184)}instructive
+Dialogue: 1,0:01:00.36,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(391,571,391,611,0,184)}in
+Dialogue: 1,0:01:00.73,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(450,571,450,611,0,184)}the
+Dialogue: 1,0:01:01.10,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(542,571,542,611,0,184)}last
+Dialogue: 1,0:01:01.46,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(644,571,644,611,0,184)}two
+Dialogue: 1,0:01:01.83,0:01:02.20,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(184,0) \move(746,571,746,611,0,184)}steps,
+Dialogue: 1,0:01:02.74,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(435,140,435,180,0,212)}but
+Dialogue: 1,0:01:03.17,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(527,140,527,180,0,212)}still
+Dialogue: 1,0:01:03.59,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(622,140,622,180,0,212)}struggles
+Dialogue: 1,0:01:04.02,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(435,211,435,251,0,212)}with
+Dialogue: 1,0:01:04.44,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(549,211,549,251,0,212)}the
+Dialogue: 1,0:01:04.87,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(641,211,641,251,0,212)}first
+Dialogue: 1,0:01:05.29,0:01:05.72,Important,,0,0,0,,{\an7 \fs55 \bord3 \fad(212,0) \move(746,211,746,251,0,212)}two.

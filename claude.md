@@ -38,15 +38,18 @@
 - This keeps the output directory organized and makes it clear what each video contains
 
 ## Test Video Output Location
-**ALL test videos MUST be saved to the `outputs/` folder**
+**ALL test videos and output files MUST be saved to the `outputs/` folder**
 - When running tests or generating sample videos, always output to `outputs/`
+- ALL scripts in pipelines/ folder must save their outputs to `../../outputs/`
 - Create subdirectories for specific test runs if needed: `outputs/test_3dtext/`, `outputs/test_dissolve/`
 - This keeps the root directory clean and organized
 - Examples:
   - Testing 3D text: save to `outputs/test_3dtext.mp4`
   - Testing dissolve effect: save to `outputs/test_dissolve.mp4`
+  - ASS captions output: save to `outputs/video_with_captions.mp4`
   - Multiple iterations: `outputs/iteration1/`, `outputs/iteration2/`
-- NEVER save test videos directly in the backend root directory
+- NEVER save test videos directly in the backend root directory or pipelines folder
+- When working in pipelines/ folder, use relative path `../../outputs/` to reach the outputs folder
 
 ## Golden Standard Pipelines Folder
 **ALL working pipeline examples MUST be saved to the `pipelines/` folder**
