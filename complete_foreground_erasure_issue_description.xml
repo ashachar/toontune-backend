@@ -1,0 +1,537 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <task_instruction>
+    Implement a complete foreground erasure system where EVERY pixel of the character overlay (foreground) gets erased during the animation, regardless of the eraser's path pattern. Each foreground pixel must be assigned to its nearest point in the eraser's traversal path and be removed when the eraser reaches that point. Currently, only pixels within a fixed radius of the path points get erased, leaving significant portions of the foreground untouched.
+  </task_instruction>
+
+  <problem_context>
+    <summary>
+      An FFmpeg-based eraser animation system creates a wipe effect where an eraser PNG moves along a path (S-curve, ellipse, etc.) to reveal the original video underneath a character overlay. The current implementation only erases pixels within a fixed radius (140px) of the path points, leaving large portions of the character unerased, especially at the edges and corners of the frame.
+    </summary>
+    
+    <visual_description>
+      Imagine a character standing in a video. An eraser moves in an S-shaped path from top to bottom. Currently, only a narrow strip along the S-path gets erased (like painting with a small brush), leaving the character's edges, corners, and areas far from the path completely visible. We need the ENTIRE character to disappear, with pixels far from the path also being erased based on their proximity to the nearest path point.
+    </visual_description>
+    
+    <current_behavior>
+      - Eraser moves along predefined path (e.g., S-curve from Y:144 to Y:576)
+      - Only pixels within erase_radius (140px) of path points get erased
+      - Creates circular masks at each path point that accumulate over time
+      - Large portions remain unerased:
+        * Top 20% of video (Y: 0-144px) - completely untouched
+        * Bottom 20% of video (Y: 576-720px) - completely untouched
+        * Left edges (X: 0-343px) - mostly untouched
+        * Right edges (X: 900-1280px) - mostly untouched
+    </current_behavior>
+    
+    <desired_behavior>
+      - EVERY foreground pixel should be assigned to its nearest path point
+      - Each pixel should be erased when its assigned path point is visited
+      - Complete coverage: 100% of foreground pixels must eventually be erased
+      - Smooth progression: pixels should disappear in a logical order based on proximity
+      - No hard radius limit: even pixels 500+ pixels away should eventually be erased
+    </desired_behavior>
+  </problem_context>
+
+  <technical_architecture>
+    <current_implementation_details>
+      <mask_generation>
+<![CDATA[
+def _build_geq_mask_expr(points: List[Tuple[float, float, float]], erase_radius: int,
+                         x_offset: float = 0.0, y_offset: float = 0.0) -> str:
+    """
+    Current implementation: Creates fixed-radius circles at each path point.
+    Problem: Only erases within erase_radius (140px) of each point.
+    
+    Generates FFmpeg geq expression like:
+    max(
+      (255*gte(T,0.1)*lte((X-620)*(X-620)+(Y-144)*(Y-144),19600)),  # radius^2 = 140^2 = 19600
+      (255*gte(T,0.2)*lte((X-746)*(X-746)+(Y-175)*(Y-175),19600)),
+      ... more circles ...
+    )
+    """
+    terms = []
+    r2 = erase_radius * erase_radius  # Fixed radius squared (e.g., 140^2 = 19600)
+    for t, x, y in points:
+        xi = x + x_offset
+        yi = y + y_offset
+        # Only pixels within sqrt(r2) distance get erased
+        term = (
+            f"(255*gte(T,{_fmt(t)})*lte((X-{_fmt(int(round(xi)))})*(X-{_fmt(int(round(xi)))})"
+            f"+(Y-{_fmt(int(round(yi)))})*(Y-{_fmt(int(round(yi)))})"
+            f",{r2}))"  # Hard radius limit here!
+        )
+        terms.append(term)
+    # Combine with max() - accumulates circles over time
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = f"max({expr},{term})"
+    return expr
+]]>
+      </mask_generation>
+      
+      <path_patterns>
+<![CDATA[
+# S-curve pattern - only covers 60% of height
+if pattern == "s_curve":
+    y = height * 0.2 + (height * 0.6) * progress  # Y: 144 to 576 (60% coverage)
+    cycles = 2.5
+    x = center_x + radius_x * 0.7 * math.sin(cycles * 2 * math.pi * progress)
+    # X oscillates around center, roughly 483 to 760
+
+# With erase_radius = 140:
+# Actual coverage: X: 343-900, Y: 4-716 (with radius extension)
+# Missing: corners and edges of 1280x720 frame
+]]>
+      </path_patterns>
+      
+      <filter_chain>
+<![CDATA[
+# Current filter chain (after grayscale fix):
+filter_parts = []
+
+# 1. Scale eraser PNG
+filter_parts.append(
+    f"[2:v]loop=loop=999999:size=1:start=0,format=rgba,scale={scaled_w}:{scaled_h}[eraser]"
+)
+
+# 2. Create mask with fixed-radius circles
+filter_parts.append(
+    f"color=c=black@0.0:s={width}x{height}:r={_fmt(fps)}[m_src];"
+    f"[m_src]format=gray,geq=lum='{lum_expr_quoted}'[mask]"  # Fixed radius circles only
+)
+
+# 3. Apply mask using alphamerge + overlay (color-preserving)
+filter_parts.append(
+    f"[mask]lut=y=negval[inv_mask];"  # Invert mask
+    f"[0:v]scale={width}:{height}:flags=bicubic,format=gbrp[char_rgb];"
+    f"[1:v]scale={width}:{height}:flags=bicubic,format=rgba[orig_rgba];"
+    f"[char_rgb][inv_mask]alphamerge,format=rgba[char_alpha];"
+    f"[orig_rgba][char_alpha]overlay=shortest=0:eof_action=pass:format=auto[reveal]"
+)
+
+# 4. Overlay moving eraser image
+filter_parts.append(
+    f"[reveal][eraser]overlay="
+    f"x='{ox}':y='{oy}':shortest=0:eof_action=pass:format=auto:eval=frame:"
+    f"enable='between(t,{_fmt(enable_from)},{_fmt(enable_to)})'[outv]"
+)
+]]>
+      </filter_chain>
+    </current_implementation_details>
+    
+    <coverage_analysis>
+      <s_curve_coverage>
+        - Path points: 15-40 samples along S-curve
+        - Y range: 144 to 576 pixels (432px span, 60% of 720px height)
+        - X range: ~483 to ~760 pixels (277px span, oscillating)
+        - With radius 140px:
+          * Y coverage: 4 to 716 pixels (still missing top/bottom)
+          * X coverage: 343 to 900 pixels (missing left/right edges)
+        - Uncovered areas:
+          * Top corners: (0,0) to (1280,144) - completely missed
+          * Bottom corners: (0,576) to (1280,720) - completely missed
+          * Left edge: (0,144) to (343,576) - mostly missed
+          * Right edge: (900,144) to (1280,576) - mostly missed
+      </s_curve_coverage>
+      
+      <mathematical_problem>
+        Current: Only pixels where distance(pixel, path_point) <= 140 get erased
+        Needed: ALL pixels get erased based on nearest path point
+        
+        Example uncovered pixel at (100, 50):
+        - Nearest S-curve point might be at (483, 144)
+        - Distance: ~sqrt((383)^2 + (94)^2) = ~394 pixels
+        - With radius 140, this pixel NEVER gets erased
+        - Should be: assigned to nearest point and erased when that point is visited
+      </mathematical_problem>
+    </coverage_analysis>
+  </technical_architecture>
+
+  <proposed_solution_approaches>
+    <approach_1>
+      <title>Voronoi-based assignment</title>
+      <description>
+        Pre-compute a Voronoi diagram where each pixel is assigned to its nearest path point.
+        When each path point's time arrives, erase ALL pixels in its Voronoi cell.
+      </description>
+      <implementation_concept>
+<![CDATA[
+# Pseudo-code for Voronoi approach:
+def build_voronoi_mask_expr(points, width, height):
+    # For each pixel, find nearest path point
+    # Create expression that activates all pixels in each Voronoi cell at once
+    
+    # Challenge: FFmpeg geq doesn't support complex conditionals easily
+    # Need to encode Voronoi regions in the expression
+    
+    # For pixel (X,Y), find which point index is nearest:
+    # nearest_idx = argmin(distance(X,Y, point[i]))
+    # Then: if T >= point[nearest_idx].time, pixel = 255
+]]>
+      </implementation_concept>
+      <challenges>
+        - FFmpeg geq expressions have limited computational capability
+        - Finding nearest point for each pixel in real-time is expensive
+        - May need to pre-compute and encode in the expression
+      </challenges>
+    </approach_1>
+    
+    <approach_2>
+      <title>Distance-field with expanding radius</title>
+      <description>
+        Instead of fixed radius, use variable radius that expands over time.
+        Early in animation: small radius. Late in animation: huge radius to catch all pixels.
+      </description>
+      <implementation_concept>
+<![CDATA[
+# Variable radius based on progress
+def build_expanding_radius_expr(points, min_radius=140, max_radius=800):
+    terms = []
+    for i, (t, x, y) in enumerate(points):
+        progress = i / len(points)
+        # Radius grows from min to max
+        radius = min_radius + (max_radius - min_radius) * progress
+        r2 = radius * radius
+        term = f"(255*gte(T,{t})*lte((X-{x})*(X-{x})+(Y-{y})*(Y-{y}),{r2}))"
+        terms.append(term)
+    # Combine with max()
+    return build_max_expression(terms)
+]]>
+      </implementation_concept>
+      <benefits>
+        - Simple to implement
+        - Guarantees full coverage with large enough max_radius
+        - Smooth progression
+      </benefits>
+    </approach_2>
+    
+    <approach_3>
+      <title>Pre-computed distance transform</title>
+      <description>
+        Pre-compute for each pixel: (nearest_point_index, distance_to_nearest, time_to_erase).
+        Encode this as a lookup table or simplified expression.
+      </description>
+      <implementation_concept>
+<![CDATA[
+# Pre-compute assignments
+def precompute_pixel_assignments(width, height, points):
+    assignments = {}
+    for y in range(height):
+        for x in range(width):
+            min_dist = float('inf')
+            nearest_idx = 0
+            for i, (t, px, py) in enumerate(points):
+                dist = math.sqrt((x - px)**2 + (y - py)**2)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest_idx = i
+            assignments[(x, y)] = (nearest_idx, points[nearest_idx][0])
+    return assignments
+
+# Convert to FFmpeg expression (challenge: expression size limits)
+def build_assignment_expr(assignments):
+    # Need to encode assignments efficiently
+    # Perhaps use piecewise regions or approximations
+    pass
+]]>
+      </implementation_concept>
+      <challenges>
+        - Expression size explosion for 1280x720 = 921,600 pixels
+        - Need efficient encoding method
+      </challenges>
+    </approach_3>
+    
+    <approach_4>
+      <title>Flood-fill from path points</title>
+      <description>
+        Start from path points and expand outward like a flood-fill.
+        Each frame, expand the erased region by N pixels in all directions.
+      </description>
+      <implementation_concept>
+<![CDATA[
+# Flood-fill expansion
+def build_flood_fill_expr(points, expansion_rate=10):
+    # For each point, create expanding circle over time
+    terms = []
+    for t, x, y in points:
+        # Radius grows after point is reached
+        # r(T) = expansion_rate * max(0, T - t) * fps
+        radius_expr = f"{expansion_rate}*max(0,T-{t})*{fps}"
+        term = f"(255*gte(T,{t})*lte((X-{x})*(X-{x})+(Y-{y})*(Y-{y}),pow({radius_expr},2)))"
+        terms.append(term)
+    return build_max_expression(terms)
+]]>
+      </implementation_concept>
+      <benefits>
+        - Natural-looking expansion
+        - Guarantees full coverage eventually
+        - Relatively simple expression
+      </benefits>
+    </approach_4>
+    
+    <approach_5>
+      <title>Hybrid: Path coverage + edge sweep</title>
+      <description>
+        Combine the path-based erasure with additional edge sweeps.
+        After main path, add expressions to clean up corners and edges.
+      </description>
+      <implementation_concept>
+<![CDATA[
+# Main path + edge cleanup
+def build_hybrid_expr(points, erase_radius=140):
+    # 1. Normal path erasure
+    path_terms = build_path_terms(points, erase_radius)
+    
+    # 2. Add corner/edge sweeps at the end
+    end_time = points[-1][0]
+    
+    # Top edge sweep
+    top_sweep = f"(255*gte(T,{end_time})*lte(Y,{144}))"
+    
+    # Bottom edge sweep  
+    bottom_sweep = f"(255*gte(T,{end_time+0.1})*lte(Y,{720-144}))"
+    
+    # Left edge sweep
+    left_sweep = f"(255*gte(T,{end_time+0.2})*lte(X,{343}))"
+    
+    # Right edge sweep
+    right_sweep = f"(255*gte(T,{end_time+0.3})*gte(X,{900}))"
+    
+    # Combine all
+    all_terms = path_terms + [top_sweep, bottom_sweep, left_sweep, right_sweep]
+    return build_max_expression(all_terms)
+]]>
+      </implementation_concept>
+      <benefits>
+        - Ensures complete coverage
+        - Maintains artistic path motion
+        - Simple to implement
+      </benefits>
+    </approach_5>
+  </proposed_solution_approaches>
+
+  <constraints_and_requirements>
+    <must_have>
+      - 100% foreground coverage - every pixel must eventually be erased
+      - Smooth progression - no sudden jumps or artifacts
+      - Work within FFmpeg filter_complex limitations
+      - Maintain color (already fixed with alphamerge approach)
+      - Reasonable performance (expression shouldn't be too complex)
+    </must_have>
+    
+    <nice_to_have>
+      - Natural-looking erasure that follows the artistic path
+      - Minimal changes to existing code structure
+      - Configurable parameters for different coverage strategies
+      - Work with all existing patterns (s_curve, ellipse, figure8, etc.)
+    </nice_to_have>
+    
+    <technical_constraints>
+      - FFmpeg geq expression size limits (very long expressions may fail)
+      - Performance: complex expressions slow down rendering significantly
+      - Real-time evaluation: expressions are evaluated per pixel per frame
+      - Limited math functions in geq (basic arithmetic, trig, comparisons)
+    </technical_constraints>
+  </constraints_and_requirements>
+
+  <existing_code_context>
+    <full_implementation>
+<![CDATA[
+# Complete current implementation of utils/animations/eraser_wipe.py
+
+import json
+import math
+import shlex
+import subprocess
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
+
+@dataclass
+class VideoProps:
+    width: int
+    height: int
+    fps: float
+    duration: float
+
+def _run(cmd: List[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+
+def _ffprobe_props(path: str) -> VideoProps:
+    """Probe width/height/fps/duration using ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,avg_frame_rate:format=duration",
+        "-of", "json", path
+    ]
+    proc = _run(cmd)
+    data = json.loads(proc.stdout.decode("utf-8"))
+    stream = data["streams"][0]
+    width = int(stream["width"])
+    height = int(stream["height"])
+    num, den = stream.get("avg_frame_rate", "30/1").split("/")
+    fps = float(num) / float(den) if float(den) != 0 else 30.0
+    duration = float(data["format"].get("duration", "0") or 0.0)
+    return VideoProps(width=width, height=height, fps=fps, duration=duration)
+
+def _fmt(x: float) -> str:
+    """Format float for FFmpeg expressions (avoid scientific)."""
+    return f"{x:.6f}".rstrip("0").rstrip(".") if isinstance(x, float) else str(x)
+
+def _build_piecewise_linear_expr(points: List[Tuple[float, float, float]], coord_index: int) -> str:
+    """Build piecewise linear interpolation for smooth motion."""
+    assert len(points) >= 2, "Need at least 2 path points"
+    expr = ""
+    for i in range(len(points) - 1):
+        t0, v0 = points[i][0], points[i][coord_index]
+        t1, v1 = points[i + 1][0], points[i + 1][coord_index]
+        dt = max(t1 - t0, 1e-6)
+        seg = (
+            f"if(between(t,{_fmt(t0)},{_fmt(t1)}),"
+            f"{_fmt(v0)}+({_fmt(v1)}-{_fmt(v0)})*(t-{_fmt(t0)})/{_fmt(dt)},"
+        )
+        expr += seg
+    v_last = points[-1][coord_index]
+    expr += f"{_fmt(v_last)}" + (")" * (len(points) - 1))
+    return expr
+
+def _build_geq_mask_expr(points: List[Tuple[float, float, float]], erase_radius: int,
+                         x_offset: float = 0.0, y_offset: float = 0.0) -> str:
+    """
+    PROBLEM: Only creates fixed-radius circles. Pixels outside radius never get erased.
+    """
+    terms = []
+    r2 = erase_radius * erase_radius  # Fixed radius - this is the limitation!
+    for t, x, y in points:
+        xi = x + x_offset
+        yi = y + y_offset
+        term = (
+            f"(255*gte(T,{_fmt(t)})*lte((X-{_fmt(int(round(xi)))})*(X-{_fmt(int(round(xi)))})"
+            f"+(Y-{_fmt(int(round(yi)))})*(Y-{_fmt(int(round(yi)))})"
+            f",{r2}))"
+        )
+        terms.append(term)
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = f"max({expr},{term})"
+    return expr
+
+def _generate_path_points(pattern: str, width: int, height: int, wipe_start: float,
+                          wipe_duration: float, sample_points: int, center_x: float,
+                          center_y: float, radius_x: float, radius_y: float,
+                          amplitude: float) -> List[Tuple[float, float, float]]:
+    """Generate path points for different patterns."""
+    pts: List[Tuple[float, float, float]] = []
+    for i in range(sample_points):
+        progress = i / (max(sample_points - 1, 1))
+        t = wipe_start + progress * wipe_duration
+        
+        if pattern == "s_curve":
+            # PROBLEM: Only covers 60% of height (0.2 to 0.8)
+            y = height * 0.2 + (height * 0.6) * progress
+            cycles = 2.5
+            x = center_x + radius_x * 0.7 * math.sin(cycles * 2 * math.pi * progress)
+        elif pattern == "ellipse":
+            angle = 2 * math.pi * progress
+            x = center_x + radius_x * math.cos(angle)
+            y = center_y + amplitude * math.sin(angle)
+        # ... other patterns ...
+        
+        pts.append((t, x, y))
+    return pts
+
+def create_eraser_wipe(
+    character_video: str,
+    original_video: str,
+    eraser_image: str,
+    output_video: str,
+    wipe_start: float = 0.0,
+    wipe_duration: float = 0.6,
+    mode: str = "true_erase",
+    erase_radius: int = 120,  # Fixed radius - limits coverage!
+    sample_points: int = 25,
+    path_pattern: str = "ellipse",
+    tip_x_ratio: float = 0.50,
+    tip_y_ratio: float = 0.12,
+    scale_factor: float = 0.70,
+    dry_run: bool = False
+) -> bool:
+    # ... initialization ...
+    
+    # Generate path points
+    points = _generate_path_points(...)
+    
+    # Build expressions
+    x_tip_expr = _build_piecewise_linear_expr(points, coord_index=1)
+    y_tip_expr = _build_piecewise_linear_expr(points, coord_index=2)
+    overlay_x_expr = f"({x_tip_expr}) - overlay_w*{_fmt(tip_x_ratio)}"
+    overlay_y_expr = f"({y_tip_expr}) - overlay_h*{_fmt(tip_y_ratio)}"
+    
+    # PROBLEM: Fixed radius mask generation
+    geq_luma_expr = _build_geq_mask_expr(points, erase_radius=erase_radius)
+    
+    # Build filter chain...
+    # Apply mask with alphamerge + overlay (color-preserving)...
+]]>
+    </full_implementation>
+    
+    <usage_example>
+<![CDATA[
+# How it's called from the pipeline:
+create_eraser_wipe(
+    character_video='outputs/runway_scaled_cropped.mp4',
+    original_video='uploads/assets/runway_experiment/runway_demo_input.mp4',
+    eraser_image='uploads/assets/images/eraser.png',
+    output_video='outputs/final_eraser.mp4',
+    wipe_start=0.1,
+    wipe_duration=0.9,
+    mode="true_erase",
+    erase_radius=140,      # Only erases within 140px of path
+    sample_points=40,      # More points help but don't solve coverage
+    path_pattern="s_curve" # Only covers 60% of height
+)
+]]>
+    </usage_example>
+  </existing_code_context>
+
+  <output_requirements>
+    <requirement_1>
+      Provide a complete solution that ensures 100% foreground coverage
+    </requirement_1>
+    
+    <requirement_2>
+      Modify the _build_geq_mask_expr function to implement the chosen approach
+    </requirement_2>
+    
+    <requirement_3>
+      Ensure the solution works within FFmpeg's geq expression limitations
+    </requirement_3>
+    
+    <requirement_4>
+      Maintain smooth, natural-looking erasure progression
+    </requirement_4>
+    
+    <requirement_5>
+      Include clear comments explaining the algorithm and any trade-offs
+    </requirement_5>
+    
+    <requirement_6>
+      Provide test parameters to verify complete coverage
+    </requirement_6>
+  </output_requirements>
+
+  <critical_questions>
+    <question_1>
+      How can we modify the mask generation to ensure every pixel gets assigned to a path point and eventually erased, while keeping the FFmpeg expression manageable?
+    </question_1>
+    
+    <question_2>
+      Should we use expanding radius, Voronoi regions, flood-fill, or a hybrid approach for complete coverage?
+    </question_2>
+    
+    <question_3>
+      How do we balance artistic path following with the need for complete coverage of corners and edges?
+    </question_3>
+  </critical_questions>
+</prompt>

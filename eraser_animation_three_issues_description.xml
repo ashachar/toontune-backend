@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <task_instruction>
+    Fix three critical issues in an FFmpeg-based eraser animation system where:
+    1. The entire video becomes grayscale when the eraser animation starts
+    2. Background pixels should fade out DURING the eraser movement (not after)
+    3. Not all foreground pixels get wiped - need complete coverage algorithm
+  </task_instruction>
+
+  <problem_context>
+    <summary>
+      A video processing pipeline creates an "eraser wipe" effect where an animated eraser appears to erase a character overlay, revealing the original video underneath. The system uses FFmpeg filters to create a mask that accumulates circular reveals along the eraser's path. Currently has three major visual issues that break the intended effect.
+    </summary>
+    
+    <visual_intent>
+      The eraser should appear to "wipe away" a character overlay that was added on top of an original video, progressively revealing the original video underneath as the eraser moves. The effect should look like someone is physically erasing the character with a real eraser.
+    </visual_intent>
+    
+    <current_behavior>
+      - Character overlay (from Runway Act-Two) is placed on top of original video
+      - Eraser PNG moves along a path (s_curve, ellipse, etc.)
+      - Circular mask reveals original video underneath at eraser tip positions
+      - Uses maskedmerge filter to blend character and original based on mask
+    </current_behavior>
+  </problem_context>
+
+  <three_critical_issues>
+    <issue_1>
+      <title>Video becomes grayscale when eraser animation starts</title>
+      <description>
+        As soon as the eraser animation begins at wipe_start (0.1s), the ENTIRE video output loses color and becomes grayscale. This affects both the character overlay and the revealed original video underneath. The video should remain in full color throughout the entire animation.
+      </description>
+      <suspected_cause>
+        The mask is created in grayscale format and may be incorrectly affecting the color channels during maskedmerge or overlay operations. The filter chain might be converting everything to grayscale when applying the mask.
+      </suspected_cause>
+      <visual_impact>
+        Critical - makes the effect unusable as the video loses all color information
+      </visual_impact>
+    </issue_1>
+    
+    <issue_2>
+      <title>Background pixels should fade out DURING eraser movement</title>
+      <description>
+        Currently, only the pixels directly under the eraser tip (within erase_radius) get revealed. Pixels outside the character foreground should progressively fade out WHILE the eraser is moving, not remain fully visible. This would create a more realistic effect where the background gradually takes over as the eraser progresses.
+      </description>
+      <current_implementation>
+        Only applies circular reveals at eraser tip positions. No progressive fading of non-erased areas.
+      </current_implementation>
+      <desired_behavior>
+        As the eraser moves from t=wipe_start to t=wipe_start+wipe_duration, pixels outside the foreground should gradually become more transparent, with full transparency by the end of the animation.
+      </desired_behavior>
+    </issue_2>
+    
+    <issue_3>
+      <title>Not all foreground pixels get wiped out - incomplete coverage</title>
+      <description>
+        The current implementation only erases pixels within erase_radius of the path points. Many foreground pixels remain unerased because they're too far from any path point. Need an algorithm that ensures EVERY foreground pixel gets associated with the nearest path point and eventually erased.
+      </description>
+      <problem_details>
+        - Current: Only pixels within fixed radius of path points get erased
+        - Missing: Pixels in corners, edges, or areas far from the path
+        - Need: Complete coverage algorithm that maps ALL foreground pixels
+      </problem_details>
+      <proposed_solution_direction>
+        1. Extract foreground mask from character video
+        2. For each foreground pixel, find nearest path point
+        3. Create expanding radius or use distance-based timing
+        4. Ensure 100% of foreground pixels are covered by end of animation
+      </proposed_solution_direction>
+    </issue_3>
+  </three_critical_issues>
+
+  <current_implementation>
+    <file_path>utils/animations/eraser_wipe.py</file_path>
+    
+    <key_functions>
+      <function name="create_eraser_wipe">
+        <purpose>Main entry point that orchestrates the eraser wipe effect</purpose>
+        <parameters>
+          - character_video: Video with character overlay (foreground)
+          - original_video: Original background video  
+          - eraser_image: PNG image of eraser
+          - wipe_start: When to start erasing (0.1s)
+          - wipe_duration: How long the erase takes (0.9s)
+          - path_pattern: Motion pattern (s_curve, ellipse, etc.)
+          - erase_radius: Radius of circular reveal (140 pixels)
+          - sample_points: Number of points along path (40)
+        </parameters>
+      </function>
+      
+      <function name="_build_geq_mask_expr">
+        <purpose>Builds FFmpeg geq expression for accumulating circular reveals</purpose>
+        <current_logic>
+<![CDATA[
+def _build_geq_mask_expr(points: List[Tuple[float, float, float]], erase_radius: int,
+                         x_offset: float = 0.0, y_offset: float = 0.0) -> str:
+    """
+    Build a geq luminance expression that reveals in circular dabs along path points over time.
+    For each point i: enable when t >= t_i, draw a filled circle of radius R centered at (x_i, y_i).
+    We produce:
+      max(255*gte(T,t0)*lte((X-x0)^2+(Y-y0)^2,R^2),
+          255*gte(T,t1)*lte(...),
+          ...)
+    This allows accumulation (it never 'unreveals').
+    """
+    terms = []
+    r2 = erase_radius * erase_radius
+    for t, x, y in points:
+        xi = x + x_offset
+        yi = y + y_offset
+        term = (
+            f"(255*gte(T,{_fmt(t)})*lte((X-{_fmt(int(round(xi)))})*(X-{_fmt(int(round(xi)))})"
+            f"+(Y-{_fmt(int(round(yi)))})*(Y-{_fmt(int(round(yi)))})"
+            f",{r2}))"
+        )
+        terms.append(term)
+    # Nest max(...) to combine
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = f"max({expr},{term})"
+    return expr
+]]>
+        </current_logic>
+        <issue>Only reveals fixed radius circles - no complete coverage</issue>
+      </function>
+    </key_functions>
+    
+    <filter_chain>
+<![CDATA[
+# Current FFmpeg filter chain construction:
+
+# 1. Loop and scale eraser image
+filter_parts.append(
+    f"[2:v]loop=loop=999999:size=1:start=0,format=rgba,scale={scaled_w}:{scaled_h}[eraser]"
+)
+
+# 2. Create grayscale mask with geq expression
+filter_parts.append(
+    f"color=c=black@0.0:s={width}x{height}:r={_fmt(fps)}[m_src];"
+    f"[m_src]format=gray,geq=lum='{lum_expr_quoted}'[mask]"
+)
+
+# 3. Maskedmerge character over original using mask
+filter_parts.append(
+    f"[0:v]scale={width}:{height}:flags=bicubic,format=rgba[char];"
+    f"[1:v]scale={width}:{height}:flags=bicubic,format=rgba[orig];"
+    f"[char][orig][mask]maskedmerge[reveal]"
+)
+
+# 4. Overlay eraser image
+filter_parts.append(
+    f"[reveal][eraser]overlay="
+    f"x='{ox}':y='{oy}':shortest=0:eof_action=pass:format=auto:eval=frame:"
+    f"enable='between(t,{_fmt(enable_from)},{_fmt(enable_to)})'[outv]"
+)
+]]>
+    </filter_chain>
+    
+    <performance_note>
+      The nested max() operations in geq become very slow with many sample points (>20).
+      With 40 points, it creates 39 levels of nested max() calls, causing timeouts.
+    </performance_note>
+  </current_implementation>
+
+  <example_usage>
+    <pipeline_call>
+<![CDATA[
+# From pipelines/person_animation/main.py
+success = create_eraser_wipe(
+    eraser_source,           # Character video with overlay
+    original_video,          # Original background video
+    eraser_path,            # Path to eraser.png
+    eraser_with_effect,     # Output path
+    wipe_start=0,
+    wipe_duration=eraser_duration,  # 0.6 seconds
+    mode="true_erase",
+    erase_radius=140,       # Radius in pixels
+    sample_points=40,       # Number of path points
+    path_pattern="s_curve"  # Vertical S-shaped path
+)
+]]>
+    </pipeline_call>
+    
+    <path_patterns>
+      - s_curve: Serpentine path from top to bottom with horizontal oscillation
+      - ellipse: Circular/elliptical path around center
+      - figure8: Figure-8 pattern for better coverage
+      - vertical_sweep: Top-to-bottom with oscillation
+      - triple_loop: Three loops for head/torso/legs areas
+    </path_patterns>
+  </example_usage>
+
+  <technical_constraints>
+    <constraint_1>
+      Must use FFmpeg filter expressions that can be evaluated at runtime (using 't' for time)
+    </constraint_1>
+    
+    <constraint_2>
+      The eraser image needs to be positioned so its tip aligns with the erase effect location
+    </constraint_2>
+    
+    <constraint_3>
+      Performance must be acceptable (current 40-point implementation times out)
+    </constraint_3>
+    
+    <constraint_4>
+      Must preserve color throughout the animation (no grayscale conversion)
+    </constraint_4>
+    
+    <constraint_5>
+      Solution must work with any character overlay video (unknown foreground shape)
+    </constraint_5>
+  </technical_constraints>
+
+  <expected_solution_approach>
+    <for_issue_1_grayscale>
+      - Check if maskedmerge is preserving color channels correctly
+      - Ensure format conversions maintain rgba throughout
+      - Verify mask is only affecting alpha/blend, not color
+      - May need to adjust filter order or use different blending approach
+    </for_issue_1_grayscale>
+    
+    <for_issue_2_progressive_fade>
+      - Add time-based opacity to non-erased areas
+      - Could use blend filter with time-based expression
+      - Fade should start at wipe_start and complete by wipe_start+wipe_duration
+      - Background pixels outside foreground should become increasingly visible
+    </for_issue_2_progressive_fade>
+    
+    <for_issue_3_complete_coverage>
+      - Option 1: Pre-process to extract foreground mask, then use expanding radius
+      - Option 2: Use distance transform to map each pixel to nearest path point
+      - Option 3: Flood-fill approach starting from path points
+      - Option 4: Multiple passes with increasing radius
+      - Must ensure 100% coverage without performance issues
+    </for_issue_3_complete_coverage>
+  </expected_solution_approach>
+
+  <output_requirements>
+    <requirement_1>
+      Provide complete fixed implementation of eraser_wipe.py addressing all three issues
+    </requirement_1>
+    
+    <requirement_2>
+      Maintain compatibility with existing pipeline calls (same function signature)
+    </requirement_2>
+    
+    <requirement_3>
+      Include clear comments explaining the fixes for each issue
+    </requirement_3>
+    
+    <requirement_4>
+      Ensure reasonable performance (complete in under 30 seconds for 1-second animation)
+    </requirement_4>
+    
+    <requirement_5>
+      Test with s_curve pattern and verify:
+      - Video maintains full color throughout
+      - Background fades in progressively during erase
+      - All foreground pixels are eventually erased
+    </requirement_5>
+  </output_requirements>
+
+  <additional_context>
+    <video_properties>
+      - Resolution: 1280x720
+      - FPS: 25
+      - Character video: Has transparent/overlay areas with character
+      - Original video: Full color background video
+      - Eraser PNG: 768x1344 (scaled to 538x941)
+    </video_properties>
+    
+    <debugging_hints>
+      - The grayscale issue happens immediately when eraser animation starts
+      - Some foreground pixels near edges/corners never get erased
+      - The effect should look like physical erasing, not just circular reveals
+      - Performance degrades significantly with >20 sample points due to nested max()
+    </debugging_hints>
+  </additional_context>
+</prompt>

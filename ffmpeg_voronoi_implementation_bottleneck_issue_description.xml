@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <task_instruction>
+    We need to implement a video effect where an animated eraser moves along a path and progressively erases a foreground video overlay, revealing the background underneath. The critical requirement is that EVERY pixel in the foreground must disappear at the EXACT moment when the eraser passes CLOSEST to that pixel (true nearest-neighbor/Voronoi assignment). Current implementations using FFmpeg's geq filter are timing out, and we need a practical solution that works within FFmpeg's constraints or provides a viable alternative approach.
+  </task_instruction>
+
+  <problem_context>
+    <summary>
+      We have successfully solved the color preservation and path animation aspects of an eraser wipe effect in FFmpeg. However, the core requirement of assigning each pixel to its nearest path point (Voronoi partitioning) causes FFmpeg to timeout even with just 20-30 sample points along the eraser's path. The mathematically correct solution is computationally infeasible within FFmpeg's expression evaluator.
+    </summary>
+    
+    <visual_effect_description>
+      An eraser PNG image moves along a curved path (S-curve, ellipse, etc.) across the video frame. As it moves, it should progressively erase the character/foreground video, revealing the original background video underneath. The effect should look like someone is manually erasing the foreground with a physical eraser.
+    </visual_effect_description>
+    
+    <critical_requirements>
+      1. 100% coverage: Every single pixel in the foreground must be erased (no leftover pixels)
+      2. Nearest-neighbor timing: Each pixel disappears when the eraser is CLOSEST to it (not just within a radius)
+      3. Single FFmpeg command: Should work within a filter_complex chain (strongly preferred)
+      4. Reasonable performance: Must complete in under 30 seconds for a 2-second 1280x720 video
+      5. Color preservation: Full color must be maintained (already solved with alphamerge approach)
+    </critical_requirements>
+    
+    <current_status>
+      - Path animation: SOLVED (piecewise linear interpolation)
+      - Color preservation: SOLVED (alphamerge + overlay instead of maskedmerge)
+      - Eraser visual motion: SOLVED (follows same parametric path)
+      - Pixel assignment timing: UNSOLVED (FFmpeg times out with Voronoi computation)
+    </current_status>
+  </problem_context>
+
+  <technical_architecture>
+    <pipeline_overview>
+      Input streams:
+      1. character_video.mp4 - Foreground video with character to be erased
+      2. original_video.mp4 - Background video to be revealed
+      3. eraser.png - Visual eraser graphic (768x1344 pixels)
+      
+      Processing steps:
+      1. Generate path points along desired motion curve (30-40 samples)
+      2. For each pixel, determine which path point it's nearest to
+      3. Assign erasure time based on when that nearest point is visited
+      4. Create time-varying mask based on current time vs pixel erasure time
+      5. Apply mask to blend character and original videos
+      6. Overlay eraser PNG following the same path
+      
+      Output:
+      - final_video.mp4 with progressive eraser wipe effect
+    </pipeline_overview>
+    
+    <ffmpeg_limitations>
+      <limitation_1>
+        The geq filter evaluates expressions for EVERY pixel on EVERY frame independently.
+        No caching or sharing of computations between pixels or frames.
+      </limitation_1>
+      
+      <limitation_2>
+        Expression evaluation is single-threaded and interpreted, not compiled.
+        Complex nested expressions cause exponential slowdown.
+      </limitation_2>
+      
+      <limitation_3>
+        Limited to 10 registers (st(0-9)/ld(0-9)) for temporary storage within expressions.
+        Cannot store arrays or complex data structures.
+      </limitation_3>
+      
+      <limitation_4>
+        No loop constructs available - everything must be unrolled.
+        O(N) operations become massive expression strings.
+      </limitation_4>
+      
+      <limitation_5>
+        Parser struggles with deeply nested expressions (max(), if() chains).
+        Expression length limitations (practical limit ~20KB).
+      </limitation_5>
+      
+      <limitation_6>
+        No GPU acceleration for geq expressions (CPU only).
+        No SIMD optimizations for expression evaluation.
+      </limitation_6>
+    </ffmpeg_limitations>
+    
+    <performance_measurements>
+      Test environment: macOS with Apple Silicon, FFmpeg 7.0, 1280x720 @ 25fps
+      
+      Accumulating circles approach (original):
+      - 5 points: Works, 60% coverage, ~5 seconds
+      - 10 points: Works, 70% coverage, ~12 seconds
+      - 20 points: Timeout after 60 seconds
+      - 30 points: Timeout after 60 seconds
+      - 40 points: Timeout after 120 seconds
+      
+      Voronoi with st()/ld() registers:
+      - 5 points: Timeout after 60 seconds
+      - 10 points: Timeout after 60 seconds
+      - Expression size: ~12KB for 20 points
+      
+      Low-resolution Voronoi (160x90, upscaled):
+      - 30 points: Still timing out after 30 seconds
+      - Even at 1/64th resolution, too slow
+    </performance_measurements>
+  </technical_architecture>
+
+  <current_implementations>
+    <working_but_incomplete_solution>
+      <description>
+        Accumulating circles approach - creates circular masks at each path point.
+        Works but leaves gaps between circles, achieving only ~60-70% coverage.
+      </description>
+      <code>
+<![CDATA[
+def _build_accumulating_circles_mask(points: List[Tuple[float, float, float]], 
+                                     erase_radius: int) -> str:
+    """
+    Creates accumulating circles along path. Works but leaves coverage gaps.
+    Each circle appears when T >= point's time.
+    """
+    terms = []
+    r2 = erase_radius * erase_radius
+    for t, x, y in points:
+        xi, yi = int(round(x)), int(round(y))
+        # Create circle: 255 (white) if current time >= point time AND pixel within radius
+        term = (
+            f"(255*gte(T,{_fmt(t)})*lte((X-{xi})*(X-{xi})+(Y-{yi})*(Y-{yi}),{r2}))"
+        )
+        terms.append(term)
+    
+    # Nest max() operations to accumulate all circles
+    # PERFORMANCE BOTTLENECK: Each additional max() level adds complexity
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = f"max({expr},{term})"  # O(N) nested operations
+    return expr
+
+# Usage in FFmpeg filter_complex:
+def create_eraser_wipe(character_video, original_video, eraser_image, output_video,
+                       wipe_start=0.1, wipe_duration=0.9, sample_points=40,
+                       erase_radius=140, path_pattern="s_curve"):
+    # ... path generation ...
+    mask_expr = _build_accumulating_circles_mask(points, erase_radius)
+    mask_expr_quoted = mask_expr.replace("'", r"\'")
+    
+    filter_parts = [
+        # Create mask using geq
+        f"color=c=black:s={width}x{height}:r={fps}[m_src];",
+        f"[m_src]format=gray,geq=lum='{mask_expr_quoted}'[mask]",
+        
+        # Color-preserving composite (this part works well)
+        f"[mask]lut=y=negval[inv_mask];",
+        f"[0:v]scale={width}:{height}:flags=bicubic,format=gbrp[char_rgb];",
+        f"[1:v]scale={width}:{height}:flags=bicubic,format=rgba[bg_rgba];",
+        f"[char_rgb][inv_mask]alphamerge,format=rgba[char_rgba];",
+        f"[bg_rgba][char_rgba]overlay=shortest=0:eof_action=pass:format=auto[reveal]"
+    ]
+    
+    # Result: Works for small N, but:
+    # - Fixed radius means corners/edges don't get erased
+    # - 20+ points cause timeout due to nested max() operations
+]]>
+      </code>
+      <issues>
+        - Coverage gaps between circles (only ~60-70% of frame covered)
+        - Performance degrades exponentially with number of points
+        - Fixed radius doesn't adapt to point density
+      </issues>
+    </working_but_incomplete_solution>
+    
+    <theoretically_correct_but_infeasible_voronoi>
+      <description>
+        True Voronoi partitioning using FFmpeg's st()/ld() registers.
+        Mathematically correct but computationally infeasible.
+      </description>
+      <code>
+<![CDATA[
+def _build_voronoi_time_map_expr(points: List[Tuple[float, float, float]],
+                                 wipe_start: float, wipe_duration: float) -> str:
+    """
+    Assigns each pixel to its nearest path sample using registers.
+    Theoretically correct but causes FFmpeg to timeout even with 5 points.
+    """
+    if not points:
+        return "0"
+    
+    t0, x0, y0 = points[0]
+    x0, y0 = int(round(x0)), int(round(y0))
+    
+    # Initialize: distance to first sample in register 0, time in register 1
+    d0 = f"((X-{x0})*(X-{x0})+(Y-{y0})*(Y-{y0}))"
+    init = f"st(0,{d0}) + st(1,{_fmt(t0)})"
+    
+    # For each subsequent point, update if closer
+    updates = []
+    for ti, xi, yi in points[1:]:
+        xi, yi = int(round(xi)), int(round(yi))
+        di = f"((X-{xi})*(X-{xi})+(Y-{yi})*(Y-{yi}))"
+        
+        # Update time if this point is closer than current minimum
+        updates.append(f"st(1, if(lt({di}, ld(0)), {_fmt(ti)}, ld(1)))")
+        # Update minimum distance
+        updates.append(f"st(0, if(lt({di}, ld(0)), {di}, ld(0)))")
+    
+    # Final time value normalized to 0-255
+    t_final = "ld(1)"
+    norm = f"(255 * clip(({t_final} - {_fmt(wipe_start)})/{_fmt(wipe_duration)}, 0, 1))"
+    
+    # Force evaluation order
+    body = " + ".join([init] + updates)
+    expr = f"(0*({body})) + {norm}"
+    return expr
+
+# Attempted usage with pre-computation:
+filter_parts = [
+    # Compute time map ONCE, then loop it
+    f"color=c=black:s={width}x{height}:r=1[tbg];",
+    f"[tbg]format=gray,geq=lum='{tmap_expr_quoted}',trim=end_frame=1[tmap1];",
+    f"[tmap1]loop=loop=1000000:size=1:start=0,setpts=N/{fps}/TB[tmap]",
+    
+    # Per-frame: just threshold against current time
+    f"[tmap]geq=lum='255*gte(T, {wipe_start} + {wipe_duration}*p(X,Y)/255)'[mask]"
+]
+
+# Result: Even computing ONE frame of the time map times out with 20+ points
+# Expression becomes gigantic (12KB+) and FFmpeg can't handle it
+]]>
+      </code>
+      <expression_complexity_analysis>
+        For N points and WxH resolution:
+        - Operations per pixel: 2N register operations + N distance calculations + N comparisons
+        - Total operations per frame: W * H * (3N + N²/2) 
+        - For 1280x720 with 30 points: ~83 million operations
+        - Expression string length: ~600 characters per point = 18KB for 30 points
+      </expression_complexity_analysis>
+    </theoretically_correct_but_infeasible_voronoi>
+    
+    <opencl_solution_without_support>
+      <description>
+        Elegant solution using GPU acceleration via program_opencl filter.
+        Would solve the problem perfectly but requires OpenCL support in FFmpeg build.
+      </description>
+      <code>
+<![CDATA[
+# OpenCL kernel (would run on GPU, O(N) per pixel but massively parallel)
+__kernel void tmap(__write_only image2d_t dst,
+                   unsigned int index,
+                   __read_only image2d_t pts) {
+    const sampler_t s = (CLK_NORMALIZED_COORDS_FALSE |
+                         CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST);
+    int2 loc = (int2)(get_global_id(0), get_global_id(1));
+    int2 dsz = get_image_dim(dst);
+    int W = dsz.x, H = dsz.y;
+    int K = get_image_dim(pts).x;  // Number of path points
+    
+    float px = (float)loc.x + 0.5f;
+    float py = (float)loc.y + 0.5f;
+    float best_d2 = FLT_MAX;
+    float best_t = 0.0f;
+    
+    // Find nearest path point
+    for (int i = 0; i < K; ++i) {
+        float4 p = read_imagef(pts, s, (int2)(i,0));
+        float cx = p.x * (float)W;  // Denormalize x
+        float cy = p.y * (float)H;  // Denormalize y
+        float tn = p.z;              // Normalized time
+        
+        float dx = px - cx;
+        float dy = py - cy;
+        float d2 = dx*dx + dy*dy;
+        
+        if (d2 < best_d2) {
+            best_d2 = d2;
+            best_t = tn;
+        }
+    }
+    
+    // Output time as grayscale value
+    float4 outv = (float4)(best_t, best_t, best_t, 1.0f);
+    write_imagef(dst, loc, outv);
+}
+
+# FFmpeg filter chain using OpenCL:
+filter_parts = [
+    # Build 1xK points texture
+    f"color=c=black:s={sample_points}x1:r=1[pts_src]",
+    f"[pts_src]format=rgba,geq=r='{x_expr}':g='{y_expr}':b='{t_expr}',trim=end_frame=1[pts]",
+    
+    # Compute time map on GPU once
+    f"[pts]format=rgba,hwupload[pts_cl]",
+    f"[pts_cl]program_opencl=source='kernel.cl':kernel='tmap':size={width}x{height}[tmap_cl]",
+    f"[tmap_cl]hwdownload,format=gray,trim=end_frame=1[tmap1]",
+    f"[tmap1]loop=loop=1000000:size=1:start=0[tmap]",
+    
+    # Simple per-frame threshold
+    f"[tmap]geq=lum='255*gte(T,{wipe_start}+{wipe_duration}*p(X,Y)/255)'[mask]"
+]
+
+# Would be perfect but FFmpeg build doesn't have OpenCL support
+]]>
+      </code>
+      <why_it_would_work>
+        - GPU parallelism: Compute all pixels simultaneously
+        - One-time computation: Calculate time map once, reuse for all frames
+        - Hardware optimized: GPUs excel at this type of parallel computation
+        - Clean implementation: Simple, readable, maintainable
+      </why_it_would_work>
+    </opencl_solution_without_support>
+    
+    <lowres_upscale_attempt>
+      <description>
+        Compute Voronoi at low resolution (e.g., 160x90), then upscale.
+        Still too slow even at 1/64th resolution.
+      </description>
+      <code>
+<![CDATA[
+def create_eraser_wipe_lowres(character_video, original_video, eraser_image, 
+                              output_video, lowres_scale=0.125):
+    # Compute at 1/8 resolution (160x90 for 1280x720)
+    lowres_w = int(width * lowres_scale)  # 160
+    lowres_h = int(height * lowres_scale)  # 90
+    
+    # Scale path points to low-res coordinates
+    scale_x = lowres_w / width
+    scale_y = lowres_h / height
+    
+    # Build Voronoi expression for low-res
+    voronoi_expr = _build_lowres_voronoi_expr(points, width, height, 
+                                              lowres_w, lowres_h, 
+                                              wipe_start, wipe_duration)
+    
+    filter_parts = [
+        # Compute at low resolution
+        f"color=c=black:s={lowres_w}x{lowres_h}:r=1[lr_src];",
+        f"[lr_src]format=gray,geq=lum='{voronoi_expr_quoted}',trim=end_frame=1[lr_tmap];",
+        
+        # Upscale to full resolution
+        f"[lr_tmap]scale={width}:{height}:flags=bicubic[hr_tmap];",
+        f"[hr_tmap]loop=loop=1000000:size=1:start=0,setpts=N/{fps}/TB[tmap]",
+        
+        # Apply mask
+        f"[tmap]geq=lum='255*gte(T,{wipe_start}+{wipe_duration}*p(X,Y)/255)'[mask]"
+    ]
+    
+    # Result: Even 160x90 = 14,400 pixels with 30 points times out
+    # That's still 432,000 operations for the single time map frame
+]]>
+      </code>
+    </lowres_upscale_attempt>
+  </current_implementations>
+
+  <alternative_approaches_to_explore>
+    <approach_1>
+      <title>Pre-render mask sequence with Python/NumPy</title>
+      <description>
+        Generate the complete mask sequence outside FFmpeg using efficient NumPy operations,
+        save as image sequence or video, then apply in FFmpeg.
+      </description>
+      <pros>
+        - Can use scipy.spatial.Voronoi for correct implementation
+        - NumPy/SciPy are highly optimized with BLAS/LAPACK
+        - Can use multiprocessing for parallel computation
+        - Full control over algorithm and optimizations
+      </pros>
+      <cons>
+        - Requires temporary files (breaks single-command requirement)
+        - More complex pipeline with multiple steps
+        - Increases storage requirements
+      </cons>
+      <sample_code>
+<![CDATA[
+import numpy as np
+from scipy.spatial import Voronoi, voronoi_plot_2d
+import cv2
+
+def generate_voronoi_masks(width, height, points, output_dir):
+    """Generate frame-by-frame masks using true Voronoi partitioning."""
+    # Create mesh grid
+    xx, yy = np.meshgrid(np.arange(width), np.arange(height))
+    pixels = np.column_stack([xx.ravel(), yy.ravel()])
+    
+    # Extract path positions
+    path_positions = np.array([(x, y) for t, x, y in points])
+    
+    # Compute Voronoi diagram
+    vor = Voronoi(path_positions)
+    
+    # For each pixel, find nearest path point
+    from scipy.spatial import KDTree
+    tree = KDTree(path_positions)
+    distances, indices = tree.query(pixels)
+    
+    # Assign erasure times
+    erasure_times = np.array([points[idx][0] for idx in indices])
+    time_map = erasure_times.reshape(height, width)
+    
+    # Generate masks for each frame
+    for frame in range(total_frames):
+        t = frame / fps
+        mask = (time_map <= t).astype(np.uint8) * 255
+        cv2.imwrite(f"{output_dir}/mask_{frame:05d}.png", mask)
+    
+    # Apply in FFmpeg:
+    # ffmpeg -i char.mp4 -i bg.mp4 -i mask_%05d.png -filter_complex ...
+]]>
+      </sample_code>
+    </approach_1>
+    
+    <approach_2>
+      <title>Use FFmpeg's xfade filter with custom expression</title>
+      <description>
+        The xfade filter might have optimized implementations for spatial transitions.
+        Could potentially hijack it for custom erasure pattern.
+      </description>
+      <investigation_needed>
+        - Can xfade be customized enough for path-based erasure?
+        - Does it have better performance than geq?
+        - Can we provide custom transition maps?
+      </investigation_needed>
+    </approach_2>
+    
+    <approach_3>
+      <title>Segment-based approximation</title>
+      <description>
+        Divide frame into grid cells (e.g., 32x32), assign each cell to nearest path point.
+        Less accurate but dramatically reduces computation.
+      </description>
+      <pros>
+        - Reduces pixels from 921,600 to ~900 cells
+        - Still achieves 100% coverage
+        - Can work within FFmpeg's limits
+      </pros>
+      <cons>
+        - Visible grid artifacts
+        - Less smooth/professional appearance
+        - Cell boundaries are obvious
+      </cons>
+    </approach_3>
+    
+    <approach_4>
+      <title>Progressive radial expansion</title>
+      <description>
+        Instead of fixed radius, gradually expand radius over time from each point.
+        Not true nearest-neighbor but might achieve full coverage.
+      </description>
+      <sample_expression>
+<![CDATA[
+# Radius grows over time to ensure coverage
+radius_at_time = base_radius + (T - point_time) * expansion_rate
+mask = 255 * gte(T, point_time) * lte(distance, radius_at_time)
+]]>
+      </sample_expression>
+    </approach_4>
+    
+    <approach_5>
+      <title>Hybrid: Critical points with FFmpeg, details with external processing</title>
+      <description>
+        Use FFmpeg for main erasure with large circles, pre-process just the "gap" pixels
+        that don't get covered, blend the two masks.
+      </description>
+    </approach_5>
+    
+    <approach_6>
+      <title>Use blend filter with distance fields</title>
+      <description>
+        Instead of binary mask, create smooth distance field gradients and use blend filter
+        which might be more optimized than geq.
+      </description>
+    </approach_6>
+    
+    <approach_7>
+      <title>Implement as FFmpeg native filter in C</title>
+      <description>
+        Write a custom FFmpeg filter in C that implements Voronoi efficiently.
+        Compile into FFmpeg for native performance.
+      </description>
+      <pros>
+        - Native C performance
+        - Can use efficient algorithms and data structures
+        - Becomes reusable FFmpeg filter
+      </pros>
+      <cons>
+        - Requires FFmpeg recompilation
+        - Significant development effort
+        - Not portable without custom FFmpeg build
+      </cons>
+    </approach_7>
+  </alternative_approaches_to_explore>
+
+  <ffmpeg_specific_questions>
+    <question_1>
+      Is there any way to cache or memoize computations within FFmpeg expressions?
+      Can we somehow compute the time map incrementally across frames?
+    </question_1>
+    
+    <question_2>
+      Are there undocumented FFmpeg filters or options that could help?
+      Perhaps filters designed for similar spatial/temporal operations?
+    </question_2>
+    
+    <question_3>
+      Can we leverage FFmpeg's timeline editing features to pre-compute segments?
+      Maybe using segment filter with pre-calculated masks?
+    </question_3>
+    
+    <question_4>
+      Is there a way to use FFmpeg's drawtext or drawbox filters creatively?
+      They might have optimized implementations we could repurpose.
+    </question_4>
+    
+    <question_5>
+      Can multiple geq filters in parallel (each computing part of the points)
+      be combined more efficiently than nested max() operations?
+    </question_5>
+    
+    <question_6>
+      Would converting to a different colorspace help?
+      Perhaps some operations are faster in YUV vs RGB?
+    </question_6>
+    
+    <question_7>
+      Can we use FFmpeg's thumbnail filter to reduce computation?
+      It's designed to efficiently process subset of frames.
+    </question_7>
+  </ffmpeg_specific_questions>
+
+  <environment_details>
+    <system>
+      Platform: macOS (Darwin 23.6.0)
+      Architecture: Apple Silicon (ARM64)
+      FFmpeg version: 7.0+ (modern build)
+      Available HW acceleration: VideoToolbox (no OpenCL, no CUDA)
+    </system>
+    
+    <test_videos>
+      Character: 1280x720, 24fps, 3.08 seconds, H.264
+      Background: 1280x720, 25fps, 6.00 seconds, H.264
+      Eraser PNG: 768x1344, RGBA with transparency
+    </test_videos>
+    
+    <typical_parameters>
+      wipe_start: 0.10 seconds
+      wipe_duration: 0.90 seconds
+      sample_points: 30-40 (ideal for smooth motion)
+      path_patterns: s_curve, ellipse, figure8, vertical_sweep
+    </typical_parameters>
+  </environment_details>
+
+  <mathematical_background>
+    <voronoi_definition>
+      For a set of points P = {p1, p2, ..., pn} in a plane, the Voronoi cell V(pi) 
+      of point pi is the set of all points closer to pi than to any other point:
+      V(pi) = {x ∈ R² : ||x - pi|| ≤ ||x - pj|| for all j ≠ i}
+    </voronoi_definition>
+    
+    <applied_to_erasure>
+      Each path sample point (ti, xi, yi) represents eraser position at time ti.
+      Each pixel (x, y) belongs to exactly one Voronoi cell.
+      Pixel erases at time ti where i = argmin_j(||pixel - pj||).
+    </applied_to_erasure>
+    
+    <computational_complexity>
+      Naive: O(n) per pixel to find nearest among n points
+      Optimized: O(log n) per pixel using KD-tree or similar
+      FFmpeg's limitation: Must use naive approach, no data structures
+    </computational_complexity>
+  </mathematical_background>
+
+  <code_that_demonstrates_the_timeout>
+<![CDATA[
+#!/usr/bin/env python3
+"""
+Run this to see FFmpeg timeout with just 20 points.
+Even though the math is correct, FFmpeg can't handle the expression complexity.
+"""
+
+import subprocess
+import math
+
+def generate_simple_test():
+    width, height = 1280, 720
+    points = []
+    
+    # Generate 20 points along S-curve
+    for i in range(20):
+        progress = i / 19
+        t = 0.1 + progress * 0.9
+        y = height * 0.1 + height * 0.8 * progress
+        x = width/2 + 200 * math.sin(2 * math.pi * progress)
+        points.append((t, x, y))
+    
+    # Build nested max expression (this is what kills FFmpeg)
+    terms = []
+    for t, x, y in points:
+        xi, yi = int(x), int(y)
+        term = f"(255*gte(T,{t:.3f})*lte((X-{xi})*(X-{xi})+(Y-{yi})*(Y-{yi}),40000))"
+        terms.append(term)
+    
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = f"max({expr},{term})"
+    
+    # This command will timeout
+    cmd = [
+        "ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:d=1:r=25",
+        "-filter_complex", f"[0:v]format=gray,geq=lum='{expr}'[out]",
+        "-map", "[out]", "-frames:v", "1", "test_mask.png"
+    ]
+    
+    print(f"Expression length: {len(expr)} characters")
+    print(f"Nested depth: {len(points)-1} levels")
+    print("Running FFmpeg (this will timeout after 60 seconds)...")
+    
+    try:
+        subprocess.run(cmd, timeout=60, check=True)
+        print("Success!")
+    except subprocess.TimeoutExpired:
+        print("TIMEOUT: FFmpeg couldn't handle the expression complexity")
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    generate_simple_test()
+]]>
+  </code_that_demonstrates_the_timeout>
+
+  <ideal_solution_requirements>
+    <requirement_1>
+      Must achieve 100% pixel coverage (no leftover foreground pixels)
+    </requirement_1>
+    
+    <requirement_2>
+      Each pixel should disappear at the "correct" time (when eraser is nearest)
+    </requirement_2>
+    
+    <requirement_3>
+      Should complete in under 30 seconds for a 2-second HD video
+    </requirement_3>
+    
+    <requirement_4>
+      Preferably works as single FFmpeg command (or minimal additional steps)
+    </requirement_4>
+    
+    <requirement_5>
+      Maintains professional visual quality (smooth, no obvious artifacts)
+    </requirement_5>
+    
+    <requirement_6>
+      Works on standard FFmpeg build without special compilation
+    </requirement_6>
+  </ideal_solution_requirements>
+
+  <specific_help_needed>
+    We need either:
+    1. A clever FFmpeg expression/filter optimization that makes Voronoi feasible
+    2. An alternative approach that achieves the same visual result
+    3. A hybrid solution that minimizes external processing
+    4. A completely different algorithm that approximates nearest-neighbor assignment
+    
+    The solution should be practical, implementable, and actually work within the
+    constraints of FFmpeg on macOS without OpenCL support.
+  </specific_help_needed>
+
+  <summary_of_core_issue>
+    We have a mathematically correct solution (Voronoi partitioning) that assigns each
+    pixel to its nearest path point for erasure timing. However, FFmpeg's expression
+    evaluator cannot handle the computational complexity - even with optimizations like
+    register-based state management or low-resolution computation. We need a practical
+    alternative that achieves the same visual effect (100% coverage, nearest-neighbor
+    timing) within FFmpeg's computational constraints.
+  </summary_of_core_issue>
+</prompt>

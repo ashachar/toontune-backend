@@ -318,13 +318,28 @@ class PhaseAwareStacker:
         for logical_start, group_key, phrase, phrase_key, opt, logical_end in to_lock:
             line_h = self._line_height_px(phrase, opt)
 
-            if side == "top":
-                base_y = self.top_base_y
-                y = self._find_slot_top(base_y, line_h, occupied)
+            # Check if phrase has semantic position
+            if 'semantic_position' in phrase:
+                # Use semantic Y position
+                y = phrase['semantic_position']['y']
+                # Still check for collisions and adjust if needed
+                if side == "top":
+                    # For top positions, bump down if collision
+                    while any(self._intervals_overlap(y, y + line_h, oy0, oy1) for oy0, oy1 in occupied):
+                        y += line_h  # Bump down by one line height
+                else:
+                    # For bottom positions, bump up if collision
+                    while any(self._intervals_overlap(y, y + line_h, oy0, oy1) for oy0, oy1 in occupied):
+                        y -= line_h  # Bump up by one line height
             else:
-                # bottom stack baseline is relative to the bottom of the frame
-                bottom_baseline = frame_h - self.bottom_base_y_offset
-                y = self._find_slot_bottom(bottom_baseline, line_h, occupied)
+                # Fallback to default positioning
+                if side == "top":
+                    base_y = self.top_base_y
+                    y = self._find_slot_top(base_y, line_h, occupied)
+                else:
+                    # bottom stack baseline is relative to the bottom of the frame
+                    bottom_baseline = frame_h - self.bottom_base_y_offset
+                    y = self._find_slot_bottom(bottom_baseline, line_h, occupied)
 
             draw_start, draw_end = self._draw_window(logical_start, logical_end)
             self.pos_cache[group_key] = CachedPos(
@@ -1180,6 +1195,129 @@ def find_optimal_y_position_for_behind_text(merged_text: str, font_size: int,
     return best_y
 
 
+def load_semantic_regions(video_path: str) -> Dict:
+    """
+    Load semantic regions for intelligent text positioning.
+    """
+    from pathlib import Path
+    import json
+    
+    video_path = Path(video_path)
+    regions_file = video_path.parent / f"{video_path.stem}_regions.json"
+    
+    # If regions don't exist, analyze the video
+    if not regions_file.exists():
+        print("   Analyzing video regions for semantic positioning...")
+        sys.path.insert(0, '.')
+        import extract_video_regions
+        regions_path = extract_video_regions.extract_video_regions(str(video_path))
+        if not regions_path:
+            return None
+        regions_file = Path(regions_path)
+    
+    # Load regions
+    with open(regions_file, 'r') as f:
+        regions = json.load(f)
+    
+    print(f"   ✅ Loaded {len(regions['safe_zones'])} safe zones for positioning")
+    return regions
+
+
+def assign_semantic_positions(phrases: List[Dict], regions: Dict) -> None:
+    """
+    Assign positions to phrases based on semantic regions and content.
+    """
+    if not regions or 'safe_zones' not in regions:
+        print("   No semantic regions available, using default positioning")
+        return
+    
+    safe_zones = regions['safe_zones']
+    
+    print("\n🎯 Assigning semantic positions based on content and regions...")
+    
+    # Track zone usage to avoid overcrowding
+    zone_usage = defaultdict(int)
+    
+    for i, phrase in enumerate(phrases):
+        text = phrase['text'].lower()
+        
+        # Determine phrase importance/type
+        importance = "normal"
+        if i == 0:  # First phrase
+            importance = "title"
+        elif any(word in text for word in ['ai', 'discover', 'important', 'new', 'create']):
+            importance = "important"
+        elif len(text) < 20:
+            importance = "short"
+        elif '?' in text:
+            importance = "question"
+        
+        # Find best zone for this phrase type
+        best_zone = None
+        best_score = -1
+        
+        for zone in safe_zones:
+            # Check if zone is suitable for this type
+            suitable = zone.get('suitable_for', [])
+            
+            score = zone['score']
+            
+            # Boost score if zone matches phrase type
+            if importance in suitable:
+                score += 0.3
+            elif importance == "important" and "emphasis" in suitable:
+                score += 0.2
+            
+            # Penalize overcrowded zones
+            usage = zone_usage[zone['name']]
+            if usage > 0:
+                score -= usage * 0.1
+            
+            # Prefer different positions for variety
+            if i > 0 and phrases[i-1].get('semantic_position'):
+                prev_zone = phrases[i-1]['semantic_position']['zone_name']
+                if zone['name'] == prev_zone:
+                    score -= 0.2  # Avoid same position as previous
+            
+            if score > best_score:
+                best_score = score
+                best_zone = zone
+        
+        # Set position
+        if best_zone:
+            phrase['semantic_position'] = {
+                'x': best_zone['x'],
+                'y': best_zone['y'],
+                'zone_name': best_zone['name'],
+                'score': best_score
+            }
+            
+            # Update zone usage
+            zone_usage[best_zone['name']] += 1
+            
+            # Map to traditional position for compatibility
+            if 'top' in best_zone['name']:
+                phrase['position'] = 'top'
+                # Adjust Y for top positions
+                phrase['semantic_position']['y'] = min(180, best_zone['y'])
+            elif 'bottom' in best_zone['name']:
+                phrase['position'] = 'bottom'
+                # Adjust Y for bottom positions
+                phrase['semantic_position']['y'] = max(540, best_zone['y'])
+            elif 'upper' in best_zone['name']:
+                phrase['position'] = 'top'
+                phrase['semantic_position']['y'] = best_zone['y']
+            elif 'lower' in best_zone['name']:
+                phrase['position'] = 'bottom'
+                phrase['semantic_position']['y'] = best_zone['y']
+            else:
+                phrase['position'] = 'middle'
+            
+            # Debug output for first few phrases
+            if i < 10:
+                print(f"   '{text[:30]}...' -> {best_zone['name']} (Y={phrase['semantic_position']['y']})")
+
+
 def extract_word_timings(enriched_phrases: List[Dict], original_transcript_path: str) -> None:
     """Extract word-level timings from original transcript and add to enriched phrases"""
     # Load original transcript
@@ -1221,7 +1359,8 @@ def apply_sam2_head_aware_sandwich(
     mask_video: str,
     transcript_path: str,
     output_path: str,
-    visibility_threshold: float = 0.9
+    visibility_threshold: float = 0.4,  # Lowered for better visibility
+    use_semantic_positioning: bool = True
 ):
     """
     Apply SAM2 head-aware sandwich compositing.
@@ -1263,6 +1402,15 @@ def apply_sam2_head_aware_sandwich(
         if os.path.exists(orig_path):
             print("Extracting word-level timings from original transcript...")
             extract_word_timings(transcript_data["phrases"], orig_path)
+    
+    # Apply semantic positioning if enabled
+    if use_semantic_positioning:
+        print("\n🌐 Using semantic positioning based on video regions...")
+        regions = load_semantic_regions(original_video)
+        if regions:
+            assign_semantic_positions(transcript_data["phrases"], regions)
+        else:
+            print("   ⚠️ Could not load regions, using default positioning")
     
     # Initialize components
     phrase_renderer = PhraseRenderer()
@@ -2251,7 +2399,8 @@ def main():
         mask_video,
         transcript_path,
         output_video,
-        visibility_threshold=0.4  # Lowered threshold - text goes behind only if <40% visible
+        visibility_threshold=0.4,  # Lowered threshold - text goes behind only if <40% visible
+        use_semantic_positioning=True  # Use intelligent positioning based on video regions
     )
     
     print(f"\n✅ SAM2 head-aware video created: {final_video}")

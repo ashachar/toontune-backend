@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Advanced video subtitle rendering system with stacking and collision detection</project_type>
+    <technology_stack>Python, OpenCV, PIL/Pillow, NumPy</technology_stack>
+    <file_location>/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/pipelines/ass_captions/sam2_head_aware_sandwich.py</file_location>
+    <problem_domain>
+      We have a video subtitle system that renders multiple phrases simultaneously with entrance/disappearance animations.
+      Phrases are stacked vertically to avoid overlapping, with separate stacks for top and bottom positioned text.
+      The system includes collision detection to prevent text from overlapping.
+      Each phrase has timing (start_time, end_time) and animations (entrance 0.4s, disappearance 0.5s).
+    </problem_domain>
+  </context>
+
+  <problem_statement>
+    <summary>
+      Text position jumps/changes after it has already started appearing, creating an unprofessional jarring effect.
+      This happens when disappearing text is still considered in collision detection, causing new text to be placed 
+      in a different position initially, then jumping to its final position once the disappearing text is gone.
+    </summary>
+    <issue_1>
+      <title>Disappearing text blocks new text placement</title>
+      <description>
+        When calculating positions for new text, the system considers disappearing text's bounding box as occupied space.
+        This forces new text to stack further down/up, even though the disappearing text will be gone soon.
+      </description>
+      <example>
+        "Yes," is disappearing (fade out animation in progress)
+        "Would you be" starts appearing
+        "Would you be" is placed ABOVE "Yes," to avoid collision
+        Once "Yes," fully disappears, "Would you be" jumps DOWN to the base position
+      </example>
+    </issue_1>
+    <issue_2>
+      <title>Text position changes mid-animation</title>
+      <description>
+        Text that has already started its entrance animation suddenly changes position.
+        This violates the principle that once text starts appearing, its position must remain fixed.
+      </description>
+      <observed_behavior>
+        Frame 73: "Would you be" appears at y=120 (above disappearing "Yes,")
+        Frame 74-85: "Would you be" stays at y=120
+        Frame 86: "Yes," fully gone, "Would you be" jumps to y=180
+      </observed_behavior>
+    </issue_2>
+  </problem_statement>
+
+  <current_implementation>
+    <vertical_stacking_logic>
+# First pass: collect visible phrases and organize by position
+entrance_duration = 0.4  # Must match render_phrase duration
+disappear_duration = 0.5  # Must match render_phrase duration
+for phrase in transcript_data.get("phrases", []):
+    phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+    logical_start = phrase["start_time"]
+    logical_end = scene_end_times.get(phrase_key, phrase["end_time"])
+    
+    # Extended visibility window for animations
+    draw_start = logical_start - entrance_duration
+    draw_end = logical_end + disappear_duration
+    
+    # Check if phrase is visible at current time (match render_phrase gate)
+    if draw_start <= current_time <= draw_end:
+        if phrase.get("position") == "top":
+            top_phrases.append((phrase, phrase_key, logical_end))
+        else:
+            bottom_phrases.append((phrase, phrase_key, logical_end))
+
+# Stack top phrases (starting at y=180, going down)
+current_y = 180
+for i, (phrase, phrase_key, _) in enumerate(top_phrases):
+    optimization = phrase_optimizations.get(phrase_key, {})
+    merged_group = optimization.get("merged_group")
+    
+    if merged_group and merged_group not in processed_groups:
+        # This is the first phrase in a merged group
+        processed_groups.add(merged_group)
+        size_mult = optimization.get("size_multiplier", 1.0)
+        font_size = int(48 * size_mult)
+        top_y_positions.append(current_y)
+        current_y += int(font_size * 1.5)  # <-- STACKING: Each phrase pushes next one down
+    elif merged_group:
+        # This phrase is part of an already-processed merged group
+        top_y_positions.append(None)  # Skip it
+    else:
+        # Normal phrase (not merged)
+        size_mult = optimization.get("size_multiplier", 1.0)
+        if optimization.get("goes_behind", False) and size_mult > 1.0:
+            font_size = int(48 * size_mult)
+        else:
+            font_size = int(48 * phrase["visual_style"]["font_size_multiplier"])
+        
+        top_y_positions.append(current_y)
+        current_y += int(font_size * 1.5)  # <-- STACKING: Accumulates position
+    </vertical_stacking_logic>
+
+    <problem_in_stacking>
+    The issue is that ALL visible phrases (including disappearing ones) are included in the stacking calculation.
+    When a phrase is in its disappearance phase (logical_end < current_time < draw_end), it's still:
+    1. Added to top_phrases or bottom_phrases
+    2. Assigned a Y position
+    3. Causes subsequent phrases to stack further down/up
+    
+    This means new phrases appearing while old ones disappear get positioned as if the old ones were fully visible.
+    </problem_in_stacking>
+
+    <position_assignment_happens_per_frame>
+    # This calculation happens EVERY FRAME in the main loop
+    for frame_idx in range(total_frames):
+        # ... read frame ...
+        current_time = frame_idx / fps
+        
+        # Collect phrases and calculate positions (THE PROBLEMATIC PART)
+        top_phrases = []
+        bottom_phrases = []
+        # ... collect visible phrases ...
+        
+        # Calculate Y positions for stacking
+        top_y_positions = []
+        current_y = 180  # Reset every frame
+        for phrase in top_phrases:
+            # ... calculate stacking ...
+            top_y_positions.append(current_y)
+            current_y += font_size * 1.5
+        
+        # Render phrases with calculated positions
+        for i, (phrase, phrase_key, scene_end) in enumerate(top_phrases):
+            y_pos = top_y_positions[i]
+            phrase_img = phrase_renderer.render_phrase(
+                phrase, current_time, (height, width), scene_end, y_pos, ...
+            )
+    </position_assignment_happens_per_frame>
+
+    <key_observation>
+    Because positions are recalculated every frame, when a disappearing phrase finally exits
+    (current_time > draw_end), it's removed from the phrases list, and all subsequent phrases
+    shift up/down to fill the gap. This causes the position jump.
+    </key_observation>
+  </current_implementation>
+
+  <animation_phases>
+    <phase_detection>
+    For each phrase, the system determines its animation phase:
+    - ENTRANCE: current_time < logical_start (pre-roll, fading in)
+    - STEADY: logical_start <= current_time < logical_end (fully visible)
+    - DISAPPEAR: logical_end <= current_time < draw_end (fading out)
+    
+    The visibility window is [draw_start, draw_end] where:
+    - draw_start = logical_start - 0.4s
+    - draw_end = logical_end + 0.5s
+    </phase_detection>
+    
+    <current_collision_logic>
+    Currently, ANY phrase in the visibility window is considered for collision/stacking,
+    regardless of whether it's appearing, steady, or disappearing.
+    </current_collision_logic>
+  </animation_phases>
+
+  <desired_behavior>
+    <requirement_1>
+      Disappearing text should NOT affect the positioning of new text.
+      If a phrase is in DISAPPEAR phase (opacity < 100%), it should be ignored for collision detection.
+    </requirement_1>
+    
+    <requirement_2>
+      Once a phrase starts appearing (enters ENTRANCE phase), its position must be locked.
+      The position should be calculated once and cached, not recalculated every frame.
+    </requirement_2>
+    
+    <ideal_example>
+      Frame 73: "Yes," is disappearing (opacity 80%)
+      Frame 73: "Would you be" starts appearing at y=180 (ignoring disappearing "Yes,")
+      Frame 74-150: "Would you be" stays at y=180 (position locked)
+      "Yes," continues disappearing without affecting other text positions
+    </ideal_example>
+  </desired_behavior>
+
+  <key_questions>
+    <question_1>
+      How can we exclude disappearing phrases from the collision/stacking calculation?
+      Should we check animation phase or opacity threshold?
+    </question_1>
+    
+    <question_2>
+      How do we cache/lock positions once assigned to prevent recalculation?
+      Should positions be stored in phrase_optimizations or a separate cache?
+    </question_2>
+    
+    <question_3>
+      What's the best way to determine if a phrase is "disappearing enough" to ignore?
+      Options: phase == "DISAPPEAR", opacity < 0.5, time_until_end < threshold?
+    </question_3>
+    
+    <question_4>
+      How do we handle edge cases where multiple phrases start/disappear simultaneously?
+      Should we process them in a specific order?
+    </question_4>
+    
+    <question_5>
+      Should the position cache be frame-based or phrase-based?
+      How do we ensure consistency across the entire video?
+    </question_5>
+  </key_questions>
+
+  <constraints>
+    <constraint_1>
+      Performance: The solution should not significantly slow down rendering
+    </constraint_1>
+    <constraint_2>
+      Smooth animations: Existing entrance/disappearance animations must continue working
+    </constraint_2>
+    <constraint_3>
+      No overlapping: Non-disappearing text should still avoid collisions properly
+    </constraint_3>
+    <constraint_4>
+      Memory efficient: Position caching shouldn't consume excessive memory
+    </constraint_4>
+  </constraints>
+
+  <request_for_assistance>
+    Please provide a solution that:
+    1. Excludes disappearing text from collision/stacking calculations
+    2. Locks text positions once they start appearing (no mid-animation jumps)
+    3. Maintains smooth entrance/disappearance animations
+    4. Handles edge cases gracefully
+    
+    The solution should modify the vertical stacking logic to be aware of animation phases
+    and implement position caching to prevent recalculation.
+    
+    Focus on:
+    - Identifying disappearing phrases that should be excluded from stacking
+    - Implementing a position cache that persists across frames
+    - Ensuring new text appears in its final position from the start
+  </request_for_assistance>
+
+  <additional_context>
+    <test_case>
+    Video: ai_math1.mp4
+    Scenario: "Yes," disappearing while "Would you be" appears
+    Current behavior: "Would you be" appears above "Yes," then jumps down
+    Expected: "Would you be" appears at base position immediately
+    </test_case>
+    
+    <related_code_sections>
+    - Lines 1164-1181: Phrase collection with visibility windows
+    - Lines 1187-1239: Vertical stacking calculation
+    - Lines 1254-1260: Phrase rendering with calculated positions
+    - Lines 134-231: render_phrase method with animation phases
+    </related_code_sections>
+    
+    <performance_note>
+    The main loop processes 25-30 fps video in real-time.
+    Any solution should maintain this performance level.
+    </performance_note>
+  </additional_context>
+</prompt>

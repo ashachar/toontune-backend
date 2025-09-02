@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <task_instruction>
+    We have successfully pre-computed a Voronoi time map for an eraser wipe video effect using OpenCV, but FFmpeg's geq filter is still too slow even when just performing simple threshold comparisons against this pre-computed map. We need a solution that can efficiently apply the pre-computed time map to create a progressive erasure effect in real-time or near-real-time performance. The core challenge is that even with all complex computation moved outside FFmpeg, the simple per-pixel evaluation in geq is still causing unacceptable performance.
+  </task_instruction>
+
+  <problem_context>
+    <summary>
+      We've implemented a hybrid solution where:
+      1. OpenCV pre-computes a perfect Voronoi time map (each pixel knows when to disappear)
+      2. FFmpeg loads this map and should simply threshold it against current time
+      However, even this simple threshold operation using geq is extremely slow (30+ seconds for 1 second of HD video).
+      The mathematical solution is correct, but FFmpeg's expression evaluator is the bottleneck.
+    </summary>
+    
+    <what_works>
+      - Voronoi computation using OpenCV's distanceTransformWithLabels (fast, accurate)
+      - Time map generation (16-bit grayscale PNG with erasure times)
+      - Color preservation using alphamerge approach
+      - Path synchronization between eraser visual and mask
+    </what_works>
+    
+    <what_fails>
+      - FFmpeg's geq filter evaluating even simple expressions for every pixel
+      - Processing time: ~30-40 seconds per second of 1280x720 video
+      - The expression is just: 255*clip((progress - p(X,Y)/65535.0)/ease + 0.5, 0, 1)
+      - Even accessing pre-computed values via p(X,Y) is slow at HD resolution
+    </what_fails>
+    
+    <performance_requirements>
+      - Must process 2-second HD video in under 30 seconds total
+      - Ideally real-time or 2-3x real-time for production use
+      - Must maintain 100% pixel coverage and correct timing
+      - Must work on macOS without GPU compute (no CUDA/OpenCL in FFmpeg)
+    </performance_requirements>
+  </problem_context>
+
+  <current_implementation>
+    <opencv_time_map_generation>
+<![CDATA[
+def generate_time_map_png(width: int, height: int, params: PathParams,
+                          wipe_start: float = 0.10, wipe_duration: float = 0.90,
+                          seed_step_px: float = 2.0, out_png_path: str = "tmap16.png") -> str:
+    """
+    Create a 16-bit grayscale PNG where each pixel stores normalized time [0,1]
+    when the eraser is closest to that pixel (true Voronoi partitioning).
+    This runs FAST (< 1 second for HD) using OpenCV's optimized C++ implementation.
+    """
+    # 1) Generate constant-speed path samples
+    P, S = _resample_constant_speed(width, height, params, samples=2048)
+    
+    # 2) Place seeds every ~2 pixels along path
+    seed_xy, seed_t = _make_seed_coords(P, S, step_px=seed_step_px)
+    
+    # 3) Create seed image: 0 at seeds, 255 elsewhere
+    img = np.full((height, width), 255, dtype=np.uint8)
+    seed_px = np.round(seed_xy).astype(np.int32)
+    seed_px[:, 0] = np.clip(seed_px[:, 0], 0, width - 1)
+    seed_px[:, 1] = np.clip(seed_px[:, 1], 0, height - 1)
+    for (x, y) in seed_px:
+        img[y, x] = 0
+    
+    # 4) Distance transform WITH labels - this is the key operation
+    # Assigns each pixel to nearest seed (Voronoi partitioning)
+    dist, labels = cv2.distanceTransformWithLabels(
+        img, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_3,
+        labelType=cv2.DIST_LABEL_PIXEL
+    )
+    
+    # 5) Map labels to erasure times
+    lut_size = int(labels.max()) + 1
+    lut = np.full(lut_size, -1.0, dtype=np.float32)
+    
+    # Build label->time mapping
+    for idx, (x, y) in enumerate(seed_px):
+        L = _label_for_seed(labels, int(y), int(x))
+        if L > 0:
+            lut[L] = seed_t[idx]
+    
+    # 6) Convert labels to time values
+    tmap = np.empty_like(dist, dtype=np.float32)
+    mask_pos = labels > 0
+    tmap[mask_pos] = lut[labels[mask_pos]]
+    
+    # Fill seed pixels directly
+    for idx, (x, y) in enumerate(seed_px):
+        tmap[y, x] = seed_t[idx]
+    
+    # 7) Save as 16-bit PNG (0-65535 range)
+    tmap16 = np.clip(np.round(tmap * 65535.0), 0, 65535).astype(np.uint16)
+    cv2.imwrite(out_png_path, tmap16)
+    
+    return out_png_path
+    
+# This generates perfect Voronoi time map in < 1 second for 1280x720
+]]>
+    </opencv_time_map_generation>
+    
+    <ffmpeg_filter_complex>
+<![CDATA[
+def create_eraser_wipe_hybrid(character_video, original_video, eraser_image, 
+                              output_video, wipe_start=0.10, wipe_duration=0.90):
+    # Pre-compute time map (FAST)
+    with tempfile.TemporaryDirectory() as tdir:
+        tmap_png = os.path.join(tdir, "tmap16.png")
+        generate_time_map_png(width=W, height=H, params=params,
+                            wipe_start=wipe_start, wipe_duration=wipe_duration,
+                            seed_step_px=2.0, out_png_path=tmap_png)
+        
+        # Build FFmpeg filter_complex
+        progress = f"clip((T-{wipe_start})/{wipe_duration},0,1)"
+        ease = 1.2 / fps  # ~1 frame of smoothing
+        
+        # THE PROBLEMATIC EXPRESSION - even this simple threshold is too slow!
+        mask_expr = f"255*clip(({progress} - p(X,Y)/65535.0)/{ease} + 0.5, 0, 1)"
+        
+        filter_parts = [
+            # Load and loop the pre-computed time map
+            f"[3:v]fps={fps},format=gray16le,loop=loop=1000000:size=1:start=0,"
+            f"setpts=N/{fps}/TB[tmap]",
+            
+            # BOTTLENECK: Apply threshold for current frame time
+            # This geq evaluates for EVERY PIXEL even though it's just comparing values!
+            f"[tmap]geq=lum='{mask_expr}',format=gray[mask]",
+            f"[mask]lut=y=negval[inv_mask]",
+            
+            # Color-preserving composite (this part is fine)
+            f"[0:v]fps={fps},scale={W}:{H}:flags=bicubic,format=gbrp[char_rgb]",
+            f"[1:v]fps={fps},scale={W}:{H}:flags=bicubic,format=rgba[bg_rgba]",
+            f"[char_rgb][inv_mask]alphamerge,format=rgba[char_rgba]",
+            f"[bg_rgba][char_rgba]overlay=shortest=0:eof_action=pass:format=auto[reveal]",
+            
+            # Eraser visual overlay (also fine)
+            f"[2:v]loop=loop=999999:size=1:start=0,format=rgba,scale={er_w}:{er_h}[eraser]",
+            f"[reveal][eraser]overlay=x='{ox}':y='{oy}':eval=frame:"
+            f"enable='between(t,{wipe_start},{wipe_start + wipe_duration})'[outv]"
+        ]
+        
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner",
+            "-i", character_video,
+            "-i", original_video,  
+            "-loop", "1", "-i", eraser_image,
+            "-loop", "1", "-i", tmap_png,  # Pre-computed time map
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "[outv]", "-map", "1:a?",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            output_video
+        ]
+        
+        # This command works but is extremely slow due to geq
+        subprocess.run(cmd, check=True)
+]]>
+    </ffmpeg_filter_complex>
+    
+    <performance_analysis>
+<![CDATA[
+For 1280x720 @ 25fps video:
+- OpenCV time map generation: < 1 second (excellent!)
+- FFmpeg processing with simple geq threshold:
+  * Per frame: 921,600 pixel evaluations of mask_expr
+  * Expression: ~50 characters, but interpreted for each pixel
+  * Observed speed: ~30-40 frames per second processed
+  * For 2-second (50 frames) video: ~30-40 seconds total
+  
+The bottleneck is entirely in FFmpeg's geq filter, even with pre-computed data!
+
+Profiling shows:
+- 95%+ time in geq expression evaluation
+- Even p(X,Y) pixel lookups are slow
+- No SIMD optimization for expression evaluation
+- Single-threaded pixel-by-pixel processing
+]]>
+    </performance_analysis>
+  </current_implementation>
+
+  <attempted_solutions>
+    <solution_1>
+      <description>Pure FFmpeg with Voronoi computation</description>
+      <result>Timeout - too complex for geq</result>
+      <why_failed>O(N) operations per pixel with nested max() chains</why_failed>
+    </solution_1>
+    
+    <solution_2>
+      <description>OpenCL acceleration via program_opencl</description>
+      <result>Not available on target system</result>
+      <why_failed>macOS FFmpeg build lacks OpenCL support</why_failed>
+    </solution_2>
+    
+    <solution_3>
+      <description>Low-resolution Voronoi with upscaling</description>
+      <result>Still too slow even at 160x90</result>
+      <why_failed>Even reduced resolution has too many pixels for complex expressions</why_failed>
+    </solution_3>
+    
+    <solution_4>
+      <description>Current: Pre-compute time map, simple threshold in FFmpeg</description>
+      <result>Works but still too slow (30-40 seconds for 2 seconds)</result>
+      <why_failed>geq is inherently slow even for simple expressions at HD resolution</why_failed>
+    </solution_4>
+  </attempted_solutions>
+
+  <alternative_approaches_to_explore>
+    <approach_1>
+      <title>Generate complete mask sequence outside FFmpeg</title>
+      <description>
+        Instead of just the time map, generate ALL mask frames using NumPy/OpenCV,
+        then load as image sequence or video in FFmpeg.
+      </description>
+      <pros>
+        - No geq evaluation needed at all
+        - Can use NumPy's vectorized operations (very fast)
+        - FFmpeg just does simple overlay/composite
+      </pros>
+      <cons>
+        - Requires temporary storage for mask sequence
+        - Breaks single-command paradigm
+        - More complex pipeline
+      </cons>
+      <sample_implementation>
+<![CDATA[
+# Generate all masks upfront
+def generate_all_masks(tmap, wipe_start, wipe_duration, fps, total_frames):
+    masks = []
+    for frame in range(total_frames):
+        t = frame / fps
+        progress = np.clip((t - wipe_start) / wipe_duration, 0, 1)
+        # Vectorized threshold - MUCH faster than geq
+        mask = (tmap <= progress).astype(np.uint8) * 255
+        masks.append(mask)
+    return masks
+
+# Save as video or image sequence
+# Then in FFmpeg just use as additional input without geq
+]]>
+      </sample_implementation>
+    </approach_1>
+    
+    <approach_2>
+      <title>Use FFmpeg's blend filter instead of geq</title>
+      <description>
+        The blend filter might have optimized SIMD implementations.
+        Could potentially use it with the time map for thresholding.
+      </description>
+      <investigation_needed>
+        - Can blend perform threshold operations?
+        - Is it faster than geq for simple comparisons?
+        - Can it work with 16-bit inputs?
+      </investigation_needed>
+    </approach_2>
+    
+    <approach_3>
+      <title>Use FFmpeg's lut3d or other LUT-based filters</title>
+      <description>
+        LUT filters are typically much faster than expression evaluation.
+        Could encode the time-based threshold as a 3D LUT.
+      </description>
+      <pros>
+        - LUT lookups are fast (simple array indexing)
+        - Might have SIMD optimizations
+      </pros>
+      <cons>
+        - Complex to set up for this use case
+        - May not support time-varying lookups
+      </cons>
+    </approach_3>
+    
+    <approach_4>
+      <title>Use maskedmerge with pre-computed mask video</title>
+      <description>
+        Generate the mask as a separate video file (not image sequence),
+        then use maskedmerge which might be more optimized than geq+overlay.
+      </description>
+      <sample>
+<![CDATA[
+# Generate mask video once
+ffmpeg -f lavfi -i color=black:s=1280x720:r=25:d=2 \
+       -i tmap16.png \
+       -filter_complex "[1:v]format=gray16le[tmap];
+                        [0:v][tmap]blend=all_expr='A*255*gte(T/2,B/65535)'" \
+       mask_video.mp4
+
+# Then use for compositing
+ffmpeg -i character.mp4 -i background.mp4 -i mask_video.mp4 \
+       -filter_complex "[0:v][1:v][2:v]maskedmerge" output.mp4
+]]>
+      </sample>
+    </approach_4>
+    
+    <approach_5>
+      <title>Split processing into tiles</title>
+      <description>
+        Process smaller tiles in parallel, then stitch together.
+        Might reduce memory pressure and allow parallelization.
+      </description>
+    </approach_5>
+    
+    <approach_6>
+      <title>Use threshold filter instead of geq</title>
+      <description>
+        FFmpeg has a threshold filter that might be optimized for comparisons.
+        Could potentially use it with some creative filter chaining.
+      </description>
+      <investigation>
+<![CDATA[
+# Instead of geq threshold, try:
+[tmap]format=gray16le,
+      threshold=threshold=progress*65535:value=255:passthrough=false[mask]
+# But threshold value needs to be dynamic per frame
+]]>
+      </investigation>
+    </approach_6>
+    
+    <approach_7>
+      <title>Use VideoToolbox hardware acceleration</title>
+      <description>
+        Since this is macOS with VideoToolbox available,
+        explore if any VT filters could help with masking.
+      </description>
+      <investigation_needed>
+        - What VideoToolbox filters are available?
+        - Can any perform threshold or masking operations?
+        - Is there a way to upload custom kernels?
+      </investigation_needed>
+    </approach_7>
+  </alternative_approaches_to_explore>
+
+  <ffmpeg_geq_limitations>
+    <limitation_1>
+      geq evaluates expressions as interpreted code, not compiled
+    </limitation_1>
+    
+    <limitation_2>
+      No SIMD vectorization for pixel operations
+    </limitation_2>
+    
+    <limitation_3>
+      Single-threaded evaluation per plane
+    </limitation_3>
+    
+    <limitation_4>
+      Even simple operations like p(X,Y) have overhead
+    </limitation_4>
+    
+    <limitation_5>
+      No way to cache or reuse computations across pixels
+    </limitation_5>
+    
+    <limitation_6>
+      Expression parser adds overhead for every pixel
+    </limitation_6>
+  </ffmpeg_geq_limitations>
+
+  <system_constraints>
+    <platform>macOS (Darwin 23.6.0)</platform>
+    <cpu>Apple Silicon (ARM64)</cpu>
+    <available_hw_accel>VideoToolbox only (no CUDA, no OpenCL in FFmpeg)</available_hw_accel>
+    <ffmpeg_version>7.0+</ffmpeg_version>
+    <python_available>Yes, with NumPy and OpenCV</python_available>
+  </system_constraints>
+
+  <performance_targets>
+    <current_performance>
+      - Time map generation: < 1 second (good)
+      - FFmpeg processing: 30-40 seconds for 2-second video (unacceptable)
+      - Total: ~35-45 seconds
+    </current_performance>
+    
+    <required_performance>
+      - Total time: < 30 seconds for 2-second HD video
+      - Ideally: 5-10 seconds total (2-5x real-time)
+    </required_performance>
+    
+    <bottleneck_breakdown>
+      - 98% of time in geq expression evaluation
+      - 2% in other filters (scaling, overlay, encoding)
+    </bottleneck_breakdown>
+  </performance_targets>
+
+  <core_question>
+    Given that we have successfully pre-computed the complex Voronoi time map,
+    how can we efficiently apply this map in FFmpeg without using the slow geq filter?
+    
+    The operation is conceptually simple:
+    - For each frame at time T
+    - For each pixel at (x,y)
+    - If time_map[x,y] <= T: make pixel transparent
+    - Else: keep pixel opaque
+    
+    But geq makes even this simple comparison prohibitively slow at HD resolution.
+    We need an alternative approach that can perform this thresholding efficiently.
+  </core_question>
+
+  <ideal_solution_criteria>
+    <criterion_1>
+      Must process HD video at reasonable speed (< 30 seconds for 2 seconds)
+    </criterion_1>
+    
+    <criterion_2>
+      Must correctly apply the pre-computed time map
+    </criterion_2>
+    
+    <criterion_3>
+      Should minimize additional file I/O if possible
+    </criterion_3>
+    
+    <criterion_4>
+      Must work on macOS without special FFmpeg builds
+    </criterion_4>
+    
+    <criterion_5>
+      Should maintain the quality and accuracy of the effect
+    </criterion_5>
+  </ideal_solution_criteria>
+
+  <request_for_assistance>
+    We have the correct algorithm and pre-computed data, but FFmpeg's geq filter
+    is too slow even for simple threshold operations. We need either:
+    
+    1. A faster way to apply per-pixel thresholds in FFmpeg without geq
+    2. An alternative filter chain that achieves the same result
+    3. A hybrid approach that minimizes FFmpeg's per-pixel processing
+    4. A completely different strategy that maintains performance
+    
+    The solution must work with standard FFmpeg on macOS and achieve reasonable
+    performance for production use. The time map computation is solved; we just
+    need an efficient way to apply it.
+  </request_for_assistance>
+</prompt>

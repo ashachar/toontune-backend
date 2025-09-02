@@ -1,0 +1,518 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <task_instruction>
+    Help optimize or redesign an FFmpeg-based video processing pipeline that needs to implement a "magic eraser" effect where each pixel in the foreground gets erased at the exact moment when an animated eraser passes closest to that pixel. The current implementation using FFmpeg's geq filter with nested max() operations times out even with just 20 sample points along the eraser's path.
+  </task_instruction>
+
+  <problem_context>
+    <summary>
+      We have an FFmpeg pipeline that overlays a character video on top of an original background video. An animated eraser PNG moves along a path (S-curve, ellipse, etc.) and should progressively erase the character overlay, revealing the background underneath. The critical requirement is that EVERY pixel in the foreground must be assigned to its nearest path point and disappear when the eraser reaches that point - achieving 100% coverage with no leftover pixels.
+    </summary>
+    
+    <current_issue>
+      The mathematically correct solution (Voronoi partitioning where each pixel is assigned to its nearest path sample) is too computationally expensive for FFmpeg's expression evaluator. Even simplified approaches with 20-30 nested max() operations cause FFmpeg to timeout after 60+ seconds without producing output.
+    </current_issue>
+    
+    <visual_requirements>
+      - Character video (foreground) must be completely erased by the end
+      - Each pixel should disappear when the eraser is CLOSEST to it (not just within radius)
+      - The eraser PNG image should visually follow the same path
+      - Full color must be preserved (no grayscale conversion)
+      - Smooth, professional-looking animation
+    </visual_requirements>
+  </problem_context>
+
+  <technical_architecture>
+    <pipeline_overview>
+      1. Input: character_video.mp4 (with transparency/overlay)
+      2. Input: original_video.mp4 (background to reveal)
+      3. Input: eraser.png (visual eraser graphic)
+      4. Process: Generate mask based on eraser path proximity
+      5. Process: Apply mask to blend character and original
+      6. Process: Overlay eraser PNG following the path
+      7. Output: final_video.mp4 with eraser wipe effect
+    </pipeline_overview>
+    
+    <ffmpeg_constraints>
+      - Must work within single filter_complex chain
+      - Expression evaluator has limited computational capacity
+      - geq filter evaluates expression for EVERY pixel on EVERY frame
+      - Nested operations (especially max() chains) are very expensive
+      - No ability to cache intermediate computations between frames
+    </ffmpeg_constraints>
+    
+    <performance_observations>
+      - 5 nested max() operations: Works but insufficient coverage
+      - 20 nested max() operations: Timeout after 60 seconds
+      - 30 nested max() operations: Timeout after 60 seconds
+      - 40+ nested max() operations: Timeout after 120+ seconds
+      - Voronoi with st()/ld() registers: Timeout even with 5 points
+    </performance_observations>
+  </technical_architecture>
+
+  <current_implementation>
+    <working_but_incomplete_solution>
+<![CDATA[
+# This works but only covers ~60% of the frame due to fixed radius limitation
+def _build_accumulating_circles_mask(points: List[Tuple[float, float, float]], 
+                                     erase_radius: int) -> str:
+    """
+    Creates accumulating circles along path. Works but leaves gaps.
+    """
+    terms = []
+    r2 = erase_radius * erase_radius
+    for t, x, y in points:
+        xi, yi = int(round(x)), int(round(y))
+        # Each circle: white if T >= t AND pixel within radius
+        term = (
+            f"(255*gte(T,{_fmt(t)})*lte((X-{xi})*(X-{xi})+(Y-{yi})*(Y-{yi}),{r2}))"
+        )
+        terms.append(term)
+    
+    # Nest max() to accumulate all circles
+    expr = terms[0]
+    for term in terms[1:]:
+        expr = f"max({expr},{term})"  # <-- PERFORMANCE BOTTLENECK
+    return expr
+
+# Usage in filter_complex:
+filter_parts.append(
+    f"color=c=black:s={width}x{height}:r={fps}[m_src];"
+    f"[m_src]format=gray,geq=lum='{mask_expr_quoted}'[mask]"
+)
+]]>
+    </working_but_incomplete_solution>
+    
+    <attempted_voronoi_solution>
+<![CDATA[
+# Theoretically correct but computationally infeasible in FFmpeg
+def _build_voronoi_time_map_expr(points: List[Tuple[float, float, float]],
+                                 wipe_start: float,
+                                 wipe_duration: float) -> str:
+    """
+    Assigns each pixel to nearest path sample using registers.
+    O(N) expression size but still too complex for FFmpeg.
+    """
+    t0, x0, y0 = points[0]
+    x0, y0 = int(round(x0)), int(round(y0))
+    
+    # Distance to first sample
+    d0 = f"( (X-{x0})*(X-{x0}) + (Y-{y0})*(Y-{y0}) )"
+    init = f"st(0,{d0}) + st(1,{t0})"  # Register 0: min_dist, Register 1: min_time
+    
+    # Update registers for each subsequent point
+    updates = []
+    for (ti, xi, yi) in points[1:]:
+        xi, yi = int(round(xi)), int(round(yi))
+        di = f"( (X-{xi})*(X-{xi}) + (Y-{yi})*(Y-{yi}) )"
+        # Update min time if this point is closer
+        updates.append(f"st(1, if( lt({di}, ld(0)), {ti}, ld(1) ))")
+        # Update min distance
+        updates.append(f"st(0, if( lt({di}, ld(0)), {di}, ld(0) ))")
+    
+    # Normalize time to 0-255 range
+    t_final = "ld(1)"
+    norm = f"( 255 * clip( ({t_final} - {wipe_start})/{wipe_duration}, 0, 1 ) )"
+    
+    # Force evaluation order
+    body = " + ".join([init] + updates)
+    expr = f"( 0*({body}) ) + {norm}"
+    return expr
+
+# Result: Expression becomes gigantic even for 20 points
+# FFmpeg times out trying to parse/evaluate this for every pixel
+]]>
+    </attempted_voronoi_solution>
+    
+    <path_generation_code>
+<![CDATA[
+def _generate_path_points(pattern: str, width: int, height: int, wipe_start: float,
+                          wipe_duration: float, sample_points: int, center_x: float,
+                          center_y: float, radius_x: float, radius_y: float,
+                          amplitude: float) -> List[Tuple[float, float, float]]:
+    """Generate (t, x, y) points along various motion patterns."""
+    pts: List[Tuple[float, float, float]] = []
+    for i in range(sample_points):
+        progress = i / max(sample_points - 1, 1)
+        t = wipe_start + progress * wipe_duration
+
+        if pattern == "s_curve":
+            # S-curve covering 90% of frame height
+            y = height * 0.05 + (height * 0.90) * progress
+            cycles = 2.5
+            x = center_x + radius_x * 0.7 * math.sin(cycles * 2 * math.pi * progress)
+        elif pattern == "ellipse":
+            angle = 2 * math.pi * progress
+            x = center_x + radius_x * math.cos(angle)
+            y = center_y + radius_y * math.sin(angle)
+        # ... other patterns ...
+        
+        pts.append((t, x, y))
+    return pts
+]]>
+    </path_generation_code>
+    
+    <color_preservation_solution>
+<![CDATA[
+# This part works correctly - uses alphamerge instead of maskedmerge
+# to preserve color information
+filter_parts.append(
+    f"[mask]lut=y=negval[inv_mask];"  # Invert mask for alpha
+    f"[0:v]fps={fps},scale={width}:{height}:flags=bicubic,format=gbrp[char_rgb];"
+    f"[1:v]fps={fps},scale={width}:{height}:flags=bicubic,format=rgba[bg_rgba];"
+    f"[char_rgb][inv_mask]alphamerge,format=rgba[char_rgba];"
+    f"[bg_rgba][char_rgba]overlay=shortest=0:eof_action=pass:format=auto[reveal]"
+)
+]]>
+    </color_preservation_solution>
+  </current_implementation>
+
+  <attempted_optimizations>
+    <optimization_1>
+      <approach>Reduce sample points from 40 to 20</approach>
+      <result>Still times out, coverage becomes worse</result>
+    </optimization_1>
+    
+    <optimization_2>
+      <approach>Use hypot() instead of manual distance calculation</approach>
+      <result>Slightly cleaner expression but same timeout issue</result>
+    </optimization_2>
+    
+    <optimization_3>
+      <approach>Pre-compute time map as single frame and loop it</approach>
+      <code>
+<![CDATA[
+# Tried to compute once and reuse:
+filter_parts.append(
+    f"color=c=black:s={width}x{height}:r=1[tbg];"
+    f"[tbg]format=gray,geq=lum='{tmap_expr_quoted}',trim=end_frame=1,"
+    f"loop=loop=1000000:size=1:start=0,setpts=N/{fps}/TB[tmap]"
+)
+]]>
+      </code>
+      <result>Still times out during initial time map computation</result>
+    </optimization_3>
+    
+    <optimization_4>
+      <approach>Use adaptive radius based on point density</approach>
+      <code>
+<![CDATA[
+adaptive_radius = int(max(width, height) / (sample_points ** 0.5) * 2.5)
+adaptive_radius = max(adaptive_radius, 200)  # Minimum radius
+]]>
+      </code>
+      <result>Larger radius helps coverage but doesn't solve performance</result>
+    </optimization_4>
+  </attempted_optimizations>
+
+  <expression_complexity_analysis>
+    <sample_20_points>
+      Expression length: ~8,000 characters
+      Nested max() depth: 19 levels
+      Operations per pixel: 20 distance calculations + 19 comparisons
+      Total per frame (1280x720): 18.4 million distance calculations
+    </sample_20_points>
+    
+    <sample_40_points>
+      Expression length: ~16,000 characters
+      Nested max() depth: 39 levels
+      Operations per pixel: 40 distance calculations + 39 comparisons
+      Total per frame (1280x720): 36.8 million distance calculations
+    </sample_40_points>
+    
+    <voronoi_approach>
+      Expression length: ~12,000 characters (20 points)
+      Register operations: 40 st() + 40 ld() + 20 comparisons per pixel
+      Total per frame (1280x720): 73.6 million register operations
+    </voronoi_approach>
+  </expression_complexity_analysis>
+
+  <core_requirements>
+    <requirement_1>
+      MUST achieve 100% foreground coverage - every pixel must be erased
+    </requirement_1>
+    
+    <requirement_2>
+      Each pixel should disappear when eraser is CLOSEST to it (not just within radius)
+    </requirement_2>
+    
+    <requirement_3>
+      Must work within FFmpeg filter_complex (no external processing)
+    </requirement_3>
+    
+    <requirement_4>
+      Must complete processing in reasonable time (< 30 seconds for 2-second video)
+    </requirement_4>
+    
+    <requirement_5>
+      Must preserve full color (already solved with alphamerge approach)
+    </requirement_5>
+  </core_requirements>
+
+  <potential_alternative_approaches>
+    <approach_1>
+      <title>Pre-render mask sequence as image files</title>
+      <description>
+        Generate mask frames outside FFmpeg using Python/NumPy, save as PNG sequence,
+        then use FFmpeg to apply them. This moves computation outside FFmpeg's
+        expression evaluator.
+      </description>
+      <pros>Can use efficient NumPy operations, true Voronoi possible</pros>
+      <cons>Requires temporary files, breaks single-pipeline approach</cons>
+    </approach_1>
+    
+    <approach_2>
+      <title>Use blend modes with gradient masks</title>
+      <description>
+        Instead of binary mask, create smooth gradient that follows the path
+        and use blend filter with custom expressions.
+      </description>
+      <pros>Might be more efficient than nested max()</pros>
+      <cons>Harder to achieve precise per-pixel timing</cons>
+    </approach_2>
+    
+    <approach_3>
+      <title>Segment-based approach</title>
+      <description>
+        Divide frame into grid segments, assign each segment to nearest path point,
+        erase entire segments at once rather than per-pixel.
+      </description>
+      <pros>Dramatically reduces computations</pros>
+      <cons>Less smooth, visible grid artifacts</cons>
+    </approach_3>
+    
+    <approach_4>
+      <title>Use xfade filter with custom transition</title>
+      <description>
+        Leverage FFmpeg's xfade filter which might have optimized implementations
+        for spatial transitions.
+      </description>
+      <pros>Potentially hardware accelerated</pros>
+      <cons>Limited control over exact erasure pattern</cons>
+    </approach_4>
+    
+    <approach_5>
+      <title>Two-pass approach with simplified distance field</title>
+      <description>
+        First pass: Create approximate distance field using fewer samples.
+        Second pass: Refine edges using local sampling.
+      </description>
+      <pros>Better balance of quality and performance</pros>
+      <cons>Still might hit expression complexity limits</cons>
+    </approach_5>
+  </potential_alternative_approaches>
+
+  <ffmpeg_expression_limitations>
+    <limitation_1>
+      No ability to cache computations between pixels or frames
+    </limitation_1>
+    
+    <limitation_2>
+      Expression is re-evaluated for every pixel on every frame
+    </limitation_2>
+    
+    <limitation_3>
+      No loop constructs - must unroll everything
+    </limitation_3>
+    
+    <limitation_4>
+      Limited register count for st()/ld() operations
+    </limitation_4>
+    
+    <limitation_5>
+      Parser struggles with deeply nested expressions
+    </limitation_5>
+    
+    <limitation_6>
+      No early termination - full expression evaluated even if result is known
+    </limitation_6>
+  </ffmpeg_expression_limitations>
+
+  <test_environment>
+    <video_specs>
+      Resolution: 1280x720
+      FPS: 25
+      Duration: ~2 seconds
+      Codec: H.264
+    </video_specs>
+    
+    <system_specs>
+      Platform: macOS (Darwin)
+      FFmpeg version: Modern build with full filter support
+      CPU: Apple Silicon (assumed based on path structure)
+    </system_specs>
+    
+    <test_commands>
+<![CDATA[
+# Minimal test that times out:
+python -c "
+from utils.animations.eraser_wipe import create_eraser_wipe
+create_eraser_wipe(
+    character_video='outputs/runway_scaled_cropped.mp4',
+    original_video='uploads/assets/runway_experiment/runway_demo_input.mp4',
+    eraser_image='uploads/assets/images/eraser.png',
+    output_video='outputs/test.mp4',
+    wipe_start=0.10,
+    wipe_duration=0.90,
+    sample_points=20,  # Even 20 points timeout
+    path_pattern='s_curve'
+)"
+]]>
+    </test_commands>
+  </test_environment>
+
+  <specific_questions>
+    <question_1>
+      Is there a way to implement per-pixel nearest-neighbor assignment in FFmpeg
+      that doesn't require O(N) operations per pixel?
+    </question_1>
+    
+    <question_2>
+      Can we leverage any of FFmpeg's built-in filters (like morphology, erosion,
+      dilation) to approximate the expanding erasure effect more efficiently?
+    </question_2>
+    
+    <question_3>
+      Is there a way to use FFmpeg's remap filter or similar to pre-compute
+      the pixel->time mapping and apply it efficiently?
+    </question_3>
+    
+    <question_4>
+      Could we use multiple parallel geq filters with simpler expressions and
+      then combine their outputs?
+    </question_4>
+    
+    <question_5>
+      Are there any FFmpeg expression optimizations (like short-circuit evaluation)
+      that we're not taking advantage of?
+    </question_5>
+  </specific_questions>
+
+  <ideal_solution_criteria>
+    <criterion_1>
+      Completes processing in under 30 seconds for a 2-second video
+    </criterion_1>
+    
+    <criterion_2>
+      Achieves 100% pixel coverage with no leftover areas
+    </criterion_2>
+    
+    <criterion_3>
+      Each pixel disappears at the "right" time (when eraser is nearest)
+    </criterion_3>
+    
+    <criterion_4>
+      Works within single FFmpeg command (no temp files if possible)
+    </criterion_4>
+    
+    <criterion_5>
+      Maintains smooth, professional appearance
+    </criterion_5>
+  </ideal_solution_criteria>
+
+  <complete_working_example>
+<![CDATA[
+# Complete current implementation that WORKS but with LIMITED COVERAGE:
+import json
+import math
+import subprocess
+from typing import List, Tuple, Optional
+
+def create_eraser_wipe(
+    character_video: str,
+    original_video: str,
+    eraser_image: str,
+    output_video: str,
+    wipe_start: float = 0.1,
+    wipe_duration: float = 0.9,
+    sample_points: int = 40,
+    path_pattern: str = "s_curve",
+    erase_radius: int = 140
+) -> bool:
+    """
+    Current working implementation with ~60% coverage.
+    Problem: Fixed radius means corners and edges don't get erased.
+    """
+    # Generate path points
+    points = _generate_path_points(
+        path_pattern, width, height,
+        wipe_start, wipe_duration, sample_points,
+        center_x, center_y, radius_x, radius_y, amplitude
+    )
+    
+    # Build mask with accumulating circles (LIMITED COVERAGE)
+    mask_expr = _build_accumulating_circles_mask(points, erase_radius)
+    mask_expr_quoted = mask_expr.replace("'", r"\'")
+    
+    # Build filter_complex
+    filter_parts = []
+    
+    # Eraser PNG
+    filter_parts.append(
+        f"[2:v]loop=loop=999999:size=1:start=0,format=rgba,scale={scaled_w}:{scaled_h}[eraser]"
+    )
+    
+    # Mask generation (PERFORMANCE BOTTLENECK HERE)
+    filter_parts.append(
+        f"color=c=black:s={width}x{height}:r={fps}[m_src];"
+        f"[m_src]format=gray,geq=lum='{mask_expr_quoted}'[mask]"
+    )
+    
+    # Color-preserving composite (this part works well)
+    filter_parts.append(
+        f"[mask]lut=y=negval[inv_mask];"
+        f"[0:v]fps={fps},scale={width}:{height}:flags=bicubic,format=gbrp[char_rgb];"
+        f"[1:v]fps={fps},scale={width}:{height}:flags=bicubic,format=rgba[bg_rgba];"
+        f"[char_rgb][inv_mask]alphamerge,format=rgba[char_rgba];"
+        f"[bg_rgba][char_rgba]overlay=shortest=0:eof_action=pass:format=auto[reveal]"
+    )
+    
+    # Overlay eraser image
+    filter_parts.append(
+        f"[reveal][eraser]overlay=x='{overlay_x_expr}':y='{overlay_y_expr}':"
+        f"eval=frame:enable='between(t,{wipe_start},{wipe_duration + wipe_start})'[outv]"
+    )
+    
+    filter_complex = ";".join(filter_parts)
+    
+    # Run FFmpeg
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner",
+        "-i", character_video,
+        "-i", original_video,
+        "-loop", "1", "-i", eraser_image,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]", "-map", "1:a?",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        output_video
+    ]
+    
+    subprocess.run(cmd, check=True)
+    return True
+]]>
+  </complete_working_example>
+
+  <critical_insight>
+    The fundamental issue is that FFmpeg's geq filter was not designed for
+    complex per-pixel assignments that require comparing distances to multiple
+    points. Each pixel evaluation is independent and cannot leverage spatial
+    coherence or share computations with neighboring pixels. This makes
+    true nearest-neighbor assignment computationally prohibitive within
+    FFmpeg's expression evaluator.
+  </critical_insight>
+
+  <request_for_assistance>
+    Please provide a solution or alternative approach that:
+    1. Achieves 100% pixel coverage (every foreground pixel gets erased)
+    2. Assigns each pixel to its nearest path point for natural-looking erasure
+    3. Completes in reasonable time (< 30 seconds for 2-second video)
+    4. Preferably works within FFmpeg (but open to hybrid approaches)
+    
+    The solution should maintain the visual effect of an eraser moving along
+    a path and progressively revealing the background, with smooth, professional
+    results. We need either an optimized FFmpeg expression, an alternative
+    filter chain, or a hybrid approach that pre-computes some data outside
+    FFmpeg while still maintaining a streamlined pipeline.
+  </request_for_assistance>
+</prompt>

@@ -1,5 +1,12 @@
 # Claude Assistant Instructions
 
+## CRITICAL: CUDA Restrictions
+**NEVER attempt to run ANYTHING that requires CUDA locally!**
+- This includes SAM2, any PyTorch models, or GPU-based processing
+- Always use cloud APIs (Replicate, Hugging Face, etc.) for GPU tasks
+- The local machine does NOT have CUDA capabilities
+- Any model that mentions CUDA, GPU, or PyTorch must be run via API
+
 ## Python File Length Rule - CRITICAL
 **ALL Python files MUST be 200 lines or less!**
 - This is a hard requirement - no exceptions
