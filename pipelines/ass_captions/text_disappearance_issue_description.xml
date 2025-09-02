@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Video subtitle rendering system with advanced animations</project_type>
+    <technology_stack>Python, OpenCV, PIL/Pillow, NumPy</technology_stack>
+    <file_location>/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/pipelines/ass_captions/sam2_head_aware_sandwich.py</file_location>
+    <problem_domain>
+      We have a sophisticated video captioning system that renders subtitles with entrance and disappearance animations.
+      The system uses frame-by-frame rendering to composite text onto video frames.
+      Each phrase has associated timing information (start_time, end_time) and belongs to a scene (appearance_index).
+    </problem_domain>
+  </context>
+
+  <problem_statement>
+    <summary>
+      Text disappearance animations are not working - text abruptly disappears instead of animating out smoothly.
+      Despite having a complete implementation of disappearance effects (fade out, slide out, shrink, etc.),
+      the text just vanishes instantly when it should end.
+    </summary>
+    <observed_behavior>
+      - Text appears correctly with entrance animations (fade in, slide from top/bottom work fine)
+      - Text remains visible during its display duration
+      - At the scene end time, text instantly disappears without any animation
+      - No disappearance animation frames are rendered
+    </observed_behavior>
+    <expected_behavior>
+      - When a scene ends, all phrases in that scene should animate out over 0.5 seconds
+      - The disappearance effect should be consistent for all phrases in the same scene
+      - Effects should include: fade out, slide out, color fade, shrink and fade, etc.
+    </expected_behavior>
+  </problem_statement>
+
+  <timing_architecture>
+    <scene_grouping>
+      Phrases are grouped by "appearance_index" into scenes.
+      All phrases in a scene share the same disappearance effect.
+      Scene end time = maximum end_time of all phrases in that scene.
+    </scene_grouping>
+    <example_timing>
+      Scene 1: ends at 2.92s
+        - "Yes," : 0.14s - 0.92s (but uses scene_end: 2.92s)
+        - "AI created new math" : 1.02s - 2.92s (scene_end: 2.92s)
+      Scene 2: ends at 7.36s
+        - "Would you be" : 2.96s - 3.56s (scene_end: 7.36s)
+        - "surprised if" : 3.60s - 4.50s (scene_end: 7.36s)
+    </example_timing>
+  </timing_architecture>
+
+  <current_implementation>
+    <disappearance_effect_enum>
+class DisappearanceEffect(Enum):
+    """Disappearance effect types for subsentences"""
+    FADE_OUT = "fade_out"  # Simple fade to transparent
+    BLUR_DISSOLVE = "blur_dissolve"  # Fade out with increasing blur
+    COLOR_FADE_TO_BLACK = "color_fade_black"  # Fade to black then transparent
+    COLOR_FADE_TO_WHITE = "color_fade_white"  # Fade to white then transparent
+    GLOW_DISSOLVE = "glow_dissolve"  # Add glow effect while fading
+    SLIDE_OUT_LEFT = "slide_out_left"  # Slide off to the left
+    SLIDE_OUT_RIGHT = "slide_out_right"  # Slide off to the right
+    SLIDE_OUT_UP = "slide_out_up"  # Slide up and out
+    SLIDE_OUT_DOWN = "slide_out_down"  # Slide down and out
+    SHRINK_AND_FADE = "shrink_fade"  # Scale down while fading
+    </disappearance_effect_enum>
+
+    <render_phrase_method_signature>
+def render_phrase(self, phrase: Dict, current_time: float, frame_shape: Tuple[int, int], 
+                 scene_end_time: float = None, y_override: int = None, 
+                 size_multiplier: float = 1.0, merged_text: str = None,
+                 entrance_effect: EntranceEffect = None,
+                 disappearance_effect: DisappearanceEffect = None) -> Optional[np.ndarray]:
+    </render_phrase_method_signature>
+
+    <visibility_check>
+# Check if phrase should be visible (with buffer for disappearance)
+disappear_duration = 0.5  # 500ms for disappearance
+if not (phrase["start_time"] <= current_time <= actual_end_time + disappear_duration):
+    return None
+    </visibility_check>
+
+    <disappearance_animation_logic>
+# Calculate animation timings
+time_since_start = current_time - phrase["start_time"]
+time_until_end = actual_end_time - current_time
+animation_duration = 0.4  # 400ms for entrance
+disappear_duration = 0.5  # 500ms for disappearance
+
+# Handle disappearance animation
+elif time_until_end < 0:  # Past end time, in disappearance phase
+    disappear_progress = min(-time_until_end / disappear_duration, 1.0)
+    # Ease-in for acceleration
+    eased_disappear = disappear_progress * disappear_progress
+    
+    # Apply disappearance effect
+    if disappearance_effect == DisappearanceEffect.FADE_OUT:
+        base_opacity = 1 - disappear_progress
+    elif disappearance_effect == DisappearanceEffect.BLUR_DISSOLVE:
+        base_opacity = 1 - disappear_progress
+        blur_amount = int(disappear_progress * 5)  # Max 5px blur
+    elif disappearance_effect == DisappearanceEffect.COLOR_FADE_TO_BLACK:
+        base_opacity = 1 - disappear_progress
+        fade_val = int(255 * (1 - disappear_progress))
+        color_shift = (fade_val, fade_val, fade_val)
+    # ... more effects ...
+    </disappearance_animation_logic>
+
+    <phrase_collection_for_frame>
+# First pass: collect visible phrases and organize by position
+disappear_duration = 0.5  # 500ms for disappearance animation
+for phrase in transcript_data.get("phrases", []):
+    phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+    scene_end = scene_end_times.get(phrase_key, phrase["end_time"])
+    
+    # Check if phrase is visible at current time (including disappearance animation)
+    if phrase["start_time"] <= current_time <= scene_end + disappear_duration:
+        if phrase.get("position") == "top":
+            top_phrases.append((phrase, phrase_key, scene_end))
+        else:
+            bottom_phrases.append((phrase, phrase_key, scene_end))
+    </phrase_collection_for_frame>
+
+    <effect_assignment>
+# Fourth pass: Assign disappearance effects per scene (all phrases in a scene get same effect)
+scene_disappearance_effects = {}  # Map scene_idx to disappearance effect
+
+for scene_idx in scenes.keys():
+    # Assign a random disappearance effect for this scene
+    scene_effect = DisappearanceEffect.get_random_effect()
+    scene_disappearance_effects[scene_idx] = scene_effect
+    
+    # Apply to all phrases in this scene
+    for phrase in scenes[scene_idx]:
+        phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+        phrase_optimizations[phrase_key]["disappearance_effect"] = scene_effect
+    </effect_assignment>
+
+    <rendering_call>
+phrase_img = phrase_renderer.render_phrase(
+    phrase, current_time, (height, width), scene_end, y_pos, size_mult,
+    entrance_effect=optimization.get("entrance_effect"),
+    disappearance_effect=optimization.get("disappearance_effect")
+)
+    </rendering_call>
+  </current_implementation>
+
+  <debugging_attempts>
+    <attempt_1>
+      Extended visibility window by adding disappear_duration (0.5s) to scene_end time in visibility checks.
+      Result: Phrases remain visible longer but still disappear abruptly at scene_end + 0.5s.
+    </attempt_1>
+    <attempt_2>
+      Added debug logging to track when disappearance animations trigger.
+      Result: No "DISAPPEARING" log messages appear, suggesting the disappearance branch is never entered.
+    </attempt_2>
+    <attempt_3>
+      Verified that scene_end_times are correctly calculated as max(end_times) for all phrases in scene.
+      Result: Scene end times are correct, but disappearance still not animating.
+    </attempt_3>
+  </debugging_attempts>
+
+  <test_case_analysis>
+    <video_properties>
+      Duration: 6 seconds (150 frames at 25 fps)
+      Resolution: 1280x720
+    </video_properties>
+    <transcript_timing>
+      Total transcript duration: 65+ seconds
+      Only Scene 1 (ends 2.92s) and part of Scene 2 visible in 6-second video
+    </transcript_timing>
+    <observation_at_scene_transition>
+      Frame 73 (2.92s): Scene 1 phrases still visible
+      Frame 74 (2.96s): Scene 1 phrases gone, Scene 2 phrases appear
+      Expected: Scene 1 phrases should fade/slide out from frames 73-85
+      Actual: Instant disappearance between frames 73-74
+    </observation_at_scene_transition>
+  </test_case_analysis>
+
+  <key_questions>
+    <question_1>
+      Why is the condition "elif time_until_end < 0" never being reached in render_phrase?
+      Is actual_end_time being passed correctly as scene_end instead of phrase end_time?
+    </question_1>
+    <question_2>
+      Are phrases being removed from the rendering pipeline before they can complete their disappearance animation?
+      Is the visibility check cutting them off despite the extended window?
+    </question_2>
+    <question_3>
+      Is there a logic error where phrases are considered "not visible" immediately at scene_end,
+      preventing the disappearance animation code from executing?
+    </question_3>
+    <question_4>
+      Should we be tracking a separate "animation_end_time" that's scene_end + disappear_duration?
+    </question_4>
+  </key_questions>
+
+  <suspected_root_causes>
+    <hypothesis_1>
+      The phrase might be excluded from rendering before render_phrase is called,
+      so the disappearance animation logic never gets a chance to execute.
+    </hypothesis_1>
+    <hypothesis_2>
+      The time_until_end calculation might be using the wrong end time
+      (individual phrase end_time instead of scene_end_time).
+    </hypothesis_2>
+    <hypothesis_3>
+      There might be a state management issue where phrases are removed from
+      the active phrases list at scene_end, before animation completes.
+    </hypothesis_3>
+  </suspected_root_causes>
+
+  <request_for_assistance>
+    Please analyze this implementation and identify why the disappearance animations are not executing.
+    The entrance animations work perfectly, but text just vanishes instantly at scene end time
+    instead of animating out over 0.5 seconds as intended.
+    
+    Focus on:
+    1. The flow from frame processing to render_phrase call
+    2. Whether time_until_end is correctly calculated relative to scene_end
+    3. If phrases are being filtered out before they can animate
+    4. Any logic errors in the disappearance animation conditions
+    
+    The goal is to have smooth disappearance animations matching the assigned effect per scene.
+  </request_for_assistance>
+</prompt>
+</xml>

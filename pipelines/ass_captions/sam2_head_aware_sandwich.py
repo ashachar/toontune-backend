@@ -18,9 +18,11 @@ import subprocess
 import os
 import sys
 import json
+import random
 import time
 import replicate
 import requests
+import random
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from typing import List, Dict, Tuple, Optional
@@ -28,6 +30,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 from pathlib import Path
 from dotenv import load_dotenv
+from enum import Enum
 
 # Load environment variables from .env
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
@@ -41,6 +44,55 @@ try:
 except ImportError:
     print("Warning: SAM2 API not available")
     SAM2_API_AVAILABLE = False
+
+
+class EntranceEffect(Enum):
+    """Entrance effect types for subsentences"""
+    FADE_WORD_BY_WORD = "fade_word_by_word"
+    FADE_SLIDE_FROM_TOP = "fade_slide_top"
+    FADE_SLIDE_FROM_BOTTOM = "fade_slide_bottom"
+    FADE_SLIDE_FROM_LEFT = "fade_slide_left"  # For short phrases only
+    FADE_SLIDE_FROM_RIGHT = "fade_slide_right"  # For short phrases only
+    FADE_SLIDE_WHOLE_TOP = "fade_slide_whole_top"  # Whole phrase slides
+    FADE_SLIDE_WHOLE_BOTTOM = "fade_slide_whole_bottom"  # Whole phrase slides
+    
+    @staticmethod
+    def get_random_effect(exclude_side_effects: bool = True) -> 'EntranceEffect':
+        """Get a random entrance effect.
+        
+        Args:
+            exclude_side_effects: If True, exclude left/right slide effects
+                                (those are reserved for head-tracking phrases)
+        """
+        import random
+        effects = list(EntranceEffect)
+        if exclude_side_effects:
+            # Exclude side slides which are for head-tracking phrases
+            effects = [e for e in effects if e not in [
+                EntranceEffect.FADE_SLIDE_FROM_LEFT,
+                EntranceEffect.FADE_SLIDE_FROM_RIGHT
+            ]]
+        return random.choice(effects)
+
+
+class DisappearanceEffect(Enum):
+    """Disappearance effect types for subsentences"""
+    FADE_OUT = "fade_out"  # Simple fade to transparent
+    BLUR_DISSOLVE = "blur_dissolve"  # Fade out with increasing blur
+    COLOR_FADE_TO_BLACK = "color_fade_black"  # Fade to black then transparent
+    COLOR_FADE_TO_WHITE = "color_fade_white"  # Fade to white then transparent
+    GLOW_DISSOLVE = "glow_dissolve"  # Add glow effect while fading
+    SLIDE_OUT_LEFT = "slide_out_left"  # Slide off to the left
+    SLIDE_OUT_RIGHT = "slide_out_right"  # Slide off to the right
+    SLIDE_OUT_UP = "slide_out_up"  # Slide up and out
+    SLIDE_OUT_DOWN = "slide_out_down"  # Slide down and out
+    SHRINK_AND_FADE = "shrink_fade"  # Scale down while fading
+    
+    @staticmethod
+    def get_random_effect() -> 'DisappearanceEffect':
+        """Get a random disappearance effect."""
+        import random
+        return random.choice(list(DisappearanceEffect))
 
 
 class PhraseRenderer:
@@ -60,40 +112,159 @@ class PhraseRenderer:
     
     def render_phrase(self, phrase: Dict, current_time: float, frame_shape: Tuple[int, int], 
                      scene_end_time: float = None, y_override: int = None, 
-                     size_multiplier: float = 1.0, merged_text: str = None) -> Optional[np.ndarray]:
+                     size_multiplier: float = 1.0, merged_text: str = None,
+                     entrance_effect: EntranceEffect = None,
+                     disappearance_effect: DisappearanceEffect = None) -> Optional[np.ndarray]:
         """
-        Render a phrase with fade-in and slide-from-above animation.
+        Render a phrase with specified entrance and disappearance animations.
         Returns RGBA image with transparent background.
+        
+        Key timing invariants:
+          - logical_end = scene_end_time (if provided) else phrase['end_time']
+          - draw_end = logical_end + disappear_duration
+          
+          Gate visibility using draw_end.
+          Compute disappearance progress from logical_end.
         
         Args:
             merged_text: If provided, render this text instead of phrase["text"]
+            entrance_effect: The entrance animation to apply
+            disappearance_effect: The disappearance animation to apply
         """
-        # Use scene end time if provided, otherwise use phrase end time
-        actual_end_time = scene_end_time if scene_end_time else phrase["end_time"]
+        # CRITICAL: Separate logical times from draw times
+        logical_start = phrase["start_time"]
+        logical_end = scene_end_time if scene_end_time else phrase["end_time"]
+        entrance_duration = 0.4  # 400ms for entrance
+        disappear_duration = 0.5  # 500ms for disappearance
         
-        # Check if phrase should be visible
-        if not (phrase["start_time"] <= current_time <= actual_end_time):
+        # Drawing windows extend beyond logical times for animations
+        draw_start = logical_start - entrance_duration
+        draw_end = logical_end + disappear_duration
+        
+        # Single visibility gate using extended draw window
+        if not (draw_start <= current_time <= draw_end):
             return None
         
-        # Calculate animation progress
+        # Calculate animation timings relative to logical start
         time_since_start = current_time - phrase["start_time"]
-        fade_duration = 0.3  # 300ms fade in
-        slide_duration = 0.3  # 300ms slide
         
-        # Calculate opacity (fade in)
-        if time_since_start < fade_duration:
-            opacity = time_since_start / fade_duration
-        else:
-            opacity = 1.0
+        # Default effects if not specified
+        if entrance_effect is None:
+            entrance_effect = EntranceEffect.FADE_WORD_BY_WORD
+        if disappearance_effect is None:
+            disappearance_effect = DisappearanceEffect.FADE_OUT
         
-        # Calculate Y offset (slide from above)
-        if time_since_start < slide_duration:
-            slide_progress = time_since_start / slide_duration
-            # Ease-out cubic
-            slide_progress = 1 - pow(1 - slide_progress, 3)
-            y_offset = int((1 - slide_progress) * 30)  # Start 30 pixels above
+        # Calculate base opacity and offsets
+        base_opacity = 1.0
+        color_shift = (255, 255, 255)  # Default white
+        scale_factor = 1.0
+        blur_amount = 0
+        
+        # Determine animation phase and progress
+        if current_time < logical_start:
+            # ENTRANCE PHASE (before logical start)
+            animation_phase = "ENTRANCE"
+            time_until_start = logical_start - current_time
+            progress = 1.0 - (time_until_start / entrance_duration)
+            progress = max(0, min(1, progress))  # Clamp to [0, 1]
+            # Ease-out cubic for smooth deceleration
+            eased_progress = 1 - pow(1 - progress, 3)
+            base_opacity = progress
+            
+            # Debug logging for entrance
+            debug_text = merged_text if merged_text else phrase["text"]
+            if progress < 0.02:  # Just started
+                print(f"    🎭 ENTRANCE START: '{debug_text[:20]}...' | effect={entrance_effect.value} | t={current_time:.2f}s | start={logical_start:.2f}s")
+            elif 0.48 < progress < 0.52:  # Halfway
+                print(f"    🎭 ENTRANCE MID: '{debug_text[:20]}...' | progress={progress:.0%} | opacity={base_opacity:.2f}")
+        elif current_time < logical_end:
+            # STEADY PHASE
+            animation_phase = "STEADY"
+            progress = 1.0
+            eased_progress = 1.0
+            base_opacity = 1.0
         else:
-            y_offset = 0
+            # DISAPPEARANCE PHASE (current_time >= logical_end)
+            animation_phase = "DISAPPEAR"
+            # CRITICAL: Calculate progress from logical_end, not draw_end
+            disappear_progress = min((current_time - logical_end) / disappear_duration, 1.0)
+            # Ease-in for acceleration
+            eased_disappear = disappear_progress * disappear_progress
+            
+            # Enhanced debug logging for phase transitions
+            debug_text = merged_text if merged_text else phrase["text"]
+            
+            # Log phase transitions (only at key moments)
+            if disappear_progress < 0.02:  # Just started
+                print(f"    🎬 DISAPPEAR START: '{debug_text[:20]}...' | effect={disappearance_effect.value} | t={current_time:.2f}s | logical_end={logical_end:.2f}s")
+            elif 0.48 < disappear_progress < 0.52:  # Halfway
+                print(f"    🎬 DISAPPEAR MID: '{debug_text[:20]}...' | progress={disappear_progress:.0%} | opacity={base_opacity:.2f}")
+            elif disappear_progress > 0.98:  # Almost done
+                print(f"    🎬 DISAPPEAR END: '{debug_text[:20]}...' | complete at t={current_time:.2f}s")
+            
+            # Now handle the disappearance phase
+            progress = disappear_progress
+            eased_progress = eased_disappear
+            
+            # Apply disappearance effect
+            if disappearance_effect == DisappearanceEffect.FADE_OUT:
+                base_opacity = 1 - disappear_progress
+            elif disappearance_effect == DisappearanceEffect.BLUR_DISSOLVE:
+                base_opacity = 1 - disappear_progress
+                blur_amount = int(disappear_progress * 5)  # Max 5px blur
+            elif disappearance_effect == DisappearanceEffect.COLOR_FADE_TO_BLACK:
+                base_opacity = 1 - disappear_progress
+                fade_val = int(255 * (1 - disappear_progress))
+                color_shift = (fade_val, fade_val, fade_val)
+            elif disappearance_effect == DisappearanceEffect.COLOR_FADE_TO_WHITE:
+                base_opacity = 1 - disappear_progress
+                fade_val = 255 - int(127 * disappear_progress)  # Start white, fade to gray-white
+                color_shift = (fade_val, fade_val, fade_val)
+            elif disappearance_effect == DisappearanceEffect.GLOW_DISSOLVE:
+                base_opacity = 1 - disappear_progress
+                # Glow would need special rendering (simplified here)
+            elif disappearance_effect == DisappearanceEffect.SHRINK_AND_FADE:
+                base_opacity = 1 - disappear_progress
+                scale_factor = 1 - (disappear_progress * 0.3)  # Shrink to 70%
+            else:
+                # Slide effects handled separately
+                base_opacity = 1 - disappear_progress
+        
+        # Calculate position offsets based on effects
+        x_offset = 0
+        y_offset = 0
+        slide_distance = 40  # Pixels to slide
+        
+        # Entrance position offsets
+        if time_since_start < animation_duration:
+            if entrance_effect in [EntranceEffect.FADE_SLIDE_FROM_TOP, EntranceEffect.FADE_SLIDE_WHOLE_TOP]:
+                y_offset = int((1 - eased_progress) * -slide_distance)  # Negative = from above
+            elif entrance_effect in [EntranceEffect.FADE_SLIDE_FROM_BOTTOM, EntranceEffect.FADE_SLIDE_WHOLE_BOTTOM]:
+                y_offset = int((1 - eased_progress) * slide_distance)  # Positive = from below
+            elif entrance_effect == EntranceEffect.FADE_SLIDE_FROM_LEFT:
+                x_offset = int((1 - eased_progress) * -slide_distance)  # Negative = from left
+            elif entrance_effect == EntranceEffect.FADE_SLIDE_FROM_RIGHT:
+                x_offset = int((1 - eased_progress) * slide_distance)  # Positive = from right
+        
+        # Disappearance position offsets
+        if animation_phase == "DISAPPEAR":
+            if disappearance_effect == DisappearanceEffect.SLIDE_OUT_LEFT:
+                x_offset = int(-eased_disappear * slide_distance * 2)  # Slide left
+            elif disappearance_effect == DisappearanceEffect.SLIDE_OUT_RIGHT:
+                x_offset = int(eased_disappear * slide_distance * 2)  # Slide right
+            elif disappearance_effect == DisappearanceEffect.SLIDE_OUT_UP:
+                y_offset = int(-eased_disappear * slide_distance * 2)  # Slide up
+            elif disappearance_effect == DisappearanceEffect.SLIDE_OUT_DOWN:
+                y_offset = int(eased_disappear * slide_distance * 2)  # Slide down
+        
+        # For whole-phrase effects, apply same opacity to all words
+        whole_phrase_effects = [
+            EntranceEffect.FADE_SLIDE_WHOLE_TOP,
+            EntranceEffect.FADE_SLIDE_WHOLE_BOTTOM,
+            EntranceEffect.FADE_SLIDE_FROM_LEFT,
+            EntranceEffect.FADE_SLIDE_FROM_RIGHT
+        ]
+        use_whole_phrase_animation = entrance_effect in whole_phrase_effects
         
         # Get text properties
         text = merged_text if merged_text else phrase["text"]
@@ -102,10 +273,13 @@ class PhraseRenderer:
         # the visual_style multiplier and use our target size directly.
         if size_multiplier > 1.0:
             # Use size_multiplier directly on base font size, ignoring visual_style reduction
-            font_size = int(48 * size_multiplier)
+            base_font_size = int(48 * size_multiplier)
         else:
             # Normal case: apply both multipliers
-            font_size = int(48 * phrase["visual_style"]["font_size_multiplier"] * size_multiplier)
+            base_font_size = int(48 * phrase["visual_style"]["font_size_multiplier"] * size_multiplier)
+        
+        # Apply scale factor for shrink effect
+        font_size = int(base_font_size * scale_factor)
         font = self.get_font(font_size)
         
         # Create transparent image
@@ -121,12 +295,12 @@ class PhraseRenderer:
         
         # Use override Y position if provided (for stacking)
         if y_override is not None:
-            y = y_override - y_offset
+            y = y_override
         else:
             if phrase["position"] == "top":
-                y = 180 - y_offset
+                y = 180
             else:
-                y = 540 - y_offset
+                y = 540
         
         # Apply word-by-word animation if we have word timings
         if "word_timings" in phrase and phrase["word_timings"]:
@@ -143,40 +317,64 @@ class PhraseRenderer:
                     word_time = current_time - word_start
                     word_fade_duration = 0.2
                     
-                    if word_time < word_fade_duration:
-                        word_opacity = (word_time / word_fade_duration) * opacity
+                    if use_whole_phrase_animation:
+                        # For whole-phrase effects, all words use same base opacity
+                        word_opacity = base_opacity
+                    elif entrance_effect == EntranceEffect.FADE_WORD_BY_WORD and time_since_start < animation_duration:
+                        # Word-by-word fade in during entrance
+                        if word_time < word_fade_duration:
+                            word_opacity = word_time / word_fade_duration * base_opacity
+                        else:
+                            word_opacity = base_opacity
                     else:
-                        word_opacity = opacity
+                        # For other effects or after entrance, use base opacity
+                        word_opacity = base_opacity
                     
                     # Draw word with black outline
                     word_bbox = draw.textbbox((0, 0), word + " ", font=font)
                     word_width = word_bbox[2] - word_bbox[0]
                     
+                    # Apply position offset (for slide effects)
+                    word_x = current_x + x_offset
+                    word_y = y + y_offset
+                    
+                    # Apply color shift for disappearance effects
+                    text_r, text_g, text_b = color_shift
+                    
                     # Black outline (draw multiple times with offset)
-                    outline_color = (0, 0, 0, int(255 * word_opacity))
+                    outline_opacity = max(0, int(word_opacity * 255 * 0.8))  # Outline slightly more transparent
+                    outline_color = (0, 0, 0, outline_opacity)
                     for dx in [-2, -1, 0, 1, 2]:
                         for dy in [-2, -1, 0, 1, 2]:
                             if dx != 0 or dy != 0:
-                                draw.text((current_x + dx, y + dy), word + " ", 
+                                draw.text((word_x + dx, word_y + dy), word + " ", 
                                          font=font, fill=outline_color)
                     
-                    # White text
-                    text_color = (255, 255, 255, int(255 * word_opacity))
-                    draw.text((current_x, y), word + " ", font=font, fill=text_color)
+                    # Colored text with opacity
+                    text_color = (text_r, text_g, text_b, int(255 * word_opacity))
+                    draw.text((word_x, word_y), word + " ", font=font, fill=text_color)
                     
                     current_x += word_width
         else:
             # Fallback: render entire phrase at once
+            # Apply position offsets
+            final_x = x + x_offset
+            final_y = y + y_offset
+            
+            # Apply color shift for disappearance effects
+            text_r, text_g, text_b = color_shift
+            
             # Black outline
-            outline_color = (0, 0, 0, int(255 * opacity))
+            outline_opacity = max(0, int(base_opacity * 255 * 0.8))  # Outline slightly more transparent
+            outline_color = (0, 0, 0, outline_opacity)
             for dx in [-2, -1, 0, 1, 2]:
                 for dy in [-2, -1, 0, 1, 2]:
                     if dx != 0 or dy != 0:
-                        draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+                        draw.text((final_x + dx, final_y + dy), text, font=font, fill=outline_color)
             
-            # White text
-            text_color = (255, 255, 255, int(255 * opacity))
-            draw.text((x, y), text, font=font, fill=text_color)
+            # Colored text with opacity
+            text_color = (text_r, text_g, text_b, int(255 * base_opacity))
+            draw.text((final_x, final_y), text, font=font, fill=text_color)
         
         # Store bounding box info for visibility checking
         phrase["_render_bbox"] = (x, y, x + text_width, y + text_height)
@@ -708,6 +906,10 @@ def apply_sam2_head_aware_sandwich(
                 visibility = calculate_text_visibility(text_bbox, person_mask)
                 if visibility > visibility_threshold:
                     will_go_behind = True
+                
+                # Debug visibility for key phrases
+                if "AI created" in phrase["text"]:
+                    print(f"  '{phrase['text']}': visibility={visibility:.1%} (threshold={visibility_threshold:.1%}) -> behind={visibility > visibility_threshold}")
         
         # Store initial decision
         phrase_optimizations[phrase_key] = {
@@ -716,6 +918,10 @@ def apply_sam2_head_aware_sandwich(
             "merged_group": None,  # Will be set if part of merged group
             "is_primary": False  # True for the main phrase in merged group
         }
+        
+        # Debug key phrases
+        if "AI created" in phrase["text"]:
+            print(f"  Pre-analysis: '{phrase['text']}' -> goes_behind={will_go_behind}")
     
     # Second pass: group consecutive behind-face phrases by position
     # We need to find consecutive phrases that:
@@ -849,7 +1055,9 @@ def apply_sam2_head_aware_sandwich(
             phrase_optimizations[phrase_key]["track_head"] = True
             phrase_optimizations[phrase_key]["goes_behind"] = False  # Override - don't go behind
             phrase_optimizations[phrase_key]["size_multiplier"] = 1.2  # Slightly larger but not huge
-            print(f"  '{phrase['text']}': will track head (35px gap from face)")
+            # Head-tracking phrases use slide-from-behind animation (special case)
+            phrase_optimizations[phrase_key]["entrance_effect"] = EntranceEffect.FADE_SLIDE_FROM_RIGHT
+            print(f"  '{phrase['text']}': will track head with slide-from-behind animation")
         else:
             # Normal behind-face processing for longer phrases
             base_font_size = 48
@@ -873,6 +1081,44 @@ def apply_sam2_head_aware_sandwich(
             phrase_optimizations[phrase_key]["optimal_y"] = optimal_y
             print(f"  '{phrase['text'][:30]}...': enlarged {size_multiplier:.2f}x")
     
+    # Third pass: Assign random entrance effects to all non-head-tracking phrases
+    print("\n🎨 Assigning random entrance effects to phrases...")
+    for phrase in transcript_data.get("phrases", []):
+        phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+        opt = phrase_optimizations[phrase_key]
+        
+        # Skip if already has an effect (e.g., head-tracking phrases)
+        if opt.get("entrance_effect") is not None:
+            continue
+        
+        # Assign random effect (excluding side slides which are for head-tracking)
+        opt["entrance_effect"] = EntranceEffect.get_random_effect(exclude_side_effects=True)
+        
+        # Log effect assignment for first few phrases
+        if phrase_key in [f"{p['start_time']:.2f}_{p['text'][:20]}" for p in transcript_data.get("phrases", [])[:5]]:
+            effect_name = opt["entrance_effect"].value
+            print(f"  '{phrase['text'][:20]}...' → {effect_name}")
+    
+    # Fourth pass: Assign disappearance effects per scene (all phrases in a scene get same effect)
+    print("\n💨 Assigning disappearance effects per scene...")
+    scene_disappearance_effects = {}  # Map scene_idx to disappearance effect
+    
+    for scene_idx in scenes.keys():
+        # Assign a random disappearance effect for this scene
+        scene_effect = DisappearanceEffect.get_random_effect()
+        scene_disappearance_effects[scene_idx] = scene_effect
+        
+        # Apply to all phrases in this scene
+        for phrase in scenes[scene_idx]:
+            phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+            phrase_optimizations[phrase_key]["disappearance_effect"] = scene_effect
+        
+        # Log for first few scenes
+        if scene_idx < 3:
+            effect_name = scene_effect.value
+            phrase_count = len(scenes[scene_idx])
+            print(f"  Scene {scene_idx}: {phrase_count} phrases → {effect_name}")
+    
     # Reset video positions
     cap_mask.set(cv2.CAP_PROP_POS_FRAMES, 0)
     if cap_head:
@@ -884,6 +1130,10 @@ def apply_sam2_head_aware_sandwich(
     
     print(f"\nProcessing {total_frames} frames with SAM2 head-aware compositing...")
     print(f"Found {len(scenes)} scenes with grouped timing")
+    print(f"\nDisappearance effects by scene:")
+    for scene_idx in sorted(scenes.keys())[:5]:  # Show first 5 scenes
+        effect = scene_disappearance_effects.get(scene_idx, DisappearanceEffect.FADE_OUT)
+        print(f"  Scene {scene_idx}: {effect.value}")
     
     # Track statistics
     behind_head = 0
@@ -912,16 +1162,18 @@ def apply_sam2_head_aware_sandwich(
         bottom_phrases = []
         
         # First pass: collect visible phrases and organize by position
+        disappear_duration = 0.5  # Must match render_phrase duration
         for phrase in transcript_data.get("phrases", []):
             phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
-            scene_end = scene_end_times.get(phrase_key, phrase["end_time"])
+            logical_end = scene_end_times.get(phrase_key, phrase["end_time"])
+            draw_end = logical_end + disappear_duration
             
-            # Check if phrase is visible at current time
-            if phrase["start_time"] <= current_time <= scene_end:
+            # Check if phrase is visible at current time (match render_phrase gate)
+            if phrase["start_time"] <= current_time <= draw_end:
                 if phrase.get("position") == "top":
-                    top_phrases.append((phrase, phrase_key, scene_end))
+                    top_phrases.append((phrase, phrase_key, logical_end))
                 else:
-                    bottom_phrases.append((phrase, phrase_key, scene_end))
+                    bottom_phrases.append((phrase, phrase_key, logical_end))
         
         # Start with original frame
         composite = frame_original.copy()
@@ -1013,7 +1265,9 @@ def apply_sam2_head_aware_sandwich(
             y_pos = top_y_positions[i]
             
             phrase_img = phrase_renderer.render_phrase(
-                phrase, current_time, (height, width), scene_end, y_pos, size_mult
+                phrase, current_time, (height, width), scene_end, y_pos, size_mult,
+                entrance_effect=optimization.get("entrance_effect"),
+                disappearance_effect=optimization.get("disappearance_effect")
             )
             
             if phrase_img is not None and "_render_bbox" in phrase:
@@ -1021,8 +1275,16 @@ def apply_sam2_head_aware_sandwich(
                 visibility = calculate_text_visibility(phrase["_render_bbox"], person_mask)
                 
                 # If any phrase is heavily occluded, we need to shift the entire stack
-                if visibility < occlusion_threshold and not top_needs_shift:
-                    top_needs_shift = True
+                if visibility < occlusion_threshold:
+                    if not top_needs_shift:
+                        top_needs_shift = True
+                        # IMPORTANT: Mark ALL heavily occluded phrases to go behind
+                        # This ensures they stay behind during disappearance
+                        for _, pk, _ in top_phrases:
+                            if pk in phrase_optimizations:
+                                phrase_optimizations[pk]["runtime_goes_behind"] = True
+                                if "AI created" in phrase_optimizations[pk].get("text", ""):
+                                    print(f"    Runtime: Marking '{phrase['text']}' as goes_behind due to occlusion ({visibility:.1%})")
                     # Calculate how much to shift up
                     # Try shifting up by 20 pixels at a time until we find good visibility
                     test_y = y_pos
@@ -1056,8 +1318,10 @@ def apply_sam2_head_aware_sandwich(
             
             # Check if this phrase tracks the head
             if optimization.get("track_head", False):
-                # Check if phrase is visible at current time
-                if not (phrase["start_time"] <= current_time <= scene_end):
+                # Check if phrase is visible at current time (including disappearance)
+                disappear_duration = 0.5
+                draw_end = scene_end + disappear_duration
+                if not (phrase["start_time"] <= current_time <= draw_end):
                     continue
                     
                 # Find head position in current frame
@@ -1085,13 +1349,18 @@ def apply_sam2_head_aware_sandwich(
                         text_width = bbox[2] - bbox[0]
                         text_height_pixels = bbox[3] - bbox[1]
                         
-                        # Calculate animation progress (slide from behind face + fade in)
+                        # Calculate animation progress (entrance and disappearance)
                         time_since_start = current_time - phrase["start_time"]
-                        animation_duration = 0.5  # 500ms for slide + fade
+                        time_until_end = scene_end - current_time
+                        entrance_duration = 0.5  # 500ms for slide + fade in
+                        disappear_duration = 0.5  # 500ms for fade out
                         
-                        if time_since_start < animation_duration:
-                            # Animation in progress
-                            progress = time_since_start / animation_duration
+                        # Get disappearance effect for this phrase's scene
+                        disappearance_effect = optimization.get("disappearance_effect", DisappearanceEffect.FADE_OUT)
+                        
+                        if time_since_start < entrance_duration:
+                            # ENTRANCE ANIMATION
+                            progress = time_since_start / entrance_duration
                             # Ease-out cubic for smooth deceleration
                             eased_progress = 1 - pow(1 - progress, 3)
                             
@@ -1108,12 +1377,36 @@ def apply_sam2_head_aware_sandwich(
                             # Interpolate X position
                             text_x = start_x + (final_x - start_x) * eased_progress
                             text_x = max(10, text_x)  # Keep at least 10px from left edge
-                        else:
-                            # Animation complete - final position
+                        elif current_time < scene_end:
+                            # STEADY STATE - full opacity, final position
                             opacity = 255
                             gap_from_face = 35
                             text_x = x_min - gap_from_face - text_width
                             text_x = max(10, text_x)
+                        else:
+                            # DISAPPEARANCE ANIMATION (current_time >= scene_end)
+                            disappear_progress = min((current_time - scene_end) / disappear_duration, 1.0)
+                            
+                            # Apply disappearance effect (simplified for head-tracking)
+                            if disappearance_effect in [DisappearanceEffect.SLIDE_OUT_LEFT, DisappearanceEffect.SLIDE_OUT_RIGHT]:
+                                # Slide out horizontally
+                                gap_from_face = 35
+                                base_x = x_min - gap_from_face - text_width
+                                if disappearance_effect == DisappearanceEffect.SLIDE_OUT_LEFT:
+                                    text_x = base_x - int(disappear_progress * text_width * 1.5)
+                                else:
+                                    text_x = base_x + int(disappear_progress * text_width * 1.5)
+                                opacity = int(255 * (1 - disappear_progress))
+                            else:
+                                # Default: fade out in place
+                                gap_from_face = 35
+                                text_x = x_min - gap_from_face - text_width
+                                text_x = max(10, text_x)
+                                opacity = int(255 * (1 - disappear_progress))
+                            
+                            # Debug disappearance
+                            if disappear_progress < 0.02 and "Yes" in text:
+                                print(f"    🎬 HEAD-TRACK DISAPPEAR: '{text}' starting at t={current_time:.2f}s")
                         
                         # Y: vertically centered with head (no animation)
                         text_y = (y_min + y_max) // 2 - text_height_pixels // 2
@@ -1132,8 +1425,20 @@ def apply_sam2_head_aware_sandwich(
                         phrase_img = np.array(temp_img)
                         
                         if phrase_img is not None:
-                            # Head-tracking phrases go in front
-                            phrases_to_render.append((phrase_img, False, phrase["text"], "head-track"))
+                            # During entrance animation, check if text should be behind face
+                            if time_since_start < entrance_duration:
+                                # Check if text overlaps with face during slide
+                                text_bbox = (int(text_x), int(text_y), 
+                                           int(text_x + text_width), int(text_y + text_height_pixels))
+                                
+                                # Text goes behind if it overlaps with head during animation
+                                text_overlaps_head = check_text_head_overlap(text_bbox, head_mask)
+                                should_be_behind = text_overlaps_head
+                            else:
+                                # After animation, text is always in front
+                                should_be_behind = False
+                            
+                            phrases_to_render.append((phrase_img, should_be_behind, phrase["text"], "head-track"))
                 
                 # Skip normal rendering for head-tracking phrases
                 continue
@@ -1153,8 +1458,9 @@ def apply_sam2_head_aware_sandwich(
                 if "optimal_y" in optimization:
                     y_pos = optimization["optimal_y"] - shift_amount if top_needs_shift else optimization["optimal_y"]
                 
-                # Check if merged phrase is visible
-                if merged_start <= current_time <= merged_end:
+                # Check if merged phrase is visible (including disappearance)
+                disappear_duration = 0.5
+                if merged_start <= current_time <= merged_end + disappear_duration:
                     # Create a modified phrase with merged word timings
                     merged_phrase = phrase.copy()
                     if merged_word_timings:
@@ -1167,7 +1473,9 @@ def apply_sam2_head_aware_sandwich(
                         merged_end, 
                         y_pos, 
                         optimization["size_multiplier"],
-                        merged_text=merged_text
+                        merged_text=merged_text,
+                        entrance_effect=optimization.get("entrance_effect"),
+                        disappearance_effect=optimization.get("disappearance_effect")
                     )
                     
                     if phrase_img is not None:
@@ -1182,13 +1490,15 @@ def apply_sam2_head_aware_sandwich(
                     y_pos = optimization["optimal_y"] - shift_amount if top_needs_shift else optimization["optimal_y"]
                 
                 phrase_img = phrase_renderer.render_phrase(
-                    phrase, current_time, (height, width), scene_end, y_pos, size_mult
+                    phrase, current_time, (height, width), scene_end, y_pos, size_mult,
+                    entrance_effect=optimization.get("entrance_effect"),
+                    disappearance_effect=optimization.get("disappearance_effect")
                 )
                 
                 if phrase_img is not None:
-                    # Use pre-computed decision about behind/front
-                    should_be_behind = optimization.get("goes_behind", False)
-                    reason = "pre-computed"
+                    # Use decision about behind/front - runtime occlusion overrides pre-computed
+                    should_be_behind = optimization.get("runtime_goes_behind", optimization.get("goes_behind", False))
+                    reason = "runtime-occluded" if optimization.get("runtime_goes_behind", False) else "pre-computed"
                     phrases_to_render.append((phrase_img, should_be_behind, phrase["text"][:20], reason))
         
         # Check bottom phrases for occlusion
@@ -1201,14 +1511,22 @@ def apply_sam2_head_aware_sandwich(
             y_pos = bottom_y_positions[i]
             
             temp_img = phrase_renderer.render_phrase(
-                phrase, current_time, (height, width), scene_end, y_pos, size_mult
+                phrase, current_time, (height, width), scene_end, y_pos, size_mult,
+                entrance_effect=optimization.get("entrance_effect"),
+                disappearance_effect=optimization.get("disappearance_effect")
             )
             
             if temp_img is not None and "_render_bbox" in phrase:
                 visibility = calculate_text_visibility(phrase["_render_bbox"], person_mask)
                 
-                if visibility < occlusion_threshold and not bottom_needs_shift:
-                    bottom_needs_shift = True
+                if visibility < occlusion_threshold:
+                    if not bottom_needs_shift:
+                        bottom_needs_shift = True
+                        # IMPORTANT: Mark ALL heavily occluded bottom phrases to go behind
+                        # This ensures they stay behind during disappearance
+                        for _, pk, _ in bottom_phrases:
+                            if pk in phrase_optimizations:
+                                phrase_optimizations[pk]["runtime_goes_behind"] = True
                     # For bottom, shift down
                     for shift_try in range(1, 10):
                         test_y = y_pos + (shift_try * 20)
@@ -1232,8 +1550,10 @@ def apply_sam2_head_aware_sandwich(
             
             # Check if this phrase tracks the head
             if optimization.get("track_head", False):
-                # Check if phrase is visible at current time
-                if not (phrase["start_time"] <= current_time <= scene_end):
+                # Check if phrase is visible at current time (including disappearance)
+                disappear_duration = 0.5
+                draw_end = scene_end + disappear_duration
+                if not (phrase["start_time"] <= current_time <= draw_end):
                     continue
                     
                 # Find head position in current frame
@@ -1261,13 +1581,18 @@ def apply_sam2_head_aware_sandwich(
                         text_width = bbox[2] - bbox[0]
                         text_height_pixels = bbox[3] - bbox[1]
                         
-                        # Calculate animation progress (slide from behind face + fade in)
+                        # Calculate animation progress (entrance and disappearance)
                         time_since_start = current_time - phrase["start_time"]
-                        animation_duration = 0.5  # 500ms for slide + fade
+                        time_until_end = scene_end - current_time
+                        entrance_duration = 0.5  # 500ms for slide + fade in
+                        disappear_duration = 0.5  # 500ms for fade out
                         
-                        if time_since_start < animation_duration:
-                            # Animation in progress
-                            progress = time_since_start / animation_duration
+                        # Get disappearance effect for this phrase's scene
+                        disappearance_effect = optimization.get("disappearance_effect", DisappearanceEffect.FADE_OUT)
+                        
+                        if time_since_start < entrance_duration:
+                            # ENTRANCE ANIMATION
+                            progress = time_since_start / entrance_duration
                             # Ease-out cubic for smooth deceleration
                             eased_progress = 1 - pow(1 - progress, 3)
                             
@@ -1284,12 +1609,36 @@ def apply_sam2_head_aware_sandwich(
                             # Interpolate X position
                             text_x = start_x + (final_x - start_x) * eased_progress
                             text_x = max(10, text_x)  # Keep at least 10px from left edge
-                        else:
-                            # Animation complete - final position
+                        elif current_time < scene_end:
+                            # STEADY STATE - full opacity, final position
                             opacity = 255
                             gap_from_face = 35
                             text_x = x_min - gap_from_face - text_width
                             text_x = max(10, text_x)
+                        else:
+                            # DISAPPEARANCE ANIMATION (current_time >= scene_end)
+                            disappear_progress = min((current_time - scene_end) / disappear_duration, 1.0)
+                            
+                            # Apply disappearance effect (simplified for head-tracking)
+                            if disappearance_effect in [DisappearanceEffect.SLIDE_OUT_LEFT, DisappearanceEffect.SLIDE_OUT_RIGHT]:
+                                # Slide out horizontally
+                                gap_from_face = 35
+                                base_x = x_min - gap_from_face - text_width
+                                if disappearance_effect == DisappearanceEffect.SLIDE_OUT_LEFT:
+                                    text_x = base_x - int(disappear_progress * text_width * 1.5)
+                                else:
+                                    text_x = base_x + int(disappear_progress * text_width * 1.5)
+                                opacity = int(255 * (1 - disappear_progress))
+                            else:
+                                # Default: fade out in place
+                                gap_from_face = 35
+                                text_x = x_min - gap_from_face - text_width
+                                text_x = max(10, text_x)
+                                opacity = int(255 * (1 - disappear_progress))
+                            
+                            # Debug disappearance
+                            if disappear_progress < 0.02 and "Yes" in text:
+                                print(f"    🎬 HEAD-TRACK DISAPPEAR: '{text}' starting at t={current_time:.2f}s")
                         
                         # Y: vertically centered with head (no animation)
                         text_y = (y_min + y_max) // 2 - text_height_pixels // 2
@@ -1308,8 +1657,20 @@ def apply_sam2_head_aware_sandwich(
                         phrase_img = np.array(temp_img)
                         
                         if phrase_img is not None:
-                            # Head-tracking phrases go in front
-                            phrases_to_render.append((phrase_img, False, phrase["text"], "head-track"))
+                            # During entrance animation, check if text should be behind face
+                            if time_since_start < entrance_duration:
+                                # Check if text overlaps with face during slide
+                                text_bbox = (int(text_x), int(text_y), 
+                                           int(text_x + text_width), int(text_y + text_height_pixels))
+                                
+                                # Text goes behind if it overlaps with head during animation
+                                text_overlaps_head = check_text_head_overlap(text_bbox, head_mask)
+                                should_be_behind = text_overlaps_head
+                            else:
+                                # After animation, text is always in front
+                                should_be_behind = False
+                            
+                            phrases_to_render.append((phrase_img, should_be_behind, phrase["text"], "head-track"))
                 
                 # Skip normal rendering for head-tracking phrases
                 continue
@@ -1329,8 +1690,9 @@ def apply_sam2_head_aware_sandwich(
                 if "optimal_y" in optimization:
                     y_pos = optimization["optimal_y"] + bottom_shift_amount if bottom_needs_shift else optimization["optimal_y"]
                 
-                # Check if merged phrase is visible
-                if merged_start <= current_time <= merged_end:
+                # Check if merged phrase is visible (including disappearance)
+                disappear_duration = 0.5
+                if merged_start <= current_time <= merged_end + disappear_duration:
                     # Create a modified phrase with merged word timings
                     merged_phrase = phrase.copy()
                     if merged_word_timings:
@@ -1343,7 +1705,9 @@ def apply_sam2_head_aware_sandwich(
                         merged_end, 
                         y_pos, 
                         optimization["size_multiplier"],
-                        merged_text=merged_text
+                        merged_text=merged_text,
+                        entrance_effect=optimization.get("entrance_effect"),
+                        disappearance_effect=optimization.get("disappearance_effect")
                     )
                     
                     if phrase_img is not None:
@@ -1358,13 +1722,15 @@ def apply_sam2_head_aware_sandwich(
                     y_pos = optimization["optimal_y"] + bottom_shift_amount if bottom_needs_shift else optimization["optimal_y"]
                 
                 phrase_img = phrase_renderer.render_phrase(
-                    phrase, current_time, (height, width), scene_end, y_pos, size_mult
+                    phrase, current_time, (height, width), scene_end, y_pos, size_mult,
+                    entrance_effect=optimization.get("entrance_effect"),
+                    disappearance_effect=optimization.get("disappearance_effect")
                 )
                 
                 if phrase_img is not None:
-                    # Use pre-computed decision about behind/front
-                    should_be_behind = optimization.get("goes_behind", False)
-                    reason = "pre-computed"
+                    # Use decision about behind/front - runtime occlusion overrides pre-computed
+                    should_be_behind = optimization.get("runtime_goes_behind", optimization.get("goes_behind", False))
+                    reason = "runtime-occluded" if optimization.get("runtime_goes_behind", False) else "pre-computed"
                     phrases_to_render.append((phrase_img, should_be_behind, phrase["text"][:20], reason))
         
         # Process phrases in two passes: behind first, then in front
@@ -1393,12 +1759,26 @@ def apply_sam2_head_aware_sandwich(
         composite = composite.astype(np.uint8)
         out.write(composite)
         
-        if frame_idx % 30 == 0:
-            print(f"Processed {frame_idx}/{total_frames} frames")
+        # More frequent logging around scene transitions
+        should_log = frame_idx % 30 == 0
+        
+        # Log around scene 1 end (2.92s = frame 73)
+        if 70 <= frame_idx <= 85:
+            should_log = True
+        
+        if should_log:
+            time_str = f"t={frame_idx/fps:.2f}s"
+            print(f"Processed {frame_idx}/{total_frames} frames ({time_str})")
             if len(phrases_to_render) > 0:
                 for _, should_be_behind, phrase_text, reason in phrases_to_render:
                     position = f"behind ({reason})" if should_be_behind else "front"
                     print(f"  '{phrase_text}': {position}")
+            
+            # Special logging around scene 1 end (2.92s)
+            if 2.90 <= frame_idx/fps <= 2.94:
+                print(f"  ⚠️ Scene 1 END at {time_str} - disappearance should START")
+            elif 3.40 <= frame_idx/fps <= 3.44:
+                print(f"  ⚠️ Scene 1 disappearance should be COMPLETE by {time_str}")
     
     # Clean up
     cap_orig.release()

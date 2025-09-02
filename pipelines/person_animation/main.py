@@ -957,7 +957,7 @@ class PersonAnimationPipeline:
                 intermediate_duration = float(result.stdout.strip())
                 
                 # Step 4: Apply eraser wipe for exit
-                # Import the unified eraser wipe function
+                # Import the unified eraser wipe function with multiple patterns
                 from utils.animations.eraser_wipe import create_eraser_wipe
                 
                 eraser_path = os.path.join(project_root, "uploads", "assets", "images", "eraser.png")
@@ -991,9 +991,10 @@ class PersonAnimationPipeline:
                             eraser_with_effect,
                             wipe_start=0,
                             wipe_duration=eraser_duration,
-                            mode="true_erase",  # Use true erase mode
-                            erase_radius=120,   # Radius of erase effect in pixels
-                            sample_points=25    # More samples for smoother trail
+                            mode="true_erase",     # Use true erase mode
+                            erase_radius=140,      # Increased radius for better coverage
+                            sample_points=40,      # More samples for smoother trail
+                            path_pattern="s_curve" # Use S-curve pattern for better vertical coverage
                         )
                         
                         if success:

@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<problem_description>
+  <context>
+    <project_type>Video Processing Pipeline with Character Animation</project_type>
+    <framework>FFmpeg with Python subprocess</framework>
+    <issue_summary>
+      The eraser animation only wipes a portion of the character overlay (specifically the top part), instead of covering all important areas of the character. The eraser follows a single elliptical path that doesn't adequately cover the entire character foreground. The algorithm needs to intelligently identify the character's foreground regions and ensure the eraser path covers at least 2-3 important areas.
+    </issue_summary>
+    <visual_context>
+      The character overlay is a cartoon/animated character that occupies a significant portion of the frame. Currently, the eraser only passes through the upper portion, leaving lower parts (like legs, lower body) untouched during the wipe animation.
+    </visual_context>
+  </context>
+
+  <current_implementation>
+    <file_path>utils/animations/eraser_wipe.py</file_path>
+    <function_name>create_eraser_wipe</function_name>
+    <current_eraser_path_logic>
+<![CDATA[
+def create_eraser_wipe(character_video: str, original_video: str, 
+                       eraser_image: str, output_video: str,
+                       wipe_start: float = 0, wipe_duration: float = 0.6,
+                       mode: str = "true_erase", erase_radius: int = 120, 
+                       sample_points: int = 25):
+    
+    # ... [setup code] ...
+    
+    # Eraser path parameters - FIXED/HARDCODED path
+    center_x = width // 2 - 20  # Slight left shift
+    center_y = height // 2 + 10  # Slight down shift
+    radius_x = 200  # Horizontal radius of ellipse
+    radius_y = 150  # Vertical radius of ellipse
+    
+    # Motion and positioning parameters
+    scale_factor = 0.70
+    pivot_x_ratio = 0.1953
+    pivot_y_ratio = 0.62
+    tip_ratio = 0.12
+    top_margin = 20
+    amplitude = radius_y * 0.8  # Vertical movement amplitude
+    bottom_safety = 2
+    contact_x_ratio = 0.08
+    
+    # ... [more setup] ...
+    
+    # SINGLE ELLIPTICAL PATH - This is the problem!
+    for i in range(num_samples):
+        progress = i / (num_samples - 1) if num_samples > 1 else 0
+        t = wipe_start + progress * wipe_duration
+        angle = 2 * math.pi * progress  # Single circular/elliptical motion
+        
+        # Calculate eraser tip position - ONLY ONE PATH
+        x_contact = int(center_x + radius_x * math.cos(angle) + contact_dx)
+        sin_val = math.sin(angle)
+        y_top_raw = center_y + amplitude * sin_val - scaled_height * pivot_y_ratio + \
+                   (top_margin - (center_y - amplitude) + scaled_height * (pivot_y_ratio - tip_ratio))
+        y_top = max(y_top_raw, height - scaled_height + bottom_safety)
+        y_tip = int(y_top + scaled_height * tip_ratio)
+        
+        # Create erase condition for this single point
+        radius_sq = erase_radius * erase_radius
+        condition = f"(lte((X-{x_contact})*(X-{x_contact})+(Y-{y_tip})*(Y-{y_tip}),{radius_sq})*gte(T,{t:.3f}))"
+        geq_parts.append(condition)
+]]>
+    </current_eraser_path_logic>
+
+    <path_visualization>
+      The current path is a single ellipse centered roughly at the video center.
+      It creates a circular/elliptical motion that only covers:
+      - Center-to-right areas
+      - Center-to-left areas  
+      - Upper-middle areas
+      - Lower-middle areas (but not low enough)
+      
+      Missing coverage:
+      - Lower body/legs of character
+      - Extreme upper portions (head/hair)
+      - Side extremities
+    </path_visualization>
+  </current_implementation>
+
+  <character_detection_requirement>
+    <requirement>
+      The algorithm should analyze the character overlay video to identify:
+      1. The bounding box of the character
+      2. Key regions of the character (head, torso, legs/feet)
+      3. The character's center of mass
+      4. Extremities that need coverage
+    </requirement>
+    
+    <suggested_approach>
+      1. Extract a frame from the character video
+      2. Detect non-green-screen pixels (character foreground)
+      3. Find contours or regions of the character
+      4. Identify 2-3 key areas that need eraser coverage
+      5. Generate a path that visits these areas
+    </suggested_approach>
+    
+    <foreground_detection_methods>
+      - Color-based: Detect non-green pixels (if green screen)
+      - Motion-based: Detect moving regions
+      - Edge-based: Find character contours
+      - ML-based: Use segmentation models
+    </foreground_detection_methods>
+  </character_detection_requirement>
+
+  <proposed_solutions>
+    <solution_1>
+      <name>Multi-pass eraser with figure-8 or complex path</name>
+      <description>
+        Instead of a single ellipse, create a figure-8 or serpentine path that covers more vertical space:
+        - First loop: covers upper body and head
+        - Cross-over: covers middle torso
+        - Second loop: covers lower body and legs
+      </description>
+      <implementation_hint>
+        Use parametric equations like:
+        x = center_x + radius_x * cos(angle) * (1 + 0.5 * cos(2*angle))
+        y = center_y + radius_y * sin(2*angle)  # Figure-8 pattern
+      </implementation_hint>
+    </solution_1>
+
+    <solution_2>
+      <name>Adaptive path based on character detection</name>
+      <description>
+        1. Analyze character video to find bounding box
+        2. Identify key points: top, middle, bottom of character
+        3. Create a path that visits all key points
+        4. Use spline interpolation for smooth movement
+      </description>
+      <code_sketch>
+<![CDATA[
+def detect_character_regions(video_path):
+    # Extract frame
+    cap = cv2.VideoCapture(video_path)
+    ret, frame = cap.read()
+    
+    # Find non-green pixels (assuming green screen)
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    lower_green = np.array([40, 40, 40])
+    upper_green = np.array([80, 255, 255])
+    mask = cv2.inRange(hsv, lower_green, upper_green)
+    character_mask = cv2.bitwise_not(mask)
+    
+    # Find contours
+    contours, _ = cv2.findContours(character_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Get bounding box and key points
+    if contours:
+        largest_contour = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        
+        # Define key points to visit
+        key_points = [
+            (x + w//2, y + h//4),      # Head area
+            (x + w//2, y + h//2),      # Torso
+            (x + w//2, y + 3*h//4),    # Lower body
+        ]
+        
+        return key_points, (x, y, w, h)
+    return None, None
+
+def generate_adaptive_path(key_points, num_samples):
+    # Create a path that visits all key points
+    # Use spline or bezier curve for smooth movement
+    pass
+]]>
+      </code_sketch>
+    </solution_2>
+
+    <solution_3>
+      <name>Multiple overlapping ellipses</name>
+      <description>
+        Instead of one path, use 2-3 overlapping elliptical paths:
+        - Path 1: Upper ellipse covering head and shoulders
+        - Path 2: Middle ellipse covering torso
+        - Path 3: Lower ellipse covering legs
+        All three animate simultaneously or in sequence.
+      </description>
+      <implementation>
+<![CDATA[
+# Three separate paths
+paths = [
+    {'center_y': height * 0.3, 'radius_y': 100},  # Upper
+    {'center_y': height * 0.5, 'radius_y': 120},  # Middle  
+    {'center_y': height * 0.7, 'radius_y': 100},  # Lower
+]
+
+for path_config in paths:
+    for i in range(num_samples):
+        # Generate points for this specific path
+        y_center = path_config['center_y']
+        # ... calculate positions
+]]>
+      </implementation>
+    </solution_3>
+
+    <solution_4>
+      <name>Vertical sweep with horizontal oscillation</name>
+      <description>
+        Make the eraser sweep from top to bottom (or vice versa) while oscillating horizontally.
+        This ensures full vertical coverage of the character.
+      </description>
+      <formula>
+<![CDATA[
+# Vertical sweep from top to bottom
+y_position = top_y + (bottom_y - top_y) * progress
+# Horizontal oscillation
+x_position = center_x + amplitude_x * sin(frequency * progress)
+]]>
+      </formula>
+    </solution_4>
+  </proposed_solutions>
+
+  <implementation_considerations>
+    <consideration_1>
+      The path must still look natural as if a human is holding the eraser.
+      Avoid paths that would be impossible for a human hand to follow.
+    </consideration_1>
+    
+    <consideration_2>
+      The total animation duration is only 0.6 seconds, so the path can't be too complex
+      or it will appear rushed and unnatural.
+    </consideration_2>
+    
+    <consideration_3>
+      The erase_radius parameter (currently 120px) might need adjustment based on
+      the character size to ensure adequate coverage with fewer passes.
+    </consideration_3>
+    
+    <consideration_4>
+      Performance: More complex paths with more sample points will increase processing time.
+      Balance coverage quality with rendering speed.
+    </consideration_4>
+  </implementation_considerations>
+
+  <questions_for_solution>
+    <question_1>
+      Should we detect the character boundaries dynamically from the video, or use
+      predefined paths that work well for typical character positions?
+    </question_1>
+    
+    <question_2>
+      Is it better to use a single complex path (like figure-8) or multiple simpler
+      paths that cover different regions?
+    </question_2>
+    
+    <question_3>
+      Should the eraser make multiple passes over the same area, or should each
+      area be visited only once for efficiency?
+    </question_3>
+    
+    <question_4>
+      How can we ensure the path looks natural and human-like while still achieving
+      complete coverage of the character?
+    </question_4>
+    
+    <question_5>
+      Should we increase the erase_radius to cover more area per sample point,
+      or increase the number of sample points for finer control?
+    </question_5>
+  </questions_for_solution>
+
+  <test_cases>
+    <test_1>
+      Character with tall aspect ratio (e.g., standing person):
+      Needs good vertical coverage from head to feet.
+    </test_1>
+    
+    <test_2>
+      Character with wide aspect ratio (e.g., person with outstretched arms):
+      Needs good horizontal coverage.
+    </test_2>
+    
+    <test_3>
+      Character in corner of frame:
+      Path should adapt to non-centered positions.
+    </test_3>
+  </test_cases>
+
+  <additional_context>
+    <video_specs>
+      - Resolution: 1280x720
+      - Character overlay: Cartoon/animated character
+      - Background: Original video (person)
+      - Green screen: Character has green background that's being replaced
+    </video_specs>
+    
+    <current_parameters>
+      - wipe_duration: 0.6 seconds
+      - erase_radius: 120 pixels
+      - sample_points: 25
+      - Single elliptical path with fixed center and radii
+    </current_parameters>
+  </additional_context>
+
+  <request_for_help>
+    How can we modify the eraser path generation to ensure complete coverage of the character foreground, visiting at least 2-3 important areas (head, torso, lower body) while maintaining a natural, human-like erasing motion? Should we use dynamic character detection or a predefined complex path pattern?
+  </request_for_help>
+</problem_description>

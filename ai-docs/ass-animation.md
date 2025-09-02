@@ -257,3 +257,23 @@ Moves from (320,240) to (600,800) over 2 seconds, rotating and fading to green a
 [15](https://github.com/libass/libass)
 [16](https://subzap.ai/wiki/subtitles/advancedsubstation)
 [17](https://news.ycombinator.com/item?id=25907225)
+
+
+Here is a Markdown table showing popular **disappearance effects** for subtitles using the ASS (Advanced SubStation Alpha) format, with example tags and explanations:[1][2][3]
+
+## Subtitle Disappearance Effects in ASS
+
+| Effect        | ASS Tag Example              | Explanation                                           |
+|---------------|-----------------------------|-------------------------------------------------------|
+| Fade out      | `{\fad(0,700)}`             | Fades subtitle out over 700 ms [1][3]        |
+| Custom fade   | `{\fade(255,0,0,255,0,700,0,700)}` | Precise fade out control with opacity [1]    |
+| Blur dissolve | `{\blur3\fad(0,700)}`       | Fades out while blurring text [2][1]         |
+| Color fade    | `{\t(0,700,\c&H808080&)}`   | Changes color as it disappears [1]                |
+| Glow dissolve | `{\be2\fad(0,700)}`         | Adds glow effect while fading out [2]            |
+| Slide out     | `{\move(640,400,800,400,0,700)}` | Slides subtitle out horizontally over 700 ms [1] |
+
+Each approach combines effects for smoother disappearance, but graphics-based effects like fog or smudge aren't supported in native ASS tags.[2][3]
+
+[1](https://aegisub.org/docs/latest/ass_tags/)
+[2](https://www.reddit.com/r/Filmmakers/comments/sobx9p/tutorial_adding_glow_to_ass_subtitles_files/)
+[3](https://www.abyssale.com/blog/how-to-change-the-appearances-of-subtitles-with-ffmpeg)
