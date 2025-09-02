@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <task_instruction>
+    Fix an FFmpeg-based eraser animation system where the eraser image always moves in an elliptical pattern regardless of the selected path pattern (s_curve, figure8, vertical_sweep, etc.). The core issue is that the eraser overlay position is hardcoded to use elliptical motion, ignoring the pattern-specific coordinates that were generated.
+  </task_instruction>
+
+  <problem_description>
+    <summary>
+      A video processing pipeline uses FFmpeg to create an "eraser wipe" effect where an animated eraser appears to erase a character overlay, revealing the original video underneath. While the system generates different path patterns correctly (s_curve, figure8, etc.), the visual eraser image ALWAYS moves in an elliptical pattern because its overlay position uses hardcoded cos/sin functions.
+    </summary>
+    
+    <two_separate_issues>
+      <issue_1>
+        <title>Erase EFFECT coordinates are offset incorrectly</title>
+        <description>
+          The path patterns generate correct Y coordinates (e.g., s_curve: 144-576 pixels covering 60% of 720px height), but an adjustment formula subtracts 343 pixels from all Y values, pushing the erase effect off-screen (negative Y values like -85).
+        </description>
+      </issue_1>
+      
+      <issue_2>
+        <title>Eraser IMAGE position is hardcoded to elliptical motion</title>
+        <description>
+          CRITICAL: The eraser image overlay ALWAYS uses hardcoded cos/sin functions for positioning, completely ignoring the selected pattern. This happens AFTER pattern selection in code marked as "common for all modes".
+        </description>
+      </issue_2>
+    </two_separate_issues>
+  </problem_description>
+
+  <current_implementation>
+    <file_path>utils/animations/eraser_wipe.py</file_path>
+    
+    <pattern_generation_code>
+<![CDATA[
+def create_eraser_wipe(character_video: str, original_video: str, 
+                       eraser_image: str, output_video: str,
+                       wipe_start: float = 0, wipe_duration: float = 0.6,
+                       mode: str = "true_erase", erase_radius: int = 120, 
+                       sample_points: int = 25, path_pattern: str = "ellipse"):
+    
+    # ... video property detection ...
+    width = 1280  # example
+    height = 720  # example
+    
+    # Parameters
+    center_x = width // 2 - 20  # 620
+    center_y = height // 2 + 10  # 370
+    radius_x = 200
+    radius_y = 150
+    
+    # Eraser scaling
+    scale_factor = 0.70
+    scaled_width = int(768 * scale_factor)   # 538
+    scaled_height = int(1344 * scale_factor) # 940 (TALLER than 720px video!)
+    pivot_y_ratio = 0.62  # Handle attachment point
+    tip_ratio = 0.12      # Tip position
+    amplitude = radius_y * 0.8  # 120
+    
+    if mode == "true_erase":
+        path_points = []
+        
+        # CORRECTLY generates different patterns
+        if path_pattern == "s_curve":
+            # S-shaped serpentine path from top to bottom
+            for i in range(sample_points):
+                progress = i / (sample_points - 1)
+                t = wipe_start + progress * wipe_duration
+                
+                # Vertical position from top to bottom - CORRECT!
+                y = height * 0.2 + (height * 0.6) * progress  # 144 to 576
+                
+                # Horizontal oscillation creating S-shape
+                cycles = 2.5
+                x = center_x + radius_x * 0.7 * math.sin(cycles * 2 * math.pi * progress)
+                
+                path_points.append((t, x, y))
+                
+        elif path_pattern == "ellipse":
+            for i in range(sample_points):
+                progress = i / (sample_points - 1)
+                t = wipe_start + progress * wipe_duration
+                angle = 2 * math.pi * progress
+                
+                x = center_x + radius_x * math.cos(angle)
+                y = center_y + amplitude * math.sin(angle)  # 250 to 490
+                
+                path_points.append((t, x, y))
+        
+        # ... other patterns ...
+        
+        # PROBLEM 1: Adjustment formula breaks Y coordinates
+        for t, x, y in path_points:
+            x_contact = int(x + contact_dx)
+            
+            # This subtracts 583 pixels then adds 240, net -343 pixels!
+            y_top_raw = y - scaled_height * pivot_y_ratio + \
+                       (top_margin - (center_y - amplitude) + scaled_height * (pivot_y_ratio - tip_ratio))
+            # For s_curve y=144: y_top_raw = 144 - 583 + 240 = -199
+            
+            y_top = max(y_top_raw, height - scaled_height + 2)  # max(-199, -218) = -199
+            y_tip = int(y_top + scaled_height * tip_ratio)      # -199 + 113 = -86 (OFF SCREEN!)
+            
+            # Create erase condition with broken coordinates
+            radius_sq = erase_radius * erase_radius
+            condition = f"(lte((X-{x_contact})*(X-{x_contact})+(Y-{y_tip})*(Y-{y_tip}),{radius_sq})*gte(T,{t:.3f}))"
+            geq_parts.append(condition)
+]]>
+    </pattern_generation_code>
+    
+    <critical_bug_location>
+<![CDATA[
+    # After all pattern processing, at the END of the function:
+    
+    # Add eraser overlay (common for all modes)
+    # PROBLEM 2: THIS IS HARDCODED ELLIPTICAL MOTION!
+    filter_complex += (
+        f"[reveal][eraser]overlay="
+        f"x='{center_x}+{radius_x}*cos(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_w*{pivot_x_ratio}':"
+        f"y='max({center_y}+{amplitude}*sin(2*PI*(t-{wipe_start})/{wipe_duration})-overlay_h*{pivot_y_ratio}+"
+        f"({top_margin} - ({center_y} - {amplitude}) + overlay_h*({pivot_y_ratio} - {tip_ratio})),"
+        f"main_h - overlay_h + {bottom_safety})':"
+        f"shortest=0:eof_action=pass:format=auto:"
+        f"enable='between(t,{wipe_start},{wipe_start + wipe_duration + 0.02})'[outv]"
+    )
+    
+    # The x and y expressions above use cos() and sin() - ALWAYS ELLIPTICAL!
+    # This completely ignores the path_pattern parameter!
+]]>
+    </critical_bug_location>
+  </current_implementation>
+
+  <debug_output_proof>
+    <s_curve_pattern>
+<![CDATA[
+Creating true_erase eraser wipe with s_curve pattern...
+  DEBUG: Video dimensions: 1280x720
+  DEBUG: Pattern: s_curve
+  DEBUG: Generated 40 path points
+  DEBUG: First 5 points (t, x, y):
+    Point 0: t=0.100, x=620.0, y=144.0   <- Top of video
+    Point 1: t=0.121, x=674.9, y=155.1
+    Point 2: t=0.141, x=721.0, y=166.2
+    Point 3: t=0.162, x=750.9, y=177.2
+    Point 4: t=0.182, x=759.9, y=188.3
+  DEBUG: Last 5 points:
+    Point 35: t=0.818, x=759.9, y=531.7
+    Point 36: t=0.838, x=750.9, y=542.8
+    Point 37: t=0.859, x=721.0, y=553.8
+    Point 38: t=0.879, x=674.9, y=564.9
+    Point 39: t=0.900, x=620.0, y=576.0  <- Near bottom
+  DEBUG: Y range covered: 144.0 to 576.0 (height: 432.0px)
+  DEBUG: Coverage: 60.0% of video height  <- GOOD COVERAGE!
+  
+  DEBUG: ACTUAL TIP POSITIONS after adjustment:
+  DEBUG: Tip Y range: -85 to 346 (height: 431px)  <- NEGATIVE Y! OFF SCREEN!
+]]>
+    </s_curve_pattern>
+    
+    <ellipse_pattern>
+<![CDATA[
+Creating true_erase eraser wipe with ellipse pattern...
+  DEBUG: Video dimensions: 1280x720
+  DEBUG: Pattern: ellipse
+  DEBUG: Generated 20 path points
+  DEBUG: Y range covered: 250.4 to 489.6 (height: 239.2px)
+  DEBUG: Coverage: 33.2% of video height  <- POOR COVERAGE (original problem)
+  
+  DEBUG: ACTUAL TIP POSITIONS after adjustment:
+  DEBUG: Tip Y range: 20 to 259 (height: 239px)  <- At least visible
+]]>
+    </ellipse_pattern>
+  </debug_output_proof>
+
+  <visual_result>
+    Despite s_curve generating Y coordinates from 144-576 (60% coverage) and ellipse generating 250-490 (33% coverage), the VISUAL eraser image moves identically in both cases because the overlay position is hardcoded to use cos/sin elliptical motion.
+  </visual_result>
+
+  <requirements>
+    <requirement_1>
+      The eraser IMAGE position must follow the selected pattern (s_curve, figure8, vertical_sweep, etc.), not always use elliptical motion.
+    </requirement_1>
+    
+    <requirement_2>
+      The adjustment formula that subtracts 343 pixels needs to be fixed or made pattern-specific. The scaled eraser height (940px) is taller than the video (720px), causing issues.
+    </requirement_2>
+    
+    <requirement_3>
+      For patterns like s_curve that already specify correct Y positions (144-576), the complex adjustment formula should not be applied, or should be minimal.
+    </requirement_3>
+  </requirements>
+
+  <proposed_solution_direction>
+    <step_1>
+      Generate x_expr and y_expr expressions for the eraser IMAGE overlay based on the selected pattern, not just for the erase effect.
+    </step_1>
+    
+    <step_2>
+      Use these pattern-specific expressions in the overlay filter instead of the hardcoded cos/sin expressions.
+    </step_2>
+    
+    <step_3>
+      Fix or bypass the Y adjustment formula for non-ellipse patterns, as they already have correct Y coordinates.
+    </step_3>
+    
+    <step_4>
+      Consider that the eraser image is 940px tall while the video is only 720px tall, which may require special handling.
+    </step_4>
+  </proposed_solution_direction>
+
+  <constraints>
+    <constraint_1>
+      Must use FFmpeg filter expressions that can be evaluated at runtime (using 't' for time).
+    </constraint_1>
+    
+    <constraint_2>
+      The eraser image needs to be positioned so its tip (12% from top) aligns with the erase effect location.
+    </constraint_2>
+    
+    <constraint_3>
+      The solution must work for all patterns: ellipse, s_curve, figure8, vertical_sweep, triple_loop.
+    </constraint_3>
+  </constraints>
+
+  <question_for_solver>
+    How can we modify the code to:
+    1. Generate proper x_expr and y_expr for the eraser IMAGE overlay position based on the selected pattern (not just discrete points for the erase effect)?
+    2. Use these expressions instead of the hardcoded cos/sin in the overlay filter?
+    3. Fix the Y adjustment that pushes everything up by 343 pixels?
+    
+    The key challenge is converting discrete path_points into continuous FFmpeg expressions that can be evaluated with time 't'.
+  </question_for_solver>
+</prompt>

@@ -1,0 +1,3 @@
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/temp_before_sketch.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/temp_sketch_processed.mp4'
+file '/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/outputs/temp_replacement.mp4'

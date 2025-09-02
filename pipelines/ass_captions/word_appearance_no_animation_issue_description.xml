@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Advanced video subtitle rendering system with per-word animation effects</project_type>
+    <technology_stack>Python, OpenCV, PIL/Pillow, NumPy</technology_stack>
+    <file_location>/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/pipelines/ass_captions/sam2_head_aware_sandwich.py</file_location>
+    <problem_domain>
+      We have an ASS (Advanced SubStation Alpha) subtitle rendering system that should animate individual words appearing at their specified timestamps.
+      Each phrase has word_timings with start/end times for individual words.
+      The system should respect these timings and apply smooth entrance animations to each word as it appears.
+      There are various entrance effects: fade_word_by_word, fade_slide_from_top, fade_slide_from_bottom, etc.
+    </problem_domain>
+  </context>
+
+  <problem_statement>
+    <summary>
+      Words appear abruptly at their timestamps without any animation, despite having entrance animation logic implemented.
+      When a word's timestamp is reached, it suddenly appears at 100% opacity instead of fading/sliding in smoothly.
+    </summary>
+    <observed_behavior>
+      - Words appear instantly at full opacity when current_time >= word_start
+      - No gradual fade-in or animation is visible for individual words
+      - The entrance animation logic exists but doesn't seem to apply to per-word appearances
+      - This happens for phrases with whole-phrase effects (like fade_slide_bottom) that also have word timings
+    </observed_behavior>
+    <expected_behavior>
+      - Each word should animate in smoothly when its time comes
+      - Words should fade from 0% to 100% opacity over a brief period (e.g., 200ms)
+      - The assigned entrance effect should apply to each word as it appears
+      - For example, with fade_slide_bottom, each word should slide up and fade in when its timestamp arrives
+    </expected_behavior>
+  </problem_statement>
+
+  <recent_changes>
+    <description>
+      We recently restructured the rendering to have three distinct paths to prevent duplicate appearances.
+      The restructuring successfully prevented words from appearing twice, but may have broken per-word animations.
+    </description>
+    <three_rendering_paths>
+      1. Word-by-word rendering path (for FADE_WORD_BY_WORD effect only)
+      2. Whole-phrase with word timings path (for other effects with word timings)
+      3. Simple whole-phrase path (no word timings)
+    </three_rendering_paths>
+  </recent_changes>
+
+  <current_implementation>
+    <render_phrase_method_structure>
+def render_phrase(self, phrase: Dict, current_time: float, frame_shape: Tuple[int, int], 
+                 scene_end_time: float = None, y_override: int = None, 
+                 size_multiplier: float = 1.0, merged_text: str = None,
+                 entrance_effect: EntranceEffect = None,
+                 disappearance_effect: DisappearanceEffect = None) -> Optional[np.ndarray]:
+    
+    # Timing calculations
+    logical_start = phrase["start_time"]
+    logical_end = scene_end_time if scene_end_time else phrase["end_time"]
+    entrance_duration = 0.4  # 400ms for entrance
+    disappear_duration = 0.5  # 500ms for disappearance
+    
+    draw_start = logical_start - entrance_duration
+    draw_end = logical_end + disappear_duration
+    
+    if not (draw_start <= current_time <= draw_end):
+        return None
+    
+    # Animation phase detection
+    if current_time < logical_start:
+        animation_phase = "ENTRANCE"
+        time_until_start = logical_start - current_time
+        progress = 1.0 - (time_until_start / entrance_duration)
+        progress = max(0, min(1, progress))
+        eased_progress = 1 - pow(1 - progress, 3)
+        base_opacity = progress  # Uses linear progress for opacity
+    elif current_time < logical_end:
+        animation_phase = "STEADY"
+        progress = 1.0
+        eased_progress = 1.0
+        base_opacity = 1.0
+    else:
+        animation_phase = "DISAPPEAR"
+        # disappearance logic...
+    
+    # Three rendering paths...
+    </render_phrase_method_structure>
+
+    <rendering_path_decision>
+# Decide whether to use word-by-word rendering or whole-phrase rendering
+use_word_by_word_rendering = (
+    "word_timings" in phrase 
+    and phrase["word_timings"]
+    and entrance_effect == EntranceEffect.FADE_WORD_BY_WORD
+)
+    </rendering_path_decision>
+
+    <path1_word_by_word>
+# Path 1: Word-by-word rendering (ONLY for FADE_WORD_BY_WORD effect)
+if use_word_by_word_rendering:
+    words = text.split()
+    current_x = x
+    
+    # Calculate entrance slot schedule for word-by-word effect
+    num_words = len(words)
+    entrance_slot_duration = entrance_duration / max(1, num_words)
+    preroll_start = logical_start - entrance_duration
+    entrance_elapsed = current_time - preroll_start
+    
+    for i, (word, timing) in enumerate(zip(words, phrase["word_timings"])):
+        word_start = timing["start"]
+        word_end = timing["end"]
+        
+        word_visible = False
+        word_opacity = 0.0
+        
+        if animation_phase == "ENTRANCE":
+            # Slot-based progressive reveal
+            slot_start = i * entrance_slot_duration
+            slot_end = (i + 1) * entrance_slot_duration
+            
+            if entrance_elapsed >= slot_start:
+                word_visible = True
+                word_slot_progress = min(1.0, (entrance_elapsed - slot_start) / entrance_slot_duration)
+                word_eased = 1 - pow(1 - word_slot_progress, 3)
+                word_opacity = word_eased * base_opacity
+                
+        elif animation_phase == "STEADY":
+            if current_time >= word_start:
+                word_visible = True
+                word_opacity = 1.0
+                
+        else:  # DISAPPEAR
+            if current_time >= word_start:
+                word_visible = True
+                word_opacity = base_opacity
+        
+        # Draw word if visible...
+    </path1_word_by_word>
+
+    <path2_whole_phrase_with_timings>
+# Path 2: Whole-phrase effects with word timings (THE PROBLEMATIC PATH)
+elif "word_timings" in phrase and phrase["word_timings"]:
+    # Has word timings but NOT word-by-word effect
+    # Render only the visible portion of the phrase based on word timings
+    words = text.split()
+    visible_words = []
+    
+    for i, (word, timing) in enumerate(zip(words, phrase["word_timings"])):
+        word_start = timing["start"]
+        # Only include words that have started
+        if current_time >= word_start:  # <-- ABRUPT: No animation, just on/off
+            visible_words.append(word)
+    
+    if visible_words:
+        # Render the visible portion with the whole-phrase effect
+        visible_text = " ".join(visible_words)
+        
+        # Apply position offsets
+        final_x = x + x_offset
+        final_y = y + y_offset
+        
+        # Apply color shift for disappearance effects
+        text_r, text_g, text_b = color_shift
+        
+        # Black outline
+        outline_opacity = max(0, int(base_opacity * 255 * 0.8))
+        outline_color = (0, 0, 0, outline_opacity)
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
+                if dx != 0 or dy != 0:
+                    draw.text((final_x + dx, final_y + dy), visible_text, font=font, fill=outline_color)
+        
+        # Colored text with opacity
+        text_color = (text_r, text_g, text_b, int(255 * base_opacity))
+        draw.text((final_x, final_y), visible_text, font=font, fill=text_color)
+    </path2_whole_phrase_with_timings>
+
+    <path3_simple_whole_phrase>
+# Path 3: Simple whole phrase (no word timings)
+else:
+    # Render entire phrase at once
+    # This path works fine with entrance animations
+    </path3_simple_whole_phrase>
+  </current_implementation>
+
+  <specific_problem_analysis>
+    <issue_location>
+      The problem is in Path 2 (lines 389-422 in the current implementation).
+      When a phrase has word timings but uses a whole-phrase effect (not FADE_WORD_BY_WORD),
+      the code simply checks: if current_time >= word_start: visible_words.append(word)
+    </issue_location>
+    
+    <why_no_animation>
+      1. Words are added to visible_words in a binary fashion (visible or not)
+      2. No per-word opacity or animation is calculated
+      3. The base_opacity applies to the entire visible text, not individual words
+      4. When a new word becomes visible, it immediately appears at base_opacity (which is 1.0 in STEADY phase)
+    </why_no_animation>
+    
+    <example_scenario>
+      Phrase: "AI created new math"
+      Effect: fade_slide_bottom (whole-phrase effect)
+      Word timings: AI(1.02s), created(1.30s), new(1.50s), math(1.70s)
+      
+      At t=1.29s: visible_text = "AI" (at 100% opacity)
+      At t=1.30s: visible_text = "AI created" (suddenly "created" appears at 100%)
+      At t=1.50s: visible_text = "AI created new" (suddenly "new" appears at 100%)
+      
+      No smooth transition when each word appears.
+    </example_scenario>
+  </specific_problem_analysis>
+
+  <key_questions>
+    <question_1>
+      How can we apply per-word entrance animations in Path 2 while maintaining the whole-phrase effect?
+      Should each newly appearing word have its own brief fade-in period?
+    </question_1>
+    
+    <question_2>
+      Should we track a per-word "time since appearance" to calculate individual word opacity?
+      For example: word_opacity = min(1.0, (current_time - word_start) / word_fade_duration)
+    </question_2>
+    
+    <question_3>
+      How do we balance the whole-phrase effect (like slide_from_bottom) with per-word appearance timing?
+      Should the slide effect apply to the entire visible portion while individual words fade in?
+    </question_3>
+    
+    <question_4>
+      Is it better to render each word separately with its own opacity, or render the whole visible text
+      but with varying opacity for different parts?
+    </question_4>
+    
+    <question_5>
+      Should we consider a hybrid approach where words are rendered individually but positioned as if
+      they were part of the whole phrase to maintain layout consistency?
+    </question_5>
+  </key_questions>
+
+  <constraints>
+    <constraint_1>
+      Words must appear at their specified timestamps (word_start times must be respected)
+    </constraint_1>
+    <constraint_2>
+      The assigned entrance effect (e.g., fade_slide_bottom) should still apply
+    </constraint_2>
+    <constraint_3>
+      Words should not appear twice or disappear unexpectedly
+    </constraint_3>
+    <constraint_4>
+      The solution should work for all whole-phrase effects, not just one specific effect
+    </constraint_4>
+  </constraints>
+
+  <request_for_assistance>
+    Please provide a solution that allows individual words to animate in smoothly when their timestamps
+    are reached, even when the phrase uses a whole-phrase entrance effect (not FADE_WORD_BY_WORD).
+    
+    The solution should:
+    1. Apply a brief fade-in animation to each word as it appears
+    2. Maintain the whole-phrase effect (slide/position offsets)
+    3. Respect exact word timing from word_timings
+    4. Not cause duplicate appearances or other visual glitches
+    
+    Focus on modifying Path 2 of the rendering logic to incorporate per-word entrance animations
+    while preserving the overall phrase effect.
+  </request_for_assistance>
+
+  <additional_context>
+    <word_timing_format>
+    phrase["word_timings"] = [
+        {"start": 1.02, "end": 1.28},  # "AI"
+        {"start": 1.30, "end": 1.48},  # "created"
+        {"start": 1.50, "end": 1.68},  # "new"
+        {"start": 1.70, "end": 1.92}   # "math"
+    ]
+    </word_timing_format>
+
+    <entrance_effects_enum>
+    class EntranceEffect(Enum):
+        FADE_WORD_BY_WORD = "fade_word_by_word"  # Currently the only one with per-word animation
+        FADE_SLIDE_FROM_TOP = "fade_slide_top"
+        FADE_SLIDE_FROM_BOTTOM = "fade_slide_bottom"
+        FADE_SLIDE_FROM_LEFT = "fade_slide_left"
+        FADE_SLIDE_FROM_RIGHT = "fade_slide_right"
+        FADE_SLIDE_WHOLE_TOP = "fade_slide_whole_top"
+        FADE_SLIDE_WHOLE_BOTTOM = "fade_slide_whole_bottom"
+    </entrance_effects_enum>
+
+    <test_case>
+    Video: ai_math1.mp4
+    Phrase: "AI created new math" 
+    Assigned effect: fade_slide_bottom
+    Expected: Each word slides up and fades in at its timestamp
+    Actual: Each word appears instantly at its timestamp
+    </test_case>
+  </additional_context>
+</prompt>

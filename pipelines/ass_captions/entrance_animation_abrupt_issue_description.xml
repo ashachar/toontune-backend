@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <context>
+    <project_type>Advanced video subtitle rendering system with animation effects</project_type>
+    <technology_stack>Python, OpenCV, PIL/Pillow, NumPy</technology_stack>
+    <file_location>/Users/amirshachar/Desktop/Amir/Projects/Personal/toontune/backend/pipelines/ass_captions/sam2_head_aware_sandwich.py</file_location>
+    <problem_domain>
+      We have a sophisticated ASS (Advanced SubStation Alpha) subtitle rendering system that applies entrance and disappearance animations to text overlays on video.
+      The system renders subtitles frame-by-frame with various effects like fade-in, slide-from-top/bottom, word-by-word fade, etc.
+      Each phrase has timing information (start_time, end_time) and can have entrance/disappearance effects.
+    </problem_domain>
+  </context>
+
+  <problem_statement>
+    <summary>
+      Entrance animations are not working - words appear abruptly at their start timestamps instead of animating in smoothly.
+      Despite implementing extended draw windows and animation logic, text suddenly appears at full opacity instead of fading/sliding in.
+    </summary>
+    <observed_behavior>
+      - Text appears instantly at 100% opacity at its start_time
+      - No gradual fade-in or slide-in effects are visible
+      - Disappearance animations work correctly (fade out, slide out)
+      - Debug logs show entrance animations are triggered but visual effect is not seen
+    </observed_behavior>
+    <expected_behavior>
+      - Text should start animating 0.4 seconds BEFORE its logical start_time
+      - Animation should progress from 0% to 100% opacity
+      - At the logical start_time, text should be at full opacity
+      - Various effects should be visible: fade, slide from top/bottom/left/right, word-by-word
+    </expected_behavior>
+  </problem_statement>
+
+  <recent_fix_attempt>
+    <description>
+      We recently attempted to fix this by implementing extended draw windows, similar to how we fixed disappearance animations.
+      The concept was to start rendering before the logical start time to allow entrance animations to play.
+    </description>
+    <changes_made>
+      - Added draw_start = logical_start - entrance_duration (0.4s before)
+      - Modified visibility gate to use extended window
+      - Updated animation phase detection for negative time_since_start
+      - Added debug logging for entrance phases
+    </changes_made>
+    <result>
+      Debug logs show animations are being processed but visual result shows abrupt appearance.
+      Logs show "🎭 ENTRANCE START" and "🎭 ENTRANCE MID" messages but text still appears instantly.
+    </result>
+  </recent_fix_attempt>
+
+  <current_implementation>
+    <render_phrase_method>
+def render_phrase(self, phrase: Dict, current_time: float, frame_shape: Tuple[int, int], 
+                 scene_end_time: float = None, y_override: int = None, 
+                 size_multiplier: float = 1.0, merged_text: str = None,
+                 entrance_effect: EntranceEffect = None,
+                 disappearance_effect: DisappearanceEffect = None) -> Optional[np.ndarray]:
+    """
+    Render a phrase with specified entrance and disappearance animations.
+    Returns RGBA image with transparent background.
+    """
+    # CRITICAL: Separate logical times from draw times
+    logical_start = phrase["start_time"]
+    logical_end = scene_end_time if scene_end_time else phrase["end_time"]
+    entrance_duration = 0.4  # 400ms for entrance
+    disappear_duration = 0.5  # 500ms for disappearance
+    
+    # Drawing windows extend beyond logical times for animations
+    draw_start = logical_start - entrance_duration
+    draw_end = logical_end + disappear_duration
+    
+    # Single visibility gate using extended draw window
+    if not (draw_start <= current_time <= draw_end):
+        return None
+    
+    # Calculate animation timings relative to logical start
+    time_since_start = current_time - phrase["start_time"]
+    
+    # Default effects if not specified
+    if entrance_effect is None:
+        entrance_effect = EntranceEffect.FADE_WORD_BY_WORD
+    if disappearance_effect is None:
+        disappearance_effect = DisappearanceEffect.FADE_OUT
+    
+    # Calculate base opacity and offsets
+    base_opacity = 1.0
+    color_shift = (255, 255, 255)  # Default white
+    scale_factor = 1.0
+    blur_amount = 0
+    
+    # Determine animation phase and progress
+    if current_time < logical_start:
+        # ENTRANCE PHASE (before logical start)
+        animation_phase = "ENTRANCE"
+        time_until_start = logical_start - current_time
+        progress = 1.0 - (time_until_start / entrance_duration)
+        progress = max(0, min(1, progress))  # Clamp to [0, 1]
+        # Ease-out cubic for smooth deceleration
+        eased_progress = 1 - pow(1 - progress, 3)
+        base_opacity = progress  # <-- USES LINEAR PROGRESS, NOT EASED
+        
+        # Debug logging for entrance
+        debug_text = merged_text if merged_text else phrase["text"]
+        if progress < 0.02:  # Just started
+            print(f"    🎭 ENTRANCE START: '{debug_text[:20]}...' | effect={entrance_effect.value} | t={current_time:.2f}s | start={logical_start:.2f}s")
+        elif 0.48 < progress < 0.52:  # Halfway
+            print(f"    🎭 ENTRANCE MID: '{debug_text[:20]}...' | progress={progress:.0%} | opacity={base_opacity:.2f}")
+    elif current_time < logical_end:
+        # STEADY PHASE
+        animation_phase = "STEADY"
+        progress = 1.0
+        eased_progress = 1.0
+        base_opacity = 1.0
+    else:
+        # DISAPPEARANCE PHASE (works correctly)
+        animation_phase = "DISAPPEAR"
+        disappear_progress = min((current_time - logical_end) / disappear_duration, 1.0)
+        eased_disappear = disappear_progress * disappear_progress
+        # ... disappearance logic (working fine) ...
+    
+    # Calculate position offsets based on effects
+    x_offset = 0
+    y_offset = 0
+    slide_distance = 40  # Pixels to slide
+    
+    # Entrance position offsets (during entrance phase)
+    if animation_phase == "ENTRANCE":
+        if entrance_effect in [EntranceEffect.FADE_SLIDE_FROM_TOP, EntranceEffect.FADE_SLIDE_WHOLE_TOP]:
+            y_offset = int((1 - eased_progress) * -slide_distance)  # Uses eased_progress for position
+        elif entrance_effect in [EntranceEffect.FADE_SLIDE_FROM_BOTTOM, EntranceEffect.FADE_SLIDE_WHOLE_BOTTOM]:
+            y_offset = int((1 - eased_progress) * slide_distance)
+        # ... more slide effects ...
+    
+    # ... rest of rendering logic ...
+    </render_phrase_method>
+
+    <main_loop_phrase_collection>
+# In main processing loop (around line 1164):
+# First pass: collect visible phrases and organize by position
+entrance_duration = 0.4  # Must match render_phrase duration
+disappear_duration = 0.5  # Must match render_phrase duration
+for phrase in transcript_data.get("phrases", []):
+    phrase_key = f"{phrase['start_time']:.2f}_{phrase['text'][:20]}"
+    logical_start = phrase["start_time"]
+    logical_end = scene_end_times.get(phrase_key, phrase["end_time"])
+    
+    # Extended visibility window for animations
+    draw_start = logical_start - entrance_duration
+    draw_end = logical_end + disappear_duration
+    
+    # Check if phrase is visible at current time (match render_phrase gate)
+    if draw_start <= current_time <= draw_end:
+        if phrase.get("position") == "top":
+            top_phrases.append((phrase, phrase_key, logical_end))
+        else:
+            bottom_phrases.append((phrase, phrase_key, logical_end))
+    </main_loop_phrase_collection>
+
+    <entrance_effects_enum>
+class EntranceEffect(Enum):
+    """Entrance effect types for subsentences"""
+    FADE_WORD_BY_WORD = "fade_word_by_word"
+    FADE_SLIDE_FROM_TOP = "fade_slide_top"
+    FADE_SLIDE_FROM_BOTTOM = "fade_slide_bottom"
+    FADE_SLIDE_FROM_LEFT = "fade_slide_left"  # For short phrases only
+    FADE_SLIDE_FROM_RIGHT = "fade_slide_right"  # For short phrases only
+    FADE_SLIDE_WHOLE_TOP = "fade_slide_whole_top"  # Whole phrase slides
+    FADE_SLIDE_WHOLE_BOTTOM = "fade_slide_whole_bottom"  # Whole phrase slides
+    </entrance_effects_enum>
+  </current_implementation>
+
+  <debugging_observations>
+    <log_output>
+    🎭 ENTRANCE START: 'Would you be...' | effect=fade_slide_whole_bottom | t=2.56s | start=2.96s
+    🎭 ENTRANCE MID: 'Would you be...' | progress=50% | opacity=0.50
+    
+    Despite these logs showing entrance animation is processing:
+    - At t=2.56s text is not visible (should be at ~0% opacity)
+    - At t=2.76s text is not visible (should be at ~50% opacity)  
+    - At t=2.96s text suddenly appears at 100% opacity
+    </log_output>
+    
+    <hypothesis_1>
+      The opacity calculation might be working but not being applied correctly to the final rendered text.
+      Perhaps the RGBA alpha channel is being overwritten or ignored somewhere.
+    </hypothesis_1>
+    
+    <hypothesis_2>
+      The phrase might be getting re-rendered without the entrance effect after initial render,
+      causing the animated version to be replaced by a non-animated version.
+    </hypothesis_2>
+    
+    <hypothesis_3>
+      There might be a caching or optimization mechanism that's bypassing the entrance animation rendering.
+    </hypothesis_3>
+    
+    <hypothesis_4>
+      The word-by-word rendering logic might be interfering with the entrance opacity.
+      Word timings might not account for the pre-start entrance phase.
+    </hypothesis_4>
+  </debugging_observations>
+
+  <key_questions>
+    <question_1>
+      Is the base_opacity value actually being applied to the rendered text's alpha channel?
+      The code shows opacity calculations but are they reaching the final pixel values?
+    </question_1>
+    
+    <question_2>
+      Why do disappearance animations work but entrance animations don't, despite similar logic?
+      What's different about how opacity is applied during disappearance vs entrance?
+    </question_2>
+    
+    <question_3>
+      Is there a timing mismatch where phrases are being rendered multiple times per frame,
+      with later renders overwriting the animated version?
+    </question_3>
+    
+    <question_4>
+      Are word timings properly adjusted for the entrance phase?
+      When current_time < logical_start, word visibility checks might be failing.
+    </question_4>
+    
+    <question_5>
+      Is the PIL/Pillow RGBA alpha channel being properly preserved through the rendering pipeline?
+      Could there be a composite operation that's ignoring the alpha values?
+    </question_5>
+  </key_questions>
+
+  <request_for_assistance>
+    Please analyze this implementation and identify why entrance animations are not visually appearing
+    despite the logic appearing correct and debug logs showing proper execution.
+    
+    The disappearance animations work perfectly using similar opacity logic, but entrance animations
+    result in abrupt text appearance at the logical start time instead of gradual fade/slide in.
+    
+    Focus on:
+    1. The opacity application in the rendering pipeline
+    2. Potential overwrites or cache issues
+    3. Word-by-word rendering during entrance phase
+    4. Any differences between entrance and disappearance opacity handling
+    5. RGBA alpha channel preservation
+    
+    The goal is to achieve smooth entrance animations that are visually apparent, matching
+    the assigned effects (fade, slide, word-by-word).
+  </request_for_assistance>
+
+  <additional_context>
+    <word_rendering_section>
+    # Apply word-by-word animation if we have word timings (line ~307)
+    if "word_timings" in phrase and phrase["word_timings"]:
+        words = text.split()
+        current_x = x
+        
+        for word, timing in zip(words, phrase["word_timings"]):
+            word_start = timing["start"]
+            word_end = timing["end"]
+            
+            # Check if word should be visible
+            if current_time >= word_start:  # <-- MIGHT BE ISSUE: doesn't account for entrance phase
+                # Calculate word's individual fade
+                word_time = current_time - word_start
+                word_fade_duration = 0.2
+                
+                if use_whole_phrase_animation:
+                    word_opacity = base_opacity
+                elif entrance_effect == EntranceEffect.FADE_WORD_BY_WORD and animation_phase == "ENTRANCE":
+                    if word_time < word_fade_duration:
+                        word_opacity = word_time / word_fade_duration * base_opacity
+                    else:
+                        word_opacity = base_opacity
+                else:
+                    word_opacity = base_opacity
+                
+                # Draw word with opacity
+                text_color = (text_r, text_g, text_b, int(255 * word_opacity))
+                draw.text((word_x, word_y), word + " ", font=font, fill=text_color)
+    </word_rendering_section>
+
+    <test_environment>
+      Video: ai_math1.mp4 (6 seconds, 150 frames at 25fps)
+      First phrase "Yes," starts at t=0.14s
+      Second phrase "AI created new math" starts at t=1.02s
+      
+      Expected: Both should fade/slide in starting 0.4s before their start times
+      Actual: Both appear abruptly at their exact start times
+    </test_environment>
+  </additional_context>
+</prompt>
